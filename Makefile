@@ -1,1 +1,1 @@
-obj-y += igloo_hc.o  vma_hc.o
+obj-y += igloo_hc.o  vma_hc.o syscalls_hc.o

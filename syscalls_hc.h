@@ -1,0 +1,1 @@
+int syscalls_hc_init(void);
