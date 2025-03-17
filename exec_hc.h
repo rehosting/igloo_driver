@@ -1,0 +1,1 @@
+int exec_hc_init(void);
