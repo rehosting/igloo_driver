@@ -8,6 +8,7 @@
 #include <linux/hypercall.h>
 #include <linux/igloo.h>
 #include <linux/unistd.h>
+#include "vma_hc.h"
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("IGLOO Kernel Inspection/Interventions");
@@ -61,6 +62,11 @@ early_param("igloo_log_cov", early_igloo_log_cov);
 /* Register probes for mmap and munmap */
 static int __init igloo_hc_init(void) {
 	printk(KERN_EMERG "IGLOO: Initializing\n");
+	int ret = 0;
+	if ((ret = vma_hc_init()) != 0) {
+        printk(KERN_ERR "Failed to register vma_hc\n");
+		return ret;
+	}
 	return 0;
 }
 bool igloo_block_halt=false;
