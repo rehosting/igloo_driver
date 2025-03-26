@@ -59,6 +59,13 @@ void igloo_exec_succeeded(struct filename *filename,
 	if (!igloo_do_hc){
 		return;
 	}
+	
+	// Check for NULL pointers early
+	if (!filename || !filename->name || !bprm) {
+		printk(KERN_ERR "igloo_exec_succeeded: NULL pointer detected in critical parameters\n");
+		return;
+	}
+	
 	// /* execve succeeded */
 	char arg_buf[256];
 	int i, retval;
@@ -73,45 +80,55 @@ void igloo_exec_succeeded(struct filename *filename,
 	
 	mutex_lock(&execve_mutex);		//prevents other kernel threads from issuing interleaved sequences of hypercalls
 	
-	for (i = 0; i < bprm->argc; ++i) {
-		const char __user *arg = get_user_arg_ptr(argv, i);
-		if (!arg) {
-			break;
+	// Process arguments if they exist
+	if (bprm->argc > 0) {
+		for (i = 0; i < bprm->argc; ++i) {
+			const char __user *arg = get_user_arg_ptr(argv, i);
+			if (IS_ERR_OR_NULL(arg)) {
+				break;
+			}
+			if (strncpy_from_user(arg_buf, arg, sizeof(arg_buf)) < 0) {
+				break;
+			}
+			//printk(KERN_CRIT "Arg %d: %s\n", i, arg_buf);
+			//do a hypercall with each argv buffer and associated index
+			igloo_hypercall2(IGLOO_HYP_TASK_ARGV, (unsigned long) arg_buf, i);
+			igloo_hypercall2(IGLOO_SIGSTOP_ARGV, (unsigned long) arg_buf, i);
 		}
-		if (strncpy_from_user(arg_buf, arg, sizeof(arg_buf)) < 0) {
-			break;
-		}
-		//printk(KERN_CRIT "Arg %d: %s\n", i, arg_buf);
-		//do a hypercall with each argv buffer and associated index
-		igloo_hypercall2(IGLOO_HYP_TASK_ARGV, (unsigned long) arg_buf, i);
-		igloo_hypercall2(IGLOO_SIGSTOP_ARGV, (unsigned long) arg_buf, i);
 	}
 	igloo_hypercall(IGLOO_HYP_TASK_ARGC, bprm->argc);
+	
 	if ((retval = bprm->envc) < 0) {
 		if (igloo_do_hc) {
 			//unlock the mutex in case of early exit
 			printk(KERN_CRIT "EXITING BEFORE ENVP ENUMERATION\n");
-			mutex_unlock(&execve_mutex);
 		}
+		mutex_unlock(&execve_mutex);
 		return;
 	}
 
-	for (i = 0; i < bprm->envc; ++i) {
-		const char __user *arg = get_user_arg_ptr(envp, i);
-		if (!arg) {
-			break;
+	// Process environment variables if they exist
+	if (bprm->envc > 0) {
+		for (i = 0; i < bprm->envc; ++i) {
+			const char __user *arg = get_user_arg_ptr(envp, i);
+			if (IS_ERR_OR_NULL(arg)) {
+				break;
+			}
+			if (strncpy_from_user(arg_buf, arg, sizeof(arg_buf)) < 0) {
+				break;
+			}
+			//printk(KERN_CRIT "Env %d: %s\n", i, arg_buf);
+			igloo_hypercall2(IGLOO_HYP_TASK_ENVV, (unsigned long) arg_buf, i);
 		}
-		if (strncpy_from_user(arg_buf, arg, sizeof(arg_buf)) < 0) {
-			break;
-		}
-		//printk(KERN_CRIT "Env %d: %s\n", i, arg_buf);
-		igloo_hypercall2(IGLOO_HYP_TASK_ENVV, (unsigned long) arg_buf, i);
 	}
 	igloo_hypercall(IGLOO_HYP_TASK_ENVC, bprm->envc);
+	
 	//the creds are set in the call to prepare_binprm above
-	//printk(KERN_CRIT "EUID: %u, EGID: %u\n", bprm->cred->euid.val, bprm->cred->egid.val);
-	igloo_hypercall(IGLOO_HYP_TASK_EUID, bprm->cred->euid.val);
-	igloo_hypercall(IGLOO_HYP_TASK_EGID, bprm->cred->egid.val);
+	if (bprm->cred) {
+		//printk(KERN_CRIT "EUID: %u, EGID: %u\n", bprm->cred->euid.val, bprm->cred->egid.val);
+		igloo_hypercall(IGLOO_HYP_TASK_EUID, bprm->cred->euid.val);
+		igloo_hypercall(IGLOO_HYP_TASK_EGID, bprm->cred->egid.val);
+	}
 
 	mutex_unlock(&execve_mutex);
 
