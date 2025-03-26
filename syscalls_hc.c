@@ -34,46 +34,87 @@ static struct kretprobe *syscall_kretprobes = NULL;
 static int num_syscall_probes = 0;
 
 static void fill_syscall(struct task_struct *ts, struct pt_regs *regs, struct syscall *args){
+    // Initialize the structure to prevent memory corruption
+    memset(args, 0, sizeof(struct syscall));
+    
     args->known_magic = SYSCALL_HC_KNOWN_MAGIC;
     
     // Extract arguments using architecture-specific helper
-    unsigned long args_tmp[MAX_ARGS];
-    syscall_get_arguments(current, regs, args_tmp);
-
+    unsigned long args_tmp[MAX_ARGS] = {0};
+    
+    // Get the syscall number first and validate it
+    long nr = syscall_get_nr(current, regs);
+    if (nr < 0) {
+        // Invalid syscall number, set defaults and return
+        args->nr = -1;
+        args->pc = instruction_pointer(regs);
+        args->task = (unsigned long)current;
+        return;
+    }
+    
+    args->nr = (uint64_t)nr;
     args->pc = instruction_pointer(regs);
-    args->nr = syscall_get_nr(current, regs);
-    for (int i=0; i<MAX_ARGS-1; i++){
+    
+    // Now safely get arguments
+    syscall_get_arguments(current, regs, args_tmp);
+    
+    // Copy arguments safely
+    for (int i = 0; i < MAX_ARGS-1 && i < 6; i++) {  // Assuming MAX_ARGS >= 7 and syscall has max 6 args
         args->args[i] = args_tmp[i+1];
     }
+    
     args->retval = syscall_get_return_value(current, regs);
     args->skip_syscall = 0;
-    args->task = current;
+    args->task = (unsigned long)current;
 }
+
+// Define a mutex to prevent concurrent hypercalls
+DEFINE_MUTEX(syscall_hc_mutex);
 
 static int igloo_handler(struct kretprobe_instance *ri, struct pt_regs *regs, bool is_enter){
     if (!igloo_do_hc) {
-		return 0;
-	}
+        return 0;
+    }
+    
+    // Don't allow recursion into ourself from hypercalls
+    if (current->flags & PF_KTHREAD) {
+        return 0;
+    }
+    
     struct syscall args;
     struct syscall original_info;
+    
+    // Safely fill the syscall structure
     fill_syscall(current, regs, &args);
-
+    
+    // Create a safe copy for comparison later
     memcpy(&original_info, &args, sizeof(struct syscall));
-	igloo_hypercall(is_enter ? IGLOO_HYP_SYSCALL_ENTER: IGLOO_HYP_SYSCALL_RETURN, (unsigned long) &args);
-
-    if (args.retval != original_info.retval){
-        printk(KERN_EMERG "IGLOO: Setting retval to %lu\n",args.retval);
-        syscall_set_return_value(current, regs, args.retval, 0);
-    }
-    for (int i=0; i<MAX_ARGS; i++){
-        if (args.args[i] != original_info.args[i]){
-            printk(KERN_EMERG "IGLOO: Setting argument %d to %lu\n", i, args.args[i]);
-            syscall_set_argument(current, regs, i, args.args[i]);
+    
+    // Lock to prevent concurrent hypercalls which could cause issues
+    mutex_lock(&syscall_hc_mutex);
+    
+    // Make sure we don't pass NULL to the hypercall
+    if (regs != NULL && current != NULL) {
+        igloo_hypercall(is_enter ? IGLOO_HYP_SYSCALL_ENTER: IGLOO_HYP_SYSCALL_RETURN, 
+                       (unsigned long)&args);
+        
+        // Only modify registers if something changed
+        if (args.retval != original_info.retval) {
+            syscall_set_return_value(current, regs, args.retval, 0);
+        }
+        
+        // Only update arguments that changed
+        for (int i = 0; i < MAX_ARGS && i < 6; i++) {
+            if (args.args[i] != original_info.args[i]) {
+                syscall_set_argument(current, regs, i, args.args[i]);
+            }
         }
     }
-
     
-    return args.skip_syscall ? 1 : 0; // Return 1 to skip the syscall execution if needed
+    // Always unlock before returning
+    mutex_unlock(&syscall_hc_mutex);
+    
+    return args.skip_syscall ? 1 : 0;
 }
 
 // Entry handler for system calls
@@ -139,8 +180,8 @@ static int try_register_syscall_kretprobe(struct kretprobe *krp, const char *sys
 
 int syscalls_hc_init(void) {
     if (!igloo_do_hc) {
-	    printk(KERN_ERR "IGLOO: Hypercalls disabled\n");
-	    // return 0;
+        printk(KERN_INFO "IGLOO: Hypercalls disabled, syscalls tracing not activated\n");
+        return 0;
     }
     struct syscall_metadata **p = __start_syscalls_metadata;
     struct syscall_metadata **end = __stop_syscalls_metadata;
