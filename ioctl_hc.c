@@ -10,13 +10,13 @@
 #include <linux/binfmts.h>
 #include <trace/syscall.h>
 #include <linux/utsname.h>
+#include "ioctl_hc.h"
 
-void igloo_ioctl(int error, struct inode *inode, struct file *filp, unsigned int cmd, void __user * argp);
 
 /**
- * Called from do_vfs_ioctl in fs/ioctl.c
+ * Called from hyperfs_ioctl in fs/hyperfs/hyperfs.c
  */
-void igloo_ioctl(int error, struct inode *inode, struct file *filp, unsigned int cmd, void __user * argp) {
+void igloo_ioctl(int error, struct file *filp, unsigned int cmd) {
     if (!igloo_do_hc){
 	    return;
     }
