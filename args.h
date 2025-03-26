@@ -1,90 +1,251 @@
 #define MAX_PROBES 20
-/* Architecture-specific function to retrieve syscall number */
-static inline int get_syscall_number(struct pt_regs *regs) {
-#ifdef CONFIG_X86_64
-    return regs->orig_ax;
-#elif defined(CONFIG_ARM) || defined(CONFIG_ARMEB)
-    #if defined(__thumb__) || defined(__thumb2__) || defined(CONFIG_THUMB2_KERNEL)
-        return regs->uregs[7];  // Syscall number is in r7 in Thumb mode
-    #else
-        return regs->ARM_r7;    // Syscall number is in r7 in ARM mode
-    #endif
-#elif defined(CONFIG_ARM64)
-    return regs->regs[8];  // Syscall number is stored in x8 in ARM64
-#elif defined(CONFIG_MIPS) || defined(CONFIG_MIPS64)
-    return regs->regs[2];  // Syscall number is in v0 for MIPS
-#elif defined(CONFIG_LOONGARCH)
-    return regs->regs[7];
-#elif defined(CONFIG_PPC)
-    return regs->gpr[3];
-#elif defined(CONFIG_RISCV)
-    return regs->a0;
-#else
-    #error "Unsupported architecture"
+#define MAX_ARGS 7
+
+#if defined(__mips__)
+
+static inline void mips_set_syscall_arg(unsigned long arg,
+	struct task_struct *task, struct pt_regs *regs, unsigned int n)
+{
+	unsigned long usp __maybe_unused = regs->regs[29];
+
+	switch (n) {
+	case 0: case 1: case 2: case 3:
+		regs->regs[4 + n] = arg;
+
+		return;
+
+#ifdef CONFIG_32BIT
+	case 4: case 5: case 6: case 7:
+		put_user(arg, (int *)usp + n);
+		return;
 #endif
+
+#ifdef CONFIG_64BIT
+	case 4: case 5: case 6: case 7:
+#ifdef CONFIG_MIPS32_O32
+		if (test_tsk_thread_flag(task, TIF_32BIT_REGS))
+			put_user(arg, (int *)usp + n);
+		else
+#endif
+			regs->regs[4 + n] = arg;
+
+		return;
+#endif
+
+	default:
+		BUG();
+	}
+
+	unreachable();
+}
+static inline void syscall_set_argument(struct task_struct *task,
+					 struct pt_regs *regs,
+                     int i, unsigned long arg)
+{
+	/* O32 ABI syscall() */
+	if (mips_syscall_is_indirect(task, regs))
+		i++;
+    
+    mips_set_syscall_arg(arg, task, regs, i);
 }
 
-static inline unsigned long get_first_syscall_arg(struct pt_regs *regs) {
-#ifdef CONFIG_X86_64
-    return regs->di;  // 1st argument in di
-#elif defined(CONFIG_ARM) || defined(CONFIG_ARMEB)
-    return regs->ARM_r0;  // 1st argument in r0
-#elif defined(CONFIG_ARM64)
-    return regs->regs[0];  // 1st argument in x0
-#elif defined(CONFIG_MIPS) || defined(CONFIG_MIPS64)
-    return regs->regs[4];  // 1st argument in a0 (regs[4])
-#elif defined(CONFIG_LOONGARCH)
-    return regs->regs[0];
-#elif defined(CONFIG_PPC)
-    return regs->gpr[4];
-#elif defined(CONFIG_RISCV)
-    return regs->a1;
-#else
-    #error "Unsupported architecture"
-#endif
+#elif defined(__arm__)
+static inline void syscall_set_argument(struct task_struct *task,
+					 struct pt_regs *regs,
+					 int i, unsigned long arg)
+{
+    if (i == 0){
+        regs->ARM_r0 = arg;
+    }else if (i == 1){
+        regs->ARM_r1 = arg;
+    }else if (i == 2){
+        regs->ARM_r2 = arg;
+    }else if (i == 3){
+        regs->ARM_r3 = arg;
+    }else if (i == 4){
+        regs->ARM_r4 = arg;
+    }else if (i == 5){
+        regs->ARM_r5 = arg;
+    }else if (i == 6){
+        regs->ARM_r6 = arg;
+    }else{
+        printk(KERN_EMERG "This is an issue in syscall_set_argument");
+    }
 }
 
-static inline unsigned long get_second_syscall_arg(struct pt_regs *regs) {
-#ifdef CONFIG_X86_64
-    return regs->si;  // 2nd argument in si
-#elif defined(CONFIG_ARM) || defined(CONFIG_ARMEB)
-    return regs->ARM_r1;  // 2nd argument in r1
-#elif defined(CONFIG_ARM64)
-    return regs->regs[1];  // 2nd argument in x1
-#elif defined(CONFIG_MIPS) || defined(CONFIG_MIPS64)
-    return regs->regs[5];  // 2nd argument in a1 (regs[5])
-#elif defined(CONFIG_LOONGARCH)
-    return regs->regs[1];
-#elif defined(CONFIG_PPC)
-    return regs->gpr[5];
-#elif defined(CONFIG_RISCV)
-    return regs->a2;
-#else
-    #error "Unsupported architecture"
-#endif
+#elif defined(__aarch64__)
+static inline void syscall_set_argument(struct task_struct *task,
+                                       struct pt_regs *regs,
+                                       int i, unsigned long arg)
+{
+    switch (i) {
+    case 0:
+        regs->regs[0] = arg;
+        break;
+    case 1:
+        regs->regs[1] = arg;
+        break;
+    case 2:
+        regs->regs[2] = arg;
+        break;
+    case 3:
+        regs->regs[3] = arg;
+        break;
+    case 4:
+        regs->regs[4] = arg;
+        break;
+    case 5:
+        regs->regs[5] = arg;
+        break;
+    default:
+        printk(KERN_EMERG "Invalid argument index in syscall_set_argument");
+    }
 }
 
-static inline unsigned long get_return_value(struct pt_regs *regs) {
-#ifdef CONFIG_X86_64
-    return regs->ax;  // Return value in ax
-#elif defined(CONFIG_ARM) || defined(CONFIG_ARMEB)
-    return regs->ARM_r0;  // Return value in r0
-#elif defined(CONFIG_ARM64)
-    return regs->regs[0];  // Return value in x0
-#elif defined(CONFIG_MIPS) || defined(CONFIG_MIPS64)
-    return regs->regs[2];  // Return value in v0 (regs[2])
-#elif defined(CONFIG_LOONGARCH)
-    return regs->regs[0];
-#elif defined(CONFIG_PPC)
-    return regs->gpr[3];
-#elif defined(CONFIG_RISCV)
-    return regs->a0;
-#else
-    #error "Unsupported architecture"
-#endif
+#elif defined(__x86_64__)
+static inline void syscall_set_argument(struct task_struct *task,
+                                       struct pt_regs *regs,
+                                       int i, unsigned long arg)
+{
+    switch (i) {
+    case 0:
+        regs->di = arg;
+        break;
+    case 1:
+        regs->si = arg;
+        break;
+    case 2:
+        regs->dx = arg;
+        break;
+    case 3:
+        regs->cx = arg;
+        break;
+    case 4:
+        regs->r8 = arg;
+        break;
+    case 5:
+        regs->r9 = arg;
+        break;
+    default:
+        printk(KERN_EMERG "Invalid argument index in syscall_set_argument");
+    }
 }
 
-// Check if an mmap return value is an error based on TASK_SIZE
-static inline int is_mmap_error(unsigned long addr) {
-    return addr >= TASK_SIZE;
+#elif defined(__i386__)
+static inline void syscall_set_argument(struct task_struct *task,
+                                       struct pt_regs *regs,
+                                       int i, unsigned long arg)
+{
+    switch (i) {
+    case 0:
+        regs->bx = arg;
+        break;
+    case 1:
+        regs->cx = arg;
+        break;
+    case 2:
+        regs->dx = arg;
+        break;
+    case 3:
+        regs->si = arg;
+        break;
+    case 4:
+        regs->di = arg;
+        break;
+    case 5:
+        regs->bp = arg;
+        break;
+    default:
+        printk(KERN_EMERG "Invalid argument index in syscall_set_argument");
+    }
 }
+
+#elif defined(__loongarch__)
+static inline void syscall_set_argument(struct task_struct *task,
+                                       struct pt_regs *regs,
+                                       int i, unsigned long arg)
+{
+    switch (i) {
+    case 0:
+        regs->regs[4] = arg;
+        break;
+    case 1:
+        regs->regs[5] = arg;
+        break;
+    case 2:
+        regs->regs[6] = arg;
+        break;
+    case 3:
+        regs->regs[7] = arg;
+        break;
+    case 4:
+        regs->regs[8] = arg;
+        break;
+    case 5:
+        regs->regs[9] = arg;
+        break;
+    default:
+        printk(KERN_EMERG "Invalid argument index in syscall_set_argument");
+    }
+}
+
+#elif defined(__riscv)
+static inline void syscall_set_argument(struct task_struct *task,
+                                       struct pt_regs *regs,
+                                       int i, unsigned long arg)
+{
+    switch (i) {
+    case 0:
+        regs->a0 = arg;
+        break;
+    case 1:
+        regs->a1 = arg;
+        break;
+    case 2:
+        regs->a2 = arg;
+        break;
+    case 3:
+        regs->a3 = arg;
+        break;
+    case 4:
+        regs->a4 = arg;
+        break;
+    case 5:
+        regs->a5 = arg;
+        break;
+    default:
+        printk(KERN_EMERG "Invalid argument index in syscall_set_argument");
+    }
+}
+
+#elif defined(__powerpc__) || defined(__PPC__)
+static inline void syscall_set_argument(struct task_struct *task,
+                                       struct pt_regs *regs,
+                                       int i, unsigned long arg)
+{
+    switch (i) {
+    case 0:
+        regs->gpr[3] = arg;
+        break;
+    case 1:
+        regs->gpr[4] = arg;
+        break;
+    case 2:
+        regs->gpr[5] = arg;
+        break;
+    case 3:
+        regs->gpr[6] = arg;
+        break;
+    case 4:
+        regs->gpr[7] = arg;
+        break;
+    case 5:
+        regs->gpr[8] = arg;
+        break;
+    default:
+        printk(KERN_EMERG "Invalid argument index in syscall_set_argument");
+    }
+}
+#else
+#error "Architecture not supported"
+#endif
