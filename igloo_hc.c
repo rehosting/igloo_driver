@@ -10,6 +10,7 @@
 #include <linux/unistd.h>
 #include "vma_hc.h"
 #include "syscalls_hc.h"
+#include "osi_hc.h"
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("IGLOO Kernel Inspection/Interventions");
@@ -72,6 +73,11 @@ static int __init igloo_hc_init(void) {
 		printk(KERN_ERR "Failed to register syscalls_hc returning %d\n", ret);
 		return ret;
 	}
+
+    if ((ret = osi_hc_init()) != 0) {
+        printk(KERN_ERR "Failed to register osi_hc\n");
+        return ret;
+    }
 	return 0;
 }
 bool igloo_block_halt=false;
