@@ -9,6 +9,7 @@
 #include <linux/igloo.h>
 #include "vma_hc.h"
 #include "args.h"
+#include <asm/syscall.h>
 
 /* Define kprobe and kretprobe structures */
 static struct kretprobe mmap_retprobe;
@@ -18,6 +19,11 @@ static struct kretprobe brk_retprobe;
 static struct kprobe exit_probe;
 static struct kprobe switch_probe;
 
+// Check if an mmap return value is an error based on TASK_SIZE
+static inline int is_mmap_error(unsigned long addr) {
+    return addr >= TASK_SIZE;
+}
+
 /* Post-mmap handler (after mmap completes) */
 // Log a VMA_insert event with the new VMA information
 static int mmap_ret_handler(struct kretprobe_instance *ri, struct pt_regs *regs) {
@@ -26,7 +32,7 @@ static int mmap_ret_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
     struct vm_area_struct *vma;
     VMA_ITERATOR(vmi, mm, 0);
     vma_update_t vma_update = { 0 };
-    unsigned long mmap_start = get_return_value(regs); // New start address
+    unsigned long mmap_start = syscall_get_return_value(current, regs); // New start address
 
     if (is_mmap_error(mmap_start) || mmap_start == (unsigned long)-ENOMEM || mmap_start == (unsigned long)-1) {
         // MMAP failed - ignore it
@@ -78,10 +84,12 @@ static int mmap_ret_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
 /* Entry handler for the kretprobe to capture the arguments */
 static int munmap_entry_handler(struct kretprobe_instance *ri, struct pt_regs *regs) {
     struct munmap_data data;
+    unsigned long syscall_args[MAX_ARGS];
+    syscall_get_arguments(current, regs, (unsigned long *) &syscall_args);
 
     /* Capture the first and second arguments */
-    data.start_addr = get_first_syscall_arg(regs);  // Start address of the region to unmap
-    data.length = get_second_syscall_arg(regs);             // Length of the region
+    data.start_addr = syscall_args[0];  // Start address of the region to unmap
+    data.length = syscall_args[1];             // Length of the region
 
     /* Copy the data into the kretprobe's data field */
     memcpy(ri->data, &data, sizeof(struct munmap_data));
@@ -111,9 +119,11 @@ static int munmap_ret_handler(struct kretprobe_instance *ri, struct pt_regs *reg
 /* Entry handler for the kretprobe to capture the old address and length */
 static int mremap_entry_handler(struct kretprobe_instance *ri, struct pt_regs *regs) {
     struct mremap_data data;
+    unsigned long syscall_args[MAX_ARGS];
+    syscall_get_arguments(current, regs, (unsigned long *)&syscall_args);
 
     /* Capture the old start address (first argument) and length (second argument) */
-    data.old_addr = get_first_syscall_arg(regs);
+    data.old_addr = syscall_args[0];
 
     /* Store the data in the kretprobe's data field */
     memcpy(ri->data, &data, sizeof(struct mremap_data));
@@ -124,7 +134,7 @@ static int mremap_entry_handler(struct kretprobe_instance *ri, struct pt_regs *r
 /* Post-mremap handler (after mremap completes) */
 static int mremap_ret_handler(struct kretprobe_instance *ri, struct pt_regs *regs) {
     struct mremap_data *data = (struct mremap_data *)ri->data;
-    unsigned long new_addr = get_return_value(regs);  // New address from the return value
+    unsigned long new_addr = syscall_get_return_value(current, regs);  // New address from the return value
 
     vma_update_t vma_update = {0};
     vma_update.type = cpu_to_le32(VMA_UPDATE);
@@ -145,12 +155,15 @@ static int mremap_ret_handler(struct kretprobe_instance *ri, struct pt_regs *reg
 /* Pre-brk handler */
 static int brk_entry_handler(struct kretprobe_instance *ri, struct pt_regs *regs) {
     struct brk_data data;
+    unsigned long syscall_args[MAX_ARGS];
 
     /* Capture the old brk address */
     data.old_brk = current->mm->brk;
 
+    syscall_get_arguments(current, regs, (unsigned long *)&syscall_args);
+
     /* Capture the requested brk address */
-    data.requested_brk = get_first_syscall_arg(regs);
+    data.requested_brk = syscall_args[0];
 
     /* Store the data in the kretprobe's data field */
     memcpy(ri->data, &data, sizeof(struct brk_data));
@@ -160,7 +173,7 @@ static int brk_entry_handler(struct kretprobe_instance *ri, struct pt_regs *regs
 
 /* Post-brk handler (after brk completes) */
 static int brk_ret_handler(struct kretprobe_instance *ri, struct pt_regs *regs) {
-    unsigned long result = get_return_value(regs);
+    unsigned long result = syscall_get_return_value(current, regs);
     vma_update_t vma_update = {0};
 
     if (IS_ERR_VALUE(result)) {
