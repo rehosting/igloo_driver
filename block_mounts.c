@@ -5,9 +5,9 @@
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
-#include <linux/hypercall.h>
-#include <linux/igloo.h>
 #include <linux/binfmts.h>
+#include "hypercall.h"
+#include "igloo.h"
 
 bool igloo_should_block_mount(struct path *path);
 bool igloo_should_block_mount(struct path *path){

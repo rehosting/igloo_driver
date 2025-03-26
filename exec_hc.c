@@ -5,9 +5,9 @@
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
-#include <linux/hypercall.h>
-#include <linux/igloo.h>
+#include "hypercall.h"
 #include <linux/binfmts.h>
+#include "igloo.h"
 #include "exec_hc.h"
 #include "args.h"
 
@@ -66,6 +66,7 @@ void igloo_exec_succeeded(struct filename *filename,
 		return;
 	}
 	
+	mutex_lock(&execve_mutex);		//prevents other kernel threads from issuing interleaved sequences of hypercalls
 	// /* execve succeeded */
 	char arg_buf[256];
 	int i, retval;
@@ -78,7 +79,6 @@ void igloo_exec_succeeded(struct filename *filename,
 		igloo_hypercall(IGLOO_SIGSTOP_KTHREAD, (unsigned long)filename->name);
 	}
 	
-	mutex_lock(&execve_mutex);		//prevents other kernel threads from issuing interleaved sequences of hypercalls
 	
 	// Process arguments if they exist
 	if (bprm->argc > 0) {
@@ -130,12 +130,11 @@ void igloo_exec_succeeded(struct filename *filename,
 		igloo_hypercall(IGLOO_HYP_TASK_EGID, bprm->cred->egid.val);
 	}
 
-	mutex_unlock(&execve_mutex);
-
 	// Pause process until SIGCONT, if emulator wants to
 	bool do_pause = false;
 	igloo_hypercall2(IGLOO_SIGSTOP_QUERY, (unsigned long) &do_pause, current->pid);
 	if (do_pause) {
 		force_sig(SIGSTOP);
 	}
+	mutex_unlock(&execve_mutex);
 }

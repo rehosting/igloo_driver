@@ -1,0 +1,54 @@
+#ifndef _LINUX_IGLOO_H
+#define _LINUX_IGLOO_H
+
+extern unsigned long igloo_task_size; // mmap.c
+extern bool igloo_do_hc; // mmap.c
+extern bool igloo_log_cov; // mmap.c
+extern bool igloo_block_halt; // reboot.c
+
+#define IGLOO_OPEN         100
+#define IGLOO_IOCTL_ENOTTY 105
+#define IGLOO_IPV4_SETUP   200
+#define IGLOO_IPV4_BIND    201
+#define IGLOO_IPV6_SETUP   202
+#define IGLOO_IPV6_BIND    203
+#define IGLOO_IPV4_RELEASE 204
+#define IGLOO_IPV6_RELEASE 205
+#define IGLOO_HYP_UNAME 300
+
+#define HC_TASK_CHANGE 5900
+#define HC_VMA_UPDATE 5910
+
+#define IGLOO_HYP_TASK_COMM 590
+#define IGLOO_HYP_TASK_TGID 591
+#define IGLOO_HYP_TASK_PTGID 592
+#define IGLOO_HYP_TASK_STIME 593
+#define IGLOO_HYP_TASK_KTHREAD 594
+#define IGLOO_HYP_KTHREAD_CHANGE 595
+#define IGLOO_HYP_THREAD_CHANGE 596
+#define IGLOO_HYP_TASK_ARGV 597
+#define IGLOO_HYP_TASK_ARGC 598
+#define IGLOO_HYP_TASK_ENVV 599
+#define IGLOO_HYP_TASK_ENVC 600
+#define IGLOO_HYP_TASK_EUID 601
+#define IGLOO_HYP_TASK_EGID 602
+
+#define IGLOO_HYP_TASK_PSTIME 1595
+
+#define IGLOO_HYP_VMA_REPORT_UPDATE 5910
+#define IGLOO_HYP_VMA_VM_START 5911
+#define IGLOO_HYP_VMA_VM_END 5912
+#define IGLOO_HYP_VMA_NAME 5913
+#define IGLOO_HYP_VMA_SPECIAL 5914
+
+#define IGLOO_HYP_SETUP_SYSCALL 0x1337
+#define IGLOO_HYP_SYSCALL_ENTER 0x1338
+#define IGLOO_HYP_SYSCALL_RETURN 0x1339
+
+#define IGLOO_SIGSTOP_KTHREAD 0x0c6ea29a
+#define IGLOO_SIGSTOP_ARGV 0xbae7babc
+#define IGLOO_SIGSTOP_QUERY 0x7b7287d5
+
+#define IGLOO_SYSCALL 0x6408400B
+
+#endif /* _LINUX_IGLOO_H */

@@ -5,8 +5,7 @@
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
-#include <linux/hypercall.h>
-#include <linux/igloo.h>
+#include "igloo.h"
 #include <linux/unistd.h>
 #include "vma_hc.h"
 #include "syscalls_hc.h"
