@@ -14,6 +14,9 @@
 void igloo_sock_bind(struct socket *sock, struct sockaddr_storage *address);
 void igloo_sock_release(struct socket *sock);
 
+DEFINE_MUTEX(bind_mutex);
+DEFINE_MUTEX(release_mutex);
+
 
 /**
  * Called from __sys_bind_socket in net/socket.c
@@ -27,7 +30,8 @@ void igloo_sock_bind(struct socket *sock, struct sockaddr_storage *address){
 	// First hypercall to tell us process name.
 	int hrv = 1;
 	int i;
-	
+	mutex_lock(&bind_mutex);
+
 	if (address->ss_family == AF_INET) {
 		// IPv4: hypercall 200
 		struct sockaddr_in *addr_in = (struct sockaddr_in *)address;
@@ -64,6 +68,7 @@ void igloo_sock_bind(struct socket *sock, struct sockaddr_storage *address){
 	
 		igloo_hypercall2(IGLOO_IPV6_BIND, (unsigned long)port, (unsigned long)is_stream);
 	}
+	mutex_unlock(&bind_mutex);
 }
 
 /**
@@ -74,6 +79,7 @@ void igloo_sock_release(struct socket *sock){
 	    return;
     }
 	struct sock *sk = sock->sk;
+	mutex_lock(&release_mutex);
 
 	if (sk) {
 		int e;
@@ -106,4 +112,5 @@ void igloo_sock_release(struct socket *sock){
 			}
 		}
 	}
+	mutex_unlock(&release_mutex);
 }
