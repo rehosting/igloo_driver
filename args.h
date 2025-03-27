@@ -2,6 +2,7 @@
 #define MAX_ARGS 7
 
 #if defined(__mips__)
+#include <asm/syscall.h>
 
 static inline void mips_set_syscall_arg(unsigned long arg,
 	struct task_struct *task, struct pt_regs *regs, unsigned int n)
