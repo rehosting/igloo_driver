@@ -5,6 +5,7 @@
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
+#include <linux/compat.h>
 #include "hypercall.h"
 #include <linux/binfmts.h>
 #include "igloo.h"
