@@ -44,6 +44,7 @@ extern bool igloo_block_halt; // reboot.c
 #define IGLOO_HYP_SETUP_SYSCALL 0x1337
 #define IGLOO_HYP_SYSCALL_ENTER 0x1338
 #define IGLOO_HYP_SYSCALL_RETURN 0x1339
+#define IGLOO_HYP_OSI_TASK_SWITCH 0x3337
 
 #define IGLOO_SIGSTOP_KTHREAD 0x0c6ea29a
 #define IGLOO_SIGSTOP_ARGV 0xbae7babc
