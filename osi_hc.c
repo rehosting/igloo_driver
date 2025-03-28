@@ -32,8 +32,8 @@
 #include <trace/events/sched.h>
 #include "osi_hc.h"
 #include "args.h"
+#include "igloo.h"
 
-#define IGLOO_HYP_OSI_TASK_SWITCH 0x3337
 
 // Define a tracepoint probe function for sched_switch with the correct signature
 static void probe_sched_switch(void *data, bool preempt, struct task_struct *prev, 
