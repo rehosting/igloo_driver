@@ -47,6 +47,9 @@ extern bool igloo_block_halt; // reboot.c
 #define IGLOO_HYP_OSI_TASK_SWITCH 0x3337
 
 #define IGLOO_SIGSTOP_KTHREAD 0x0c6ea29a
+
+#define IGLOO_HYPERFS_MAGIC  0x51ec3692 // crc32("hyperfs")
+
 #define IGLOO_SIGSTOP_ARGV 0xbae7babc
 #define IGLOO_SIGSTOP_QUERY 0x7b7287d5
 
