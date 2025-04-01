@@ -14,6 +14,7 @@
 #include <asm/syscall.h>
 #include "syscalls_hc.h"
 #include "args.h"
+#include "kprobe_syscalls.h"
 
 extern struct syscall_metadata *__start_syscalls_metadata[];
 extern struct syscall_metadata *__stop_syscalls_metadata[];
@@ -33,11 +34,12 @@ struct syscall {
 static struct kretprobe *syscall_kretprobes = NULL;
 static int num_syscall_probes = 0;
 
-static void fill_syscall(struct task_struct *ts, struct pt_regs *regs, struct syscall *args){
+static bool fill_syscall(struct task_struct *ts, struct pt_regs *regs, struct syscall *args) {
     // Initialize the structure to prevent memory corruption
     memset(args, 0, sizeof(struct syscall));
     
     args->known_magic = SYSCALL_HC_KNOWN_MAGIC;
+    args->skip_syscall = 0;
     
     // Extract arguments using architecture-specific helper
     unsigned long args_tmp[MAX_ARGS] = {0};
@@ -45,11 +47,12 @@ static void fill_syscall(struct task_struct *ts, struct pt_regs *regs, struct sy
     // Get the syscall number first and validate it
     long nr = syscall_get_nr(current, regs);
     if (nr < 0) {
+        printk(KERN_EMERG "IGLOO: Invalid syscall number: %ld\n", nr);
         // Invalid syscall number, set defaults and return
         args->nr = -1;
         args->pc = instruction_pointer(regs);
         args->task = (unsigned long)current;
-        return;
+        return false;
     }
     
     args->nr = (uint64_t)nr;
@@ -64,57 +67,76 @@ static void fill_syscall(struct task_struct *ts, struct pt_regs *regs, struct sy
     }
     
     args->retval = syscall_get_return_value(current, regs);
-    args->skip_syscall = 0;
     args->task = (unsigned long)current;
+    return true;
 }
 
-// Define a mutex to prevent concurrent hypercalls
-DEFINE_MUTEX(syscall_hc_mutex);
+// Replace mutex with spinlock which is safe for atomic contexts
+DEFINE_SPINLOCK(syscall_hc_lock);
 
 static int igloo_handler(struct kretprobe_instance *ri, struct pt_regs *regs, bool is_enter){
     if (!igloo_do_hc) {
         return 0;
     }
-    
     // Don't allow recursion into ourself from hypercalls
     if (current->flags & PF_KTHREAD) {
         return 0;
     }
     
-    struct syscall args;
+    struct syscall *args = (struct syscall *)ri->data;
     struct syscall original_info;
-    
-    // Safely fill the syscall structure
-    fill_syscall(current, regs, &args);
+
+    if (!args){
+        printk(KERN_ERR "Failure to resolve ri->data");
+    }
+
+    if (is_enter){
+        if (!fill_syscall(current, regs, args)){
+            printk(KERN_ERR "IGLOO: Failed to fill syscall structure in enter\n");
+            return 0;
+        }
+    } else if (args->known_magic != SYSCALL_HC_KNOWN_MAGIC) {
+        printk(KERN_ERR "IGLOOL Failure in known magic\n");
+        return 0;
+    }else {
+        args->retval = syscall_get_return_value(current, regs);
+        args->task = (unsigned long)current;
+    }
     
     // Create a safe copy for comparison later
-    memcpy(&original_info, &args, sizeof(struct syscall));
+    memcpy(&original_info, args, sizeof(struct syscall));
     
-    // Lock to prevent concurrent hypercalls which could cause issues
-    mutex_lock(&syscall_hc_mutex);
+    // Use spinlock instead of mutex - safe for atomic contexts
+    unsigned long flags;
+    spin_lock_irqsave(&syscall_hc_lock, flags);
     
     // Make sure we don't pass NULL to the hypercall
     if (regs != NULL && current != NULL) {
         igloo_hypercall(is_enter ? IGLOO_HYP_SYSCALL_ENTER: IGLOO_HYP_SYSCALL_RETURN, 
-                       (unsigned long)&args);
+                       (unsigned long)args);
         
         // Only modify registers if something changed
-        if (args.retval != original_info.retval) {
-            syscall_set_return_value(current, regs, args.retval, 0);
+        if (args->retval != original_info.retval) {
+            syscall_set_return_value(current, regs, args->retval, 0);
         }
         
         // Only update arguments that changed
         for (int i = 0; i < MAX_ARGS && i < 6; i++) {
-            if (args.args[i] != original_info.args[i]) {
-                syscall_set_argument(current, regs, i, args.args[i]);
+            if (args->args[i] != original_info.args[i]) {
+                syscall_set_argument(current, regs, i, args->args[i]);
             }
         }
+    }else{
+        printk(KERN_EMERG "IGLOO: NULL pointer in igloo_handler\n");
     }
     
-    // Always unlock before returning
-    mutex_unlock(&syscall_hc_mutex);
+    // Release spinlock
+    spin_unlock_irqrestore(&syscall_hc_lock, flags);
     
-    return args.skip_syscall ? 1 : 0;
+    if (is_enter && args->skip_syscall){
+	    return 1;
+    }
+    return 0;
 }
 
 // Entry handler for system calls
@@ -125,57 +147,6 @@ static int syscall_entry_handler(struct kretprobe_instance *ri, struct pt_regs *
 // Return handler for system calls
 static int syscall_ret_handler(struct kretprobe_instance *ri, struct pt_regs *regs){
     return igloo_handler(ri, regs, false);
-}
-
-// Helper function to register kretprobe with different syscall naming conventions
-static int try_register_syscall_kretprobe(struct kretprobe *krp, const char *syscall_name) {
-    int ret;
-    char buffer[256];
-    
-    // Try the original name first (often fails)
-    krp->kp.symbol_name = syscall_name;
-    ret = register_kretprobe(krp);
-    if (ret >= 0) {
-        return ret;
-    }else{
-        printk(KERN_ERR "Failed to register kretprobe for %s: %d\n", krp->kp.symbol_name, ret);
-        printk(KERN_ERR "kallsyms %s %llx", krp->kp.symbol_name, kallsyms_lookup_name(krp->kp.symbol_name));
-    }
-    
-    // Try with __x64_sys_ prefix (common in x86_64)
-    snprintf(buffer, sizeof(buffer), "__x64_%s", syscall_name);
-    krp->kp.symbol_name = buffer;
-    ret = register_kretprobe(krp);
-    if (ret >= 0) {
-        return ret;
-    }else{
-        printk(KERN_ERR "Failed to register kretprobe for %s: %d\n", krp->kp.symbol_name, ret);
-        printk(KERN_ERR "kallsyms %s %llx", krp->kp.symbol_name, kallsyms_lookup_name(krp->kp.symbol_name));
-    }
-    
-    // Try with __se_sys_ prefix
-    snprintf(buffer, sizeof(buffer), "__se_%s", syscall_name);
-    krp->kp.symbol_name = buffer;
-    ret = register_kretprobe(krp);
-    if (ret >= 0) {
-        return ret;
-    }else{
-        printk(KERN_ERR "Failed to register kretprobe for %s: %d\n", krp->kp.symbol_name, ret);
-        printk(KERN_ERR "kallsyms %s %llx", krp->kp.symbol_name, kallsyms_lookup_name(krp->kp.symbol_name));
-    }
-    
-    // Try with __ia32_sys_ prefix (for 32-bit compat syscalls)
-    snprintf(buffer, sizeof(buffer), "__ia32_%s", syscall_name);
-    krp->kp.symbol_name = buffer;
-    ret = register_kretprobe(krp);
-    if (ret >= 0) {
-        return ret;
-    }else{
-        printk(KERN_ERR "Failed to register kretprobe for %s: %d\n", krp->kp.symbol_name, ret);
-        printk(KERN_ERR "kallsyms %s %llx", krp->kp.symbol_name, kallsyms_lookup_name(krp->kp.symbol_name));
-    }
-    
-    return ret;
 }
 
 int syscalls_hc_init(void) {
@@ -204,6 +175,7 @@ int syscalls_hc_init(void) {
     }
     
     int i = 0;
+    int skipped_syscalls = 0;
     for (; p < end; p++, i++) {
         struct syscall_metadata *meta = *p;
         int x = snprintf(buffer, PAGE_SIZE,
@@ -218,25 +190,38 @@ int syscalls_hc_init(void) {
         if (meta->nb_args == 0){
             x += snprintf(buffer+x, PAGE_SIZE-x, "]}");
         }
-        // printk(KERN_ERR "IGLOO: %s\n", buffer);
-	    igloo_hypercall(IGLOO_HYP_SETUP_SYSCALL, (unsigned long)buffer);
+        // printk(KERN_EMERG "IGLOO_HYP_SETUP_SYSCALL : 0x%lx '%s' \n", (unsigned long)buffer, buffer);
+        igloo_hypercall(IGLOO_HYP_SETUP_SYSCALL, (unsigned long)buffer);
         
         // Set up kretprobe for this syscall
         struct kretprobe *krp = &syscall_kretprobes[i];
         
         krp->handler = syscall_ret_handler;
         krp->entry_handler = syscall_entry_handler;
-        krp->data_size = 0; //sizeof(struct syscall);
+        krp->data_size = sizeof(struct syscall); // Allocate space for probe data
         krp->maxactive = 32;  // Max number of concurrent instances
         krp->kp.offset = 0;
 
         // Register the kretprobe with different possible naming conventions
-        int ret = try_register_syscall_kretprobe(krp, meta->name);
+        int ret = register_syscall_kretprobe(krp, meta->name);
         if (ret < 0) {
-            printk(KERN_ERR "IGLOO: Failed to register kretprobe for %s: %d\n", 
-                  meta->name, ret);
+            // Only consider it a real error if it's not EOPNOTSUPP
+            if (ret != -EOPNOTSUPP) {
+                printk(KERN_ERR "IGLOO: Failed to register kretprobe for %s: %d\n", 
+                      meta->name, ret);
+            } else {
+                skipped_syscalls++;
+            }
+        } else {
+            // Store syscall number in the probe data when the probe is hit
+            // This can be accessed in the entry_handler
+            printk(KERN_DEBUG "IGLOO: Registered kretprobe for syscall %d (%s)\n", 
+                  meta->syscall_nr, meta->name);
         }
     }
+    
+    printk(KERN_INFO "IGLOO: Registered %d syscall probes, skipped %d unprobeable syscalls\n", 
+           i - skipped_syscalls, skipped_syscalls);
     
     kfree(buffer);
     igloo_hypercall(IGLOO_HYP_SETUP_SYSCALL, 0);

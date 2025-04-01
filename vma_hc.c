@@ -10,6 +10,7 @@
 #include "vma_hc.h"
 #include "args.h"
 #include <asm/syscall.h>
+#include "kprobe_syscalls.h"
 
 /* Define kprobe and kretprobe structures */
 static struct kretprobe mmap_retprobe;
@@ -317,19 +318,19 @@ int vma_hc_init(void) {
         return ret;
     }
 
-    ret = register_kretprobe(&munmap_retprobe);
+    ret = register_syscall_kretprobe(&munmap_retprobe, "sys_munmap");
     if (ret < 0) {
         printk(KERN_ERR "Failed to register kretprobe munmap_retprobe\n");
         return ret;
     }
 
-    ret = register_kretprobe(&mremap_retprobe);
+    ret = register_syscall_kretprobe(&mremap_retprobe, "sys_mremap");
     if (ret < 0) {
         printk(KERN_ERR "Failed to register kretprobe mremap_retprobe\n");
         return ret;
     }
 
-    ret = register_kretprobe(&brk_retprobe);
+    ret = register_syscall_kretprobe(&brk_retprobe, "sys_brk");
     if (ret < 0) {
         printk(KERN_ERR "Failed to register kretprobe brk_retprobe\n");
         return ret;
