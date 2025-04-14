@@ -175,7 +175,10 @@ int syscalls_hc_init(void) {
     }
     
     int i = 0;
+    int successful_probes = 0;
+    int failed_probes = 0;
     int skipped_syscalls = 0;
+    
     for (; p < end; p++, i++) {
         struct syscall_metadata *meta = *p;
         int x = snprintf(buffer, PAGE_SIZE,
@@ -190,11 +193,14 @@ int syscalls_hc_init(void) {
         if (meta->nb_args == 0){
             x += snprintf(buffer+x, PAGE_SIZE-x, "]}");
         }
-        // printk(KERN_EMERG "IGLOO_HYP_SETUP_SYSCALL : 0x%lx '%s' \n", (unsigned long)buffer, buffer);
+        
         igloo_hypercall(IGLOO_HYP_SETUP_SYSCALL, (unsigned long)buffer);
         
         // Set up kretprobe for this syscall
         struct kretprobe *krp = &syscall_kretprobes[i];
+        
+        // Initialize kretprobe structure to zeros
+        memset(krp, 0, sizeof(struct kretprobe));
         
         krp->handler = syscall_ret_handler;
         krp->entry_handler = syscall_entry_handler;
@@ -204,26 +210,35 @@ int syscalls_hc_init(void) {
 
         // Register the kretprobe with different possible naming conventions
         int ret = register_syscall_kretprobe(krp, meta->name);
-        if (ret < 0) {
-            // Only consider it a real error if it's not EOPNOTSUPP
-            if (ret != -EOPNOTSUPP) {
-                printk(KERN_ERR "IGLOO: Failed to register kretprobe for %s: %d\n", 
-                      meta->name, ret);
-            } else {
-                skipped_syscalls++;
-            }
+        
+        if (ret == -EINVAL) {
+            printk(KERN_EMERG "IGLOO: Skipping unprobeable function %s (EINVAL)\n", 
+                   meta->name);
+            // EINVAL (-22) indicates that the symbol wasn't found with any naming convention
+            skipped_syscalls++;
+        } else if (ret == -EOPNOTSUPP) {
+            printk(KERN_EMERG "IGLOO: Skipping unprobeable function %s (EOPNOTSUPP)\n", 
+                   meta->name);
+            // EOPNOTSUPP (-95) means the function can't be probed by design
+            skipped_syscalls++;
+        } else if (ret < 0) {
+            // Other errors are real failures
+            printk(KERN_EMERG "IGLOO: Failed to register kretprobe for %s: %d\n", 
+                  meta->name, ret);
+            failed_probes++;
         } else {
-            // Store syscall number in the probe data when the probe is hit
-            // This can be accessed in the entry_handler
-            printk(KERN_DEBUG "IGLOO: Registered kretprobe for syscall %d (%s)\n", 
-                  meta->syscall_nr, meta->name);
+            // Success
+            successful_probes++;
         }
     }
     
-    printk(KERN_INFO "IGLOO: Registered %d syscall probes, skipped %d unprobeable syscalls\n", 
-           i - skipped_syscalls, skipped_syscalls);
+    printk(KERN_EMERG "IGLOO: Successfully registered %d syscall probes, skipped %d unprobeable syscalls, failed %d\n", 
+           successful_probes, skipped_syscalls, failed_probes);
     
     kfree(buffer);
     igloo_hypercall(IGLOO_HYP_SETUP_SYSCALL, 0);
-    return 0;
+    
+    // Return success even if some probes failed
+    // This allows the module to continue operating with the successfully registered probes
+    return successful_probes > 0 ? 0 : -ENOENT;
 }

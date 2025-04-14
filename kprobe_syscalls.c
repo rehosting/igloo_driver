@@ -25,14 +25,25 @@ int register_syscall_kretprobe(struct kretprobe *krp, const char *syscall_name) 
     // Array of prefix patterns to try (empty string = no prefix)
     const char *prefixes[] = {
                 "",                     // No prefix 
-                "__se_",                // syscall_wrapper.h for x86
-                "__se_compat_",         // compat syscall for x86
-                "__riscv_",             // syscall_wrapper.h for riscv
-                "__riscv_compat",       // compat syscall for riscv
+                "__x64_",           // x86_64 syscall prefix
+                "__ia32_",          // x86_32 compat syscalls
+                "__arm64_",         // ARM64 syscalls
+                "__arm_",           // ARM syscalls
+                "__se_",            // Syscall wrappers
+                "__do_",            // Some syscall implementations
+                "__riscv_",         // RISC-V syscalls
+                "__s390_",          // s390 syscalls
+                "__s390x_",         // s390x syscalls
+                "__aarch64_",       // Another ARM64 convention
+                "__se_",            // syscall_wrapper.h for x86
+                "__se_compat_",     // compat syscall for x86
+                "__riscv_",         // syscall_wrapper.h for riscv
+                "__riscv_compat",   // compat syscall for riscv
                 "__x64_",
                 "__ia32_",
-                "__s390_",             // syscall_wrapper.h for s390
-                "__s390_compat",       // compat syscall for s390
+                "__s390_",          // syscall_wrapper.h for s390
+                "__s390_compat",    // compat syscall for s390
+                "___",              // Triple underscore prefix seen in some kernels
             };
     int num_prefixes = sizeof(prefixes) / sizeof(prefixes[0]);
     int i;
@@ -53,15 +64,14 @@ int register_syscall_kretprobe(struct kretprobe *krp, const char *syscall_name) 
         
         ret = register_kretprobe(krp);
         if (ret >= 0) {
+            printk(KERN_DEBUG "IGLOO: Successfully registered kretprobe for %s\n", krp->kp.symbol_name);
             return ret;  // Success
         }
         
-        // If error is -EOPNOTSUPP (-95), this function can't be probed by design
-        if (ret == -EOPNOTSUPP) {
-            printk(KERN_INFO "IGLOO: Skipping unprobeable function %s (EOPNOTSUPP)\n", 
-                   krp->kp.symbol_name);
+        // For EINVAL (-22), the symbol wasn't found, try the next prefix
+        if (ret == -EINVAL && i < num_prefixes - 1) {
             kfree(krp->kp.symbol_name);
-            return ret;  // Return the error but caller will handle it specially
+            continue;
         }
         
         kfree(krp->kp.symbol_name);
