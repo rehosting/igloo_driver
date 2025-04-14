@@ -13,6 +13,29 @@
 #include "ioctl_hc.h"
 
 
+void igloo_enoent(struct file *file){
+	// here we resolve the file path as seen by the user from the
+	// original hyperfs system and on -ENOENT we make a hypercall
+	// with a char* path
+
+	char *path;
+	char *path_buffer = kmalloc(PATH_MAX, GFP_KERNEL);
+	if (path_buffer == NULL) {
+		// Handle error in allocating memory for path buffer
+		printk(KERN_ERR "IGLOO ioctl: failed to allocate memory for path buffer\n");
+		return;
+	}
+	// Attempt to resolve the file path
+	path = d_path(&file->f_path, path_buffer, PATH_MAX);
+	if (IS_ERR(path)) {
+		// Handle error in resolving path, maybe log this condition
+		printk(KERN_ERR "IGLOO ioctl: failed to resolve file path\n");
+	} else {
+		igloo_hypercall2(IGLOO_IOCTL_ENOTTY, (unsigned long)path, 0);
+	}
+	kfree(path_buffer);
+}
+
 /**
  * Called from hyperfs_ioctl in fs/hyperfs/hyperfs.c
  */
