@@ -5,6 +5,7 @@
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
+#include <linux/hashtable.h> /* Add missing include for hashtable support */
 #include "hypercall.h"
 #include "igloo.h"
 #include <linux/binfmts.h>
@@ -19,55 +20,148 @@
 extern struct syscall_metadata *__start_syscalls_metadata[];
 extern struct syscall_metadata *__stop_syscalls_metadata[];
 
+/* Hash table to store address to syscall number mapping */
+DEFINE_HASHTABLE(syscall_addr_map, 12); /* 2^12 buckets */
+DEFINE_SPINLOCK(syscall_map_lock);
+
 // add 1 if the struct syscall changes
 #define SYSCALL_HC_KNOWN_MAGIC 0x1234
 struct syscall {
-	uint64_t known_magic;
-	uint64_t nr;
-	uint64_t args[MAX_ARGS];
-	uint64_t pc;
-	int64_t retval;
-	uint64_t skip_syscall;
-	uint64_t task;
-};
+	/* Use __le64 types to ensure consistent layout across endianness */
+	__le64 known_magic;    /* Magic value to validate structure integrity */
+	__le64 nr;             /* Syscall number */
+	__le64 args[MAX_ARGS]; /* Syscall arguments */
+	__le64 pc;             /* Program counter */
+	__le64 retval;         /* Return value (signed value stored in unsigned) */
+	__le64 skip_syscall;   /* Flag to skip syscall execution */
+	__le64 task;           /* Task pointer */
+} __packed __aligned(8);   /* Ensure 8-byte alignment */
 
 static struct kretprobe *syscall_kretprobes = NULL;
 static int num_syscall_probes = 0;
 
-static bool fill_syscall(struct task_struct *ts, struct pt_regs *regs, struct syscall *args) {
+static int min_syscall_num = INT_MAX;
+static int max_syscall_num = 0;
+
+#define VALID_SYSCALL(x) (x >= min_syscall_num && x <= max_syscall_num)
+
+
+/* Structure to map function address to syscall number */
+struct syscall_addr_entry {
+    unsigned long addr;       /* Function address */
+    int syscall_nr;           /* Syscall number */
+    struct hlist_node node;   /* Hash list node */
+};
+
+/* Add a syscall address entry to the hash table */
+static void add_syscall_addr_mapping(unsigned long addr, int syscall_nr)
+{
+    struct syscall_addr_entry *entry;
+    
+    if (!addr)
+        return;
+        
+    entry = kmalloc(sizeof(*entry), GFP_KERNEL);
+    if (!entry)
+        return;
+        
+    entry->addr = addr;
+    entry->syscall_nr = syscall_nr;
+    
+    spin_lock(&syscall_map_lock);
+    hash_add(syscall_addr_map, &entry->node, addr);
+    spin_unlock(&syscall_map_lock);
+    
+    pr_debug("IGLOO: Added syscall mapping: addr=0x%lx, nr=%d\n", addr, syscall_nr);
+}
+
+/**
+ * get_syscall_nr_from_addr - Look up syscall number from function address
+ * @addr: Function address to look up
+ *
+ * Returns the syscall number if found, or -1 if not found
+ */
+static int get_syscall_nr_from_addr(unsigned long addr)
+{
+    struct syscall_addr_entry *entry;
+    int syscall_nr = -1;
+    
+    spin_lock(&syscall_map_lock);
+    hash_for_each_possible(syscall_addr_map, entry, node, addr) {
+        if (entry->addr == addr) {
+            syscall_nr = entry->syscall_nr;
+            break;
+        }
+    }
+    spin_unlock(&syscall_map_lock);
+    
+    return syscall_nr;
+}
+
+/* For architectures that don't use direct function pointer calls for syscalls */
+static long get_syscall_nr(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+	long syscall_nr = -1;
+
+    // For other architectures, use the standard method
+    syscall_nr = syscall_get_nr(current, regs);
+    if (VALID_SYSCALL(syscall_nr)){
+        return syscall_nr;
+    }
+
+    syscall_nr = get_syscall_nr_from_addr(instruction_pointer(regs));
+    if (VALID_SYSCALL(syscall_nr)){
+        return syscall_nr;
+    }
+    
+	return -1;
+}
+
+static bool fill_syscall(struct kretprobe_instance *ri, struct pt_regs *regs, struct syscall *args) {
     // Initialize the structure to prevent memory corruption
     memset(args, 0, sizeof(struct syscall));
     
-    args->known_magic = SYSCALL_HC_KNOWN_MAGIC;
-    args->skip_syscall = 0;
+    // Set values with proper endianness conversion
+    args->known_magic = cpu_to_le64(SYSCALL_HC_KNOWN_MAGIC);
+    args->skip_syscall = cpu_to_le64(0);
     
     // Extract arguments using architecture-specific helper
     unsigned long args_tmp[MAX_ARGS] = {0};
+    long nr;
     
-    // Get the syscall number first and validate it
-    long nr = syscall_get_nr(current, regs);
-    if (nr < 0) {
-        printk(KERN_EMERG "IGLOO: Invalid syscall number: %ld\n", nr);
+    // Get the syscall number
+    nr = get_syscall_nr(ri, regs);
+
+
+    if (nr == -1) {
+        printk(KERN_ERR "IGLOO: Invalid syscall number: %ld\n", nr);
         // Invalid syscall number, set defaults and return
-        args->nr = -1;
-        args->pc = instruction_pointer(regs);
-        args->task = (unsigned long)current;
+        args->nr = cpu_to_le64(-1);
+        args->pc = cpu_to_le64(instruction_pointer(regs));
+        args->task = cpu_to_le64((unsigned long)current);
         return false;
     }
+    unsigned long ip = instruction_pointer(regs);
     
-    args->nr = (uint64_t)nr;
-    args->pc = instruction_pointer(regs);
+    args->nr = cpu_to_le64(nr);
+    args->pc = cpu_to_le64(ip);
     
     // Now safely get arguments
     syscall_get_arguments(current, regs, args_tmp);
+    #if defined(__powerpc__) || defined(__PPC__)
+    args_tmp[0] = regs->gpr[3];
+    #endif
     
-    // Copy arguments safely
-    for (int i = 0; i < MAX_ARGS-1 && i < 6; i++) {  // Assuming MAX_ARGS >= 7 and syscall has max 6 args
-        args->args[i] = args_tmp[i+1];
+    // Copy arguments safely with endianness conversion
+    for (int i = 0; i < MAX_ARGS && i < 6; i++) {
+        args->args[i] = cpu_to_le64(args_tmp[i]);
     }
-    
-    args->retval = syscall_get_return_value(current, regs);
-    args->task = (unsigned long)current;
+
+    long retval = syscall_get_return_value(current, regs);
+    long task = (unsigned long)current;
+
+    args->retval = cpu_to_le64(retval);
+    args->task = cpu_to_le64(task);
     return true;
 }
 
@@ -89,18 +183,33 @@ static int igloo_handler(struct kretprobe_instance *ri, struct pt_regs *regs, bo
     if (!args){
         printk(KERN_ERR "Failure to resolve ri->data");
     }
-
+    
+    __le64 known_magic = cpu_to_le64(SYSCALL_HC_KNOWN_MAGIC);
     if (is_enter){
-        if (!fill_syscall(current, regs, args)){
-            printk(KERN_ERR "IGLOO: Failed to fill syscall structure in enter\n");
+        if (!fill_syscall(ri, regs, args)){
+            // Get the name of the kretprobe that failed
+            const char *kprobe_name = "unknown";
+            #ifdef CONFIG_KRETPROBE_ON_RETHOOK
+            if (ri->node.rethook) {
+                if (ri->node.rethook->data){
+                    struct kretprobe *rp = (struct kretprobe*) ri->node.rethook->data;
+                    if (rp && rp->kp.symbol_name){
+                        kprobe_name = rp->kp.symbol_name;
+                    }
+                }
+            }
+            #endif
+            printk(KERN_ERR "IGLOO: Failed to fill syscall structure in enter (kretprobe: %s)\n", kprobe_name);
             return 0;
         }
-    } else if (args->known_magic != SYSCALL_HC_KNOWN_MAGIC) {
-        printk(KERN_ERR "IGLOOL Failure in known magic\n");
+    } else if (args->known_magic != known_magic) {
+        printk(KERN_ERR "IGLOO: Failure in known magic\n");
         return 0;
     }else {
-        args->retval = syscall_get_return_value(current, regs);
-        args->task = (unsigned long)current;
+        long retval = syscall_get_return_value(current, regs);
+        long task = (unsigned long)current;
+        args->retval = cpu_to_le64(retval);
+        args->task = cpu_to_le64(task);
     }
     
     // Create a safe copy for comparison later
@@ -117,13 +226,13 @@ static int igloo_handler(struct kretprobe_instance *ri, struct pt_regs *regs, bo
         
         // Only modify registers if something changed
         if (args->retval != original_info.retval) {
-            syscall_set_return_value(current, regs, args->retval, 0);
+            syscall_set_return_value(current, regs, le64_to_cpu(args->retval), 0);
         }
         
         // Only update arguments that changed
         for (int i = 0; i < MAX_ARGS && i < 6; i++) {
             if (args->args[i] != original_info.args[i]) {
-                syscall_set_argument(current, regs, i, args->args[i]);
+                syscall_set_argument(current, regs, i, le64_to_cpu(args->args[i]));
             }
         }
     }else{
@@ -181,6 +290,11 @@ int syscalls_hc_init(void) {
     
     for (; p < end; p++, i++) {
         struct syscall_metadata *meta = *p;
+        if (meta->syscall_nr == -1){
+		    continue;
+	    }
+	    min_syscall_num = min(min_syscall_num, meta->syscall_nr);
+        max_syscall_num = max(max_syscall_num, meta->syscall_nr);
         int x = snprintf(buffer, PAGE_SIZE,
                  "{\"syscall_nr\": %d, \"name\": \"%s\", \"args\":[",
                  meta->syscall_nr, meta->name);
@@ -228,6 +342,7 @@ int syscalls_hc_init(void) {
             failed_probes++;
         } else {
             // Success
+            add_syscall_addr_mapping((unsigned long)krp->kp.addr, meta->syscall_nr);
             successful_probes++;
         }
     }
