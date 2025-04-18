@@ -16,6 +16,12 @@
 #include "args.h"
 #include "kprobe_syscalls.h"
 
+// Define IGLOO_DEBUG=1 during compilation to enable debug prints
+#ifdef IGLOO_DEBUG
+#define DBG_PRINTK(fmt, ...) printk(KERN_DEBUG "IGLOO_DBG: " fmt, ##__VA_ARGS__)
+#else
+#define DBG_PRINTK(fmt, ...) do {} while (0)
+#endif
 
 // Helper function to register kretprobe with different syscall naming conventions
 int register_syscall_kretprobe(struct kretprobe *krp, const char *syscall_name) {
@@ -64,7 +70,7 @@ int register_syscall_kretprobe(struct kretprobe *krp, const char *syscall_name) 
         
         ret = register_kretprobe(krp);
         if (ret >= 0) {
-            printk(KERN_DEBUG "IGLOO: Successfully registered kretprobe for %s\n", krp->kp.symbol_name);
+            DBG_PRINTK("IGLOO: Successfully registered kretprobe for %s\n", krp->kp.symbol_name);
             return ret;  // Success
         }
         
