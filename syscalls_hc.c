@@ -216,19 +216,19 @@ static int igloo_handler(struct kretprobe_instance *ri, struct pt_regs *regs, bo
             // Error already printed in fill_syscall if nr was invalid
             // Determine the kprobe name for better context
             const char *kprobe_name = "unknown";
-            #ifdef CONFIG_KRETPROBE_ON_RETHOOK
-            if (ri->node.rethook && ri->node.rethook->data) {
-                struct kretprobe *rp = (struct kretprobe*) ri->node.rethook->data;
-                if (rp && rp->kp.symbol_name) {
-                    kprobe_name = rp->kp.symbol_name;
-                }
-            }
-            #else
-            // Fallback if not using rethook or different kprobe config
-            if (ri->rp && ri->rp->kp.symbol_name) {
-                 kprobe_name = ri->rp->kp.symbol_name;
-            }
-            #endif
+            // #ifdef CONFIG_KRETPROBE_ON_RETHOOK
+            // if (ri->node.rethook && ri->node.rethook->data) {
+            //     struct kretprobe *rp = (struct kretprobe*) ri->node.rethook->data;
+            //     if (rp && rp->kp.symbol_name) {
+            //         kprobe_name = rp->kp.symbol_name;
+            //     }
+            // }
+            // #else
+            // // Fallback if not using rethook or different kprobe config
+            // if (ri->rp && ri->rp->kp.symbol_name) {
+            //      kprobe_name = ri->rp->kp.symbol_name;
+            // }
+            // #endif
             printk(KERN_ERR "IGLOO: Failed to fill syscall structure in entry (kretprobe: %s)\n", kprobe_name);
             // Set magic to invalid to prevent processing in return handler if needed
             args->known_magic = 0;
