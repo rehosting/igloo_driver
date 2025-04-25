@@ -1,0 +1,5 @@
+config IGLOO
+	bool "IGLOO module support"
+	default y
+	help
+      Support for IGLOO analysis

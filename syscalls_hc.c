@@ -414,6 +414,7 @@ int syscalls_hc_init(void) {
              failed_probes++;
              continue;
         }
+        // printk(KERN_EMERG "IGLOO: JSON for syscall %s (nr %d): %s\n", meta->name, meta->syscall_nr, (char*)buffer);
 
         // Send metadata via hypercall (call returns value, but it's ignored here)
         igloo_hypercall(IGLOO_HYP_SETUP_SYSCALL, (unsigned long)buffer);
@@ -464,8 +465,8 @@ int syscalls_hc_init(void) {
         }
     }
 
-    printk(KERN_INFO "IGLOO: Syscall probe registration complete. Successful: %d, Skipped: %d, Failed: %d. Syscall range: [%d, %d]\n",
-           successful_probes, skipped_syscalls, failed_probes, min_syscall_num, max_syscall_num);
+    // printk(KERN_INFO "IGLOO: Syscall probe registration complete. Successful: %d, Skipped: %d, Failed: %d. Syscall range: [%d, %d]\n",
+        //    successful_probes, skipped_syscalls, failed_probes, min_syscall_num, max_syscall_num);
 
     kfree(buffer);
     // Call hypercall (returns value, but it's ignored here)
