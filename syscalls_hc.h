@@ -1,4 +1,5 @@
-
+#ifndef IGLOO_SYSCALLS_HC_H
+#define IGLOO_SYSCALLS_HC_H 1
 // Define the maximum number of arguments a syscall can have
 #define IGLOO_SYSCALL_MAXARGS 6
 
@@ -56,3 +57,5 @@ typedef long (*igloo_syscall_return_t)(const char *syscall_name,
 
 
 int syscalls_hc_init(void);
+
+#endif /* IGLOO_SYSCALLS_HC_H */
