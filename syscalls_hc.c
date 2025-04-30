@@ -57,7 +57,7 @@ DEFINE_SPINLOCK(syscall_hc_lock); // Keep commented out unless hypercall needs e
 /* Function to print syscall information */
 static void print_syscall_info(const struct syscall *sc, const char *prefix) {
     if (!sc) {
-        printk(KERN_ERR "IGLOO: %s NULL syscall structure\n", prefix ? prefix : "");
+        DBG_PRINTK( "IGLOO: %s NULL syscall structure\n", prefix ? prefix : "");
         return;
     }
     
@@ -102,7 +102,7 @@ static void fill_handler(struct syscall *args, int argc, const unsigned long arg
         // Use proper syscall_get_nr function with just regs parameter
         args->nr = cpu_to_le64(syscall_get_nr(current, regs));
     } else {
-        printk(KERN_ERR "IGLOO: Failed to get syscall number from pt_regs\n");
+        DBG_PRINTK( "IGLOO: Failed to get syscall number from pt_regs\n");
     	args->pc = 0;
 	    args->nr = 0;
     }
@@ -125,12 +125,12 @@ static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, 
 	struct syscall syscall_args_holder, original_info;
     unsigned long flags;
 
-	printk(KERN_EMERG "IGLOO: Entering syscall %s with %d args\n",
+	DBG_PRINTK("IGLOO: Entering syscall %s with %d args\n",
 	       syscall_name, argc);
     fill_handler(&syscall_args_holder, argc, args);
     memcpy(&original_info, &syscall_args_holder, sizeof(struct syscall));
 
-    print_syscall_info(&syscall_args_holder, "ENTRY");
+    // print_syscall_info(&syscall_args_holder, "ENTRY");
     
     spin_lock_irqsave(&syscall_hc_lock, flags);
         
@@ -155,13 +155,13 @@ static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, 
         if (setter_func){
             setter_func(args, syscall_args_holder.args);
         }else{
-            printk(KERN_ERR "IGLOO: Setter function is NULL, cannot set args\n");
+            DBG_PRINTK( "IGLOO: Setter function is NULL, cannot set args\n");
         }
     }
 
     if (syscall_args_holder.skip_syscall != 0){
         *skip_ret_val = le64_to_cpu(syscall_args_holder.retval);
-        printk(KERN_EMERG "IGLOO: Skipping syscall %s and returning skip_ret_val %lx\n", syscall_name, *skip_ret_val);
+        DBG_PRINTK( "IGLOO: Skipping syscall %s and returning skip_ret_val %lx\n", syscall_name, *skip_ret_val);
     }
 	return syscall_args_holder.skip_syscall != 0;
 }
@@ -178,13 +178,13 @@ static long syscall_ret_handler(const char *syscall_name, long orig_ret, int arg
     struct syscall syscall_args_holder, original_info; // For comparison after hypercall
     unsigned long flags;
 
-    printk(KERN_EMERG "IGLOO: Exiting syscall %s with return value %ld\n", syscall_name, orig_ret);
+    DBG_PRINTK( "IGLOO: Exiting syscall %s with return value %ld\n", syscall_name, orig_ret);
     fill_handler(&syscall_args_holder, argc, args);
     syscall_args_holder.retval = cpu_to_le64(orig_ret);
     memcpy(&original_info, &syscall_args_holder, sizeof(struct syscall));
 
     // Print syscall info before handling return
-    print_syscall_info(&syscall_args_holder, "EXIT");
+    // print_syscall_info(&syscall_args_holder, "EXIT");
     spin_lock_irqsave(&syscall_hc_lock, flags);
         
     do_hyp(false, &syscall_args_holder);
@@ -218,7 +218,7 @@ int syscalls_hc_init(void) {
     // Allocate memory for kretprobes
     syscall_kretprobes = kzalloc(sizeof(struct kretprobe) * num_syscall_probes, GFP_KERNEL);
     if (!syscall_kretprobes) {
-        printk(KERN_ERR "IGLOO: Failed to allocate memory for kretprobes (%d needed)\n", num_syscall_probes);
+        DBG_PRINTK( "IGLOO: Failed to allocate memory for kretprobes (%d needed)\n", num_syscall_probes);
         return -ENOMEM;
     }
     DBG_PRINTK("Allocated kretprobe array at 0x%px\n", syscall_kretprobes);
@@ -226,7 +226,7 @@ int syscalls_hc_init(void) {
     void *buffer = kzalloc(PAGE_SIZE, GFP_KERNEL);
     if (!buffer) {
         kfree(syscall_kretprobes);
-        printk(KERN_ERR "IGLOO: Failed to allocate buffer for syscall metadata JSON\n");
+        DBG_PRINTK( "IGLOO: Failed to allocate buffer for syscall metadata JSON\n");
         return -ENOMEM;
     }
     DBG_PRINTK("Allocated JSON buffer at 0x%px\n", buffer);
@@ -267,12 +267,12 @@ int syscalls_hc_init(void) {
         }
 
         if (x <= 0 || x >= PAGE_SIZE) {
-             printk(KERN_ERR "IGLOO: Failed to format JSON for syscall %s (nr %d) - buffer overflow or snprintf error.\n", meta->name, meta->syscall_nr);
+             DBG_PRINTK( "IGLOO: Failed to format JSON for syscall %s (nr %d) - buffer overflow or snprintf error.\n", meta->name, meta->syscall_nr);
              // Decide how to handle: skip this probe or abort? Skipping for now.
              failed_probes++;
              continue;
         }
-        // printk(KERN_EMERG "IGLOO: JSON for syscall %s (nr %d): %s\n", meta->name, meta->syscall_nr, (char*)buffer);
+        // DBG_PRINTK( "IGLOO: JSON for syscall %s (nr %d): %s\n", meta->name, meta->syscall_nr, (char*)buffer);
 
         // Send metadata via hypercall (call returns value, but it's ignored here)
         igloo_hypercall(IGLOO_HYP_SETUP_SYSCALL, (unsigned long)buffer);
@@ -284,7 +284,7 @@ int syscalls_hc_init(void) {
     // Return success only if at least one probe was registered
     // Allows the module to load even if some syscalls are unavailable
     if (successful_probes == 0 && num_syscall_probes > 0) {
-         printk(KERN_ERR "IGLOO: No syscall probes were successfully registered.\n");
+         DBG_PRINTK( "IGLOO: No syscall probes were successfully registered.\n");
          // Clean up already allocated kretprobes array if needed (though unregistering is complex here)
          kfree(syscall_kretprobes);
          syscall_kretprobes = NULL;
