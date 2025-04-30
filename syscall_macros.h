@@ -1,6 +1,6 @@
 #ifndef _IGLOO_SYSCALL_MACROS_H
 
-#include <linux/igloo/syscalls_hc.h>
+#include "syscalls_hc.h"
 
 
 #define IGLOO_SYSCALL_MAXARGS 6
@@ -31,13 +31,6 @@
 
 #define __SC_GEN_SETTER_BODY_WRAPPER(nr, ...) \
 	__SC_GEN_SETTER_BODY_ITER_##nr(__VA_ARGS__)
-
-
-#define IGLOO_ARGS_SETTER(name) \
-	void __igloo_set_args##name(const unsigned long args_ptr_array[], const __le64 new_args_le64[]); \
-	void __igloo_set_args##name(const unsigned long args_ptr_array[], const __le64 new_args_le64[]) \
-	{ __SC_GEN_SETTER_BODY_WRAPPER(x, __VA_ARGS__); }
-
 
 #ifndef CONFIG_IGLOO
 #define igloo_syscall_enter_hook NULL
