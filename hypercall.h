@@ -14,7 +14,6 @@ static inline void igloo_hypercall(unsigned long num, unsigned long arg1) {
         : "memory"
     );
 
-
 #elif defined(CONFIG_ARM64)
     register unsigned long reg0 asm("x8") = num;
     register unsigned long reg1 asm("x0") = arg1;
@@ -86,8 +85,8 @@ static inline void igloo_hypercall(unsigned long num, unsigned long arg1) {
 
     asm volatile(
         "xori x0, x0, 0"
-        : "+r"(reg0)
-        : "r"(reg1)
+        : "+r"(reg1)  /* Modified: a0/reg1 is both input and output */
+        : "r"(reg0)
         : "memory"
     );
 #else
@@ -128,8 +127,8 @@ static inline unsigned long igloo_hypercall2(unsigned long num, unsigned long ar
 
     asm volatile(
        "movz $0, $0, $0"
-        : "+r"(reg0)  // Input and output in R0
-        : "r"(reg1) , "r" (reg2)// arg2 in register A1
+        : "+r"(reg0)  // Input and output in v0
+        : "r"(reg1), "r"(reg2)
         : "memory"
     );
     return reg0;
@@ -166,27 +165,25 @@ static inline unsigned long igloo_hypercall2(unsigned long num, unsigned long ar
 
     asm volatile(
         "cpucfg $r0, $r0"
-        : "+r"(reg0)
-        : "r"(reg1), "r"(reg2)
-        : "memory"  // No clobber
+        : "+r"(reg1)  /* a0/reg1 is both input and output */
+        : "r"(reg0), "r"(reg2)
+        : "memory"
     );
-    return reg1;
+    return reg1;  /* Return reg1 (a0) which contains the return value from the hypervisor */
 #elif defined(CONFIG_PPC) || defined(CONFIG_PPC64)
 	register unsigned long reg0 asm("r0") = num;
 	register unsigned long reg1 asm("r3") = arg1;
 	register unsigned long reg2 asm("r4") = arg2; // Second arg in r4
-    register unsigned long retval asm("r3"); // Assume return in r3
-
+    
     asm volatile(
         "xori 10, 10, 0" // User-specified instruction
-        : "=r"(retval) // Output: r3 (adjust if needed)
-        : "r"(reg0), "r"(reg1), "r"(reg2) // Inputs: r0, r3, r4
+        : "+r"(reg1) // Input and output in r3
+        : "r"(reg0), "r"(reg2)
         : "memory", "lr", "ctr",
           "cr0", "cr1", "cr5", "cr6", "cr7",
-          // Clobber volatile GPRs excluding inputs (r0, r3, r4)
           "r5", "r6", "r7", "r8", "r9", "r10", "r11", "r12"
     );
-    return retval;
+    return reg1;  /* Return reg1 (r3) which contains the return value from the hypervisor */
 #elif defined(CONFIG_RISCV)
 	register unsigned long reg0 asm("a7") = num;
 	register unsigned long reg1 asm("a0") = arg1;
@@ -194,11 +191,11 @@ static inline unsigned long igloo_hypercall2(unsigned long num, unsigned long ar
 
     asm volatile(
         "xori x0, x0, 0"
-        : "+r"(reg0)
-        : "r"(reg1), "r" (reg2) 
+        : "+r"(reg1)  /* a0/reg1 is both input and output */
+        : "r"(reg0), "r"(reg2)
         : "memory"
     );
-    return reg1;
+    return reg1;  /* Return reg1 (a0) which contains the return value from the hypervisor */
 #else
 #error "No igloo_hypercall2 support for architecture"
 #endif
