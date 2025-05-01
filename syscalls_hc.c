@@ -184,7 +184,7 @@ static long syscall_ret_handler(const char *syscall_name, long orig_ret, int arg
     // Release spinlock (if used)
     spin_unlock_irqrestore(&syscall_hc_lock, flags);
 
-    return syscall_args_holder.retval;
+    return le64_to_cpu(syscall_args_holder.retval);
 }
 
 int syscalls_hc_init(void) {
