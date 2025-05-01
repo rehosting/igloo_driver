@@ -42,15 +42,12 @@ struct syscall {
     __le64 task;           /* Task pointer */
 } __packed __aligned(8);   /* Ensure 8-byte alignment */
 
-static struct kretprobe *syscall_kretprobes = NULL;
-static int num_syscall_probes = 0;
-
-
 // Replace mutex with spinlock which is safe for atomic contexts
 DEFINE_SPINLOCK(syscall_hc_lock); // Keep commented out unless hypercall needs external locking
 
 /* Function to print syscall information */
-static void print_syscall_info(const struct syscall *sc, const char *prefix) {
+void print_syscall_info(const struct syscall *sc, const char *prefix);
+void print_syscall_info(const struct syscall *sc, const char *prefix) {
     if (!sc) {
         DBG_PRINTK( "IGLOO: %s NULL syscall structure\n", prefix ? prefix : "");
         return;
@@ -202,7 +199,7 @@ int syscalls_hc_init(void) {
     igloo_syscall_return_hook = syscall_ret_handler;
 
     // Count the number of syscalls
-    num_syscall_probes = end - p;
+    int num_syscall_probes = end - p;
     if (num_syscall_probes <= 0) {
         printk(KERN_WARNING "IGLOO: No syscall metadata found.\n");
         return -EINVAL;
@@ -248,7 +245,6 @@ int syscalls_hc_init(void) {
         if (x <= 0 || x >= PAGE_SIZE) {
              DBG_PRINTK( "IGLOO: Failed to format JSON for syscall %s (nr %d) - buffer overflow or snprintf error.\n", meta->name, meta->syscall_nr);
              // Decide how to handle: skip this probe or abort? Skipping for now.
-             failed_probes++;
              continue;
         }
         // Send metadata via hypercall (call returns value, but it's ignored here)
