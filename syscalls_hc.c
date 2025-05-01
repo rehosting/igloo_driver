@@ -5,6 +5,8 @@
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
+#include <linux/ftrace.h>
+#include <asm/ftrace.h>
 #include "hypercall.h" // Content is now included directly below
 #include "igloo.h"
 #include <linux/binfmts.h>
@@ -186,6 +188,43 @@ static long syscall_ret_handler(const char *syscall_name, long orig_ret, int arg
 
     return le64_to_cpu(syscall_args_holder.retval);
 }
+#ifndef ARCH_HAS_SYSCALL_MATCH_SYM_NAME
+static inline bool arch_syscall_match_sym_name(const char *sym, const char *name)
+{
+	/*
+	 * Only compare after the "sys" prefix. Archs that use
+	 * syscall wrappers may have syscalls symbols aliases prefixed
+	 * with ".SyS" or ".sys" instead of "sys", leading to an unwanted
+	 * mismatch.
+	 */
+	return !strcmp(sym + 3, name + 3);
+}
+#endif
+
+// copied from trace_syscalls.c
+static struct syscall_metadata *
+find_syscall_meta_copy(unsigned long syscall);
+static struct syscall_metadata *
+find_syscall_meta_copy(unsigned long syscall)
+{
+	struct syscall_metadata **start;
+	struct syscall_metadata **stop;
+	char str[KSYM_SYMBOL_LEN];
+
+
+	start = __start_syscalls_metadata;
+	stop = __stop_syscalls_metadata;
+	kallsyms_lookup(syscall, NULL, NULL, NULL, str);
+
+	if (arch_syscall_match_sym_name(str, "sys_ni_syscall"))
+		return NULL;
+
+	for ( ; start < stop; start++) {
+		if ((*start)->name && arch_syscall_match_sym_name(str, (*start)->name))
+			return *start;
+	}
+	return NULL;
+}
 
 int syscalls_hc_init(void) {
     if (!igloo_do_hc) {
@@ -213,17 +252,15 @@ int syscalls_hc_init(void) {
     DBG_PRINTK("Allocated JSON buffer at 0x%px\n", buffer);
 
     int i = 0;
-    for (; p < end; p++, i++) {
-        struct syscall_metadata *meta = *p;
-        if (!meta || !meta->name) {
-             printk(KERN_WARNING "IGLOO: Found NULL metadata entry at index %d\n", i);
-             continue; // Skip invalid metadata
-        }
+    for (i = 0; i < NR_syscalls; i++) {
+        struct syscall_metadata *meta;
+        unsigned long addr;
+		addr = arch_syscall_addr(i);
+		meta = find_syscall_meta_copy(addr);
+		if (!meta || !meta->name)
+			continue;
 
-        if (meta->syscall_nr == -1){
-            DBG_PRINTK("Skipping metadata entry for '%s' with syscall_nr -1\n", meta->name);
-            continue; // Skip syscalls explicitly marked as -1
-        }
+		meta->syscall_nr = i;
 
         // Prepare JSON metadata for hypercall (ensure buffer is large enough)
         int x = snprintf(buffer, PAGE_SIZE,
