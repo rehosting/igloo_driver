@@ -5,7 +5,6 @@
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
-#include <linux/hashtable.h> /* Add missing include for hashtable support */
 #include "hypercall.h" // Content is now included directly below
 #include "igloo.h"
 #include <linux/binfmts.h>
@@ -29,10 +28,6 @@ igloo_syscall_return_t igloo_syscall_return_hook;
 
 extern struct syscall_metadata *__start_syscalls_metadata[];
 extern struct syscall_metadata *__stop_syscalls_metadata[];
-
-/* Hash table to store address to syscall number mapping */
-DEFINE_HASHTABLE(syscall_addr_map, 12); /* 2^12 buckets */
-DEFINE_SPINLOCK(syscall_map_lock);
 
 // add 1 if the struct syscall changes
 #define SYSCALL_HC_KNOWN_MAGIC 0x1234
@@ -213,30 +208,14 @@ int syscalls_hc_init(void) {
         return -EINVAL;
     }
 
-    printk(KERN_INFO "IGLOO: Found %d potential syscalls to probe.\n", num_syscall_probes);
-
-    // Allocate memory for kretprobes
-    syscall_kretprobes = kzalloc(sizeof(struct kretprobe) * num_syscall_probes, GFP_KERNEL);
-    if (!syscall_kretprobes) {
-        DBG_PRINTK( "IGLOO: Failed to allocate memory for kretprobes (%d needed)\n", num_syscall_probes);
-        return -ENOMEM;
-    }
-    DBG_PRINTK("Allocated kretprobe array at 0x%px\n", syscall_kretprobes);
-
     void *buffer = kzalloc(PAGE_SIZE, GFP_KERNEL);
     if (!buffer) {
-        kfree(syscall_kretprobes);
         DBG_PRINTK( "IGLOO: Failed to allocate buffer for syscall metadata JSON\n");
         return -ENOMEM;
     }
     DBG_PRINTK("Allocated JSON buffer at 0x%px\n", buffer);
 
     int i = 0;
-    int successful_probes = 0;
-    int failed_probes = 0;
-
-    hash_init(syscall_addr_map); // Initialize the hash table
-
     for (; p < end; p++, i++) {
         struct syscall_metadata *meta = *p;
         if (!meta || !meta->name) {
@@ -272,8 +251,6 @@ int syscalls_hc_init(void) {
              failed_probes++;
              continue;
         }
-        // DBG_PRINTK( "IGLOO: JSON for syscall %s (nr %d): %s\n", meta->name, meta->syscall_nr, (char*)buffer);
-
         // Send metadata via hypercall (call returns value, but it's ignored here)
         igloo_hypercall(IGLOO_HYP_SETUP_SYSCALL, (unsigned long)buffer);
     }
@@ -281,16 +258,5 @@ int syscalls_hc_init(void) {
     // Call hypercall (returns value, but it's ignored here)
     igloo_hypercall(IGLOO_HYP_SETUP_SYSCALL, 0); // Signal end of setup
 
-    // Return success only if at least one probe was registered
-    // Allows the module to load even if some syscalls are unavailable
-    if (successful_probes == 0 && num_syscall_probes > 0) {
-         DBG_PRINTK( "IGLOO: No syscall probes were successfully registered.\n");
-         // Clean up already allocated kretprobes array if needed (though unregistering is complex here)
-         kfree(syscall_kretprobes);
-         syscall_kretprobes = NULL;
-         num_syscall_probes = 0;
-         return -ENOENT; // No probes active
-    }
-
-    return 0; // Success (at least one probe registered or no probes attempted)
+    return 0;
 }
