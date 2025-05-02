@@ -42,6 +42,7 @@ struct syscall {
     __le64 retval;         /* Return value (signed value stored in unsigned) */
     __le64 skip_syscall;   /* Flag to skip syscall execution */
     __le64 task;           /* Task pointer */
+    __le64 name_ptr;       /* Pointer to syscall name string */
 } __packed __aligned(8);   /* Ensure 8-byte alignment */
 
 // Replace mutex with spinlock which is safe for atomic contexts
@@ -70,12 +71,13 @@ void print_syscall_info(const struct syscall *sc, const char *prefix) {
     printk(KERN_INFO "IGLOO: ------------------------\n");
 }
 
-static void fill_handler(struct syscall *args, int argc, const unsigned long args_ptrs[]){
+static void fill_handler(struct syscall *args, int argc, const unsigned long args_ptrs[], const char * name_ptr){
     struct pt_regs *regs;
     
     // Fill the syscall structure with arguments
     args->known_magic = cpu_to_le64(SYSCALL_HC_KNOWN_MAGIC);
     args->skip_syscall = cpu_to_le64(0);
+    args->name_ptr = cpu_to_le64((unsigned long) name_ptr);
 
     // Copy arguments safely - directly use args_ptrs values without dereferencing
     for (int i = 0; i < MAX_ARGS; i++) {
@@ -121,7 +123,7 @@ static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, 
 
 	DBG_PRINTK("IGLOO: Entering syscall %s with %d args\n",
 	       syscall_name, argc);
-    fill_handler(&syscall_args_holder, argc, args);
+    fill_handler(&syscall_args_holder, argc, args, syscall_name);
     memcpy(&original_info, &syscall_args_holder, sizeof(struct syscall));
 
     // print_syscall_info(&syscall_args_holder, "ENTRY");
@@ -173,7 +175,7 @@ static long syscall_ret_handler(const char *syscall_name, long orig_ret, int arg
     unsigned long flags;
 
     DBG_PRINTK( "IGLOO: Exiting syscall %s with return value %ld\n", syscall_name, orig_ret);
-    fill_handler(&syscall_args_holder, argc, args);
+    fill_handler(&syscall_args_holder, argc, args, syscall_name);
     syscall_args_holder.retval = cpu_to_le64(orig_ret);
     memcpy(&original_info, &syscall_args_holder, sizeof(struct syscall));
 
@@ -226,6 +228,36 @@ find_syscall_meta_copy(unsigned long syscall)
 	return NULL;
 }
 
+static void report_syscall(char * buffer, struct syscall_metadata *meta){
+    if (!meta || !meta->name) {
+        return; // Skip invalid metadata
+    }
+    // Prepare JSON metadata for hypercall (ensure buffer is large enough)
+    int x = snprintf(buffer, PAGE_SIZE,
+                   "{\"syscall_nr\": %d, \"name\": \"%s\", \"args\":[",
+                   meta->syscall_nr, meta->name);
+
+    for (int j = 0; j < meta->nb_args && x > 0 && x < PAGE_SIZE; j++) {
+        // Append args safely, checking remaining buffer space
+        x += snprintf((char*)buffer + x, PAGE_SIZE - x, "[\"%s\", \"%s\"]%s",
+                      meta->types[j] ? meta->types[j] : "?", // Handle potential NULL type/arg names
+                      meta->args[j] ? meta->args[j] : "?",
+                      j + 1 < meta->nb_args ? ", " : "");
+    }
+
+    if (x > 0 && x < PAGE_SIZE) {
+         x += snprintf((char*)buffer + x, PAGE_SIZE - x, "]}");
+    }
+
+    if (x <= 0 || x >= PAGE_SIZE) {
+         DBG_PRINTK( "IGLOO: Failed to format JSON for syscall %s (nr %d) - buffer overflow or snprintf error.\n", meta->name, meta->syscall_nr);
+         // Decide how to handle: skip this probe or abort? Skipping for now.
+         return;
+    }
+    // Send metadata via hypercall (call returns value, but it's ignored here)
+    igloo_hypercall(IGLOO_HYP_SETUP_SYSCALL, (unsigned long)buffer);
+}
+
 int syscalls_hc_init(void) {
     if (!igloo_do_hc) {
         printk(KERN_INFO "IGLOO: Hypercalls disabled, syscalls tracing not activated\n");
@@ -252,40 +284,24 @@ int syscalls_hc_init(void) {
     DBG_PRINTK("Allocated JSON buffer at 0x%px\n", buffer);
 
     int i = 0;
-    for (i = 0; i < NR_syscalls; i++) {
+    for (i = 0; i < NR_syscalls+1000; i++) {
         struct syscall_metadata *meta;
         unsigned long addr;
 		addr = arch_syscall_addr(i);
 		meta = find_syscall_meta_copy(addr);
-		if (!meta || !meta->name)
+		if (!meta)
 			continue;
-
 		meta->syscall_nr = i;
+        report_syscall(buffer, meta);
+    }
 
-        // Prepare JSON metadata for hypercall (ensure buffer is large enough)
-        int x = snprintf(buffer, PAGE_SIZE,
-                       "{\"syscall_nr\": %d, \"name\": \"%s\", \"args\":[",
-                       meta->syscall_nr, meta->name);
-
-        for (int j = 0; j < meta->nb_args && x > 0 && x < PAGE_SIZE; j++) {
-            // Append args safely, checking remaining buffer space
-            x += snprintf((char*)buffer + x, PAGE_SIZE - x, "[\"%s\", \"%s\"]%s",
-                          meta->types[j] ? meta->types[j] : "?", // Handle potential NULL type/arg names
-                          meta->args[j] ? meta->args[j] : "?",
-                          j + 1 < meta->nb_args ? ", " : "");
+    for (; p < end; p++, i++) {
+        struct syscall_metadata *meta = *p;
+        if (!meta) {
+             printk(KERN_WARNING "IGLOO: Found NULL metadata entry at index %d\n", i);
+             continue; // Skip invalid metadata
         }
-
-        if (x > 0 && x < PAGE_SIZE) {
-             x += snprintf((char*)buffer + x, PAGE_SIZE - x, "]}");
-        }
-
-        if (x <= 0 || x >= PAGE_SIZE) {
-             DBG_PRINTK( "IGLOO: Failed to format JSON for syscall %s (nr %d) - buffer overflow or snprintf error.\n", meta->name, meta->syscall_nr);
-             // Decide how to handle: skip this probe or abort? Skipping for now.
-             continue;
-        }
-        // Send metadata via hypercall (call returns value, but it's ignored here)
-        igloo_hypercall(IGLOO_HYP_SETUP_SYSCALL, (unsigned long)buffer);
+        report_syscall(buffer, meta);
     }
     kfree(buffer);
     // Call hypercall (returns value, but it's ignored here)
