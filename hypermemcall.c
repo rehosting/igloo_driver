@@ -85,12 +85,8 @@ static void handle_op_read(struct mem_region *mem_region)
         (void*)mem_region->data,
         (const void __user *)(uintptr_t)le64_to_cpu(mem_region->addr),
         le64_to_cpu(mem_region->size));
-    if (resp < 0) {
-        igloo_pr_debug(
-            "igloo: copy_from_user failed for addr %llx, size %llu, resp %d\n",
-            (unsigned long long)le64_to_cpu(mem_region->addr),
-            (unsigned long long)le64_to_cpu(mem_region->size), resp);
-        mem_region->op = cpu_to_le64(HYPER_RESP_READ_FAIL);
+    if (resp == 0 || resp == mem_region->size){
+        mem_region->op = cpu_to_le64(HYPER_RESP_READ_OK);
     } else if (resp > 0) {
         igloo_pr_debug(
             "igloo: copy_from_user partially failed for addr %llx, size %llu, resp %d\n",
@@ -99,7 +95,11 @@ static void handle_op_read(struct mem_region *mem_region)
         mem_region->op = cpu_to_le64(HYPER_RESP_READ_PARTIAL);
         mem_region->size = cpu_to_le64(resp);
     } else {
-        mem_region->op = cpu_to_le64(HYPER_RESP_READ_OK);
+        igloo_pr_debug(
+            "igloo: copy_from_user failed for addr %llx, size %llu, resp %d\n",
+            (unsigned long long)le64_to_cpu(mem_region->addr),
+            (unsigned long long)le64_to_cpu(mem_region->size), resp);
+        mem_region->op = cpu_to_le64(HYPER_RESP_READ_FAIL);
     }
 }
 
