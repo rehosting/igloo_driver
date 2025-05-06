@@ -17,6 +17,7 @@
 #include "syscalls_hc.h"
 #include "args.h"
 #include "kprobe_syscalls.h"
+#include "hypermemcall.h"
 
 igloo_syscall_enter_t igloo_syscall_enter_hook;
 igloo_syscall_return_t igloo_syscall_return_hook;
@@ -105,7 +106,7 @@ static void fill_handler(struct syscall *args, int argc, const unsigned long arg
 }
 
 static void do_hyp(bool is_enter, struct syscall* args){
-    igloo_hypercall2(is_enter ? IGLOO_HYP_SYSCALL_ENTER : IGLOO_HYP_SYSCALL_RETURN,
+    igloo_hypermem_call(is_enter ? IGLOO_HYP_SYSCALL_ENTER : IGLOO_HYP_SYSCALL_RETURN,
                 (unsigned long)args, 0);
 }
 
