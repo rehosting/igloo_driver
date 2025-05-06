@@ -305,6 +305,8 @@ int syscalls_hc_init(void) {
         report_syscall(buffer, meta);
     }
     kfree(buffer);
+
+    igloo_hypercall(IGLOO_HYP_SETUP_TASK_COMM, offsetof(struct task_struct, comm));
     // Call hypercall (returns value, but it's ignored here)
     igloo_hypercall(IGLOO_HYP_SETUP_SYSCALL, 0); // Signal end of setup
 
