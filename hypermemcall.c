@@ -14,6 +14,7 @@
 #include <linux/binfmts.h>
 #include <linux/ptrace.h>
 #include <linux/syscalls.h>
+#include <linux/sched/signal.h>
 #include <trace/syscall.h>
 #include <asm/syscall.h>
 #include "syscalls_hc.h"
@@ -22,12 +23,11 @@
 #include <linux/printk.h> // Add printk include
 
 // Add conditional debug macro
-#define CONFIG_IGLOO_DEBUG 1
-// #ifdef CONFIG_IGLOO_DEBUG
+#ifdef CONFIG_IGLOO_DEBUG
 #define igloo_pr_debug(fmt, ...) if (do_debug) printk( KERN_EMERG fmt, ##__VA_ARGS__)
-// #else
-// #define igloo_pr_debug(fmt, ...) do {} while (0)
-// #endif
+#else
+#define igloo_pr_debug(fmt, ...) do {} while (0)
+#endif
 
 #define CHUNK_SIZE 4072 // 4KB - 8 bytes for op, addr, size
 
@@ -48,6 +48,7 @@ enum HYPER_OP {
     HYPER_OP_READ_PROCENV,
     HYPER_OP_READ_PROCPID, 
     HYPER_RESP_READ_NUM,
+    HYPER_OP_DUMP,
 };
 
 struct mem_region {
@@ -73,6 +74,8 @@ static void handle_op_read_str(struct mem_region *mem_region);
 static void handle_op_read_file(struct mem_region *mem_region);
 static void handle_op_read_procenv(struct mem_region *mem_region); // Add forward declaration
 static void handle_op_read_procpid(struct mem_region *mem_region); // Add forward declaration for procpid
+static void handle_op_dump(struct mem_region *mem_region);
+static long do_snapshot_and_coredump(void);
 
 static void handle_op_read(struct mem_region *mem_region)
 {
@@ -496,6 +499,81 @@ static void handle_op_read_procpid(struct mem_region *mem_region)
     igloo_pr_debug("igloo: Read process ID: %d\n", pid);
 }
 
+static long do_snapshot_and_coredump(void)
+{
+    pid_t child_kpid_from_clone;
+    struct pid *actual_child_pid_struct = NULL;
+    long syscall_ret_val;
+
+    struct kernel_clone_args args = {
+        .exit_signal = SIGCHLD, // Keep for stability testing
+    };
+
+    printk(KERN_DEBUG "snapshot_module: (MinimalParent) Calling kernel_clone with exit_signal=%lu\n", (unsigned long)args.exit_signal);
+    child_kpid_from_clone = kernel_clone(&args); // Assuming returns pid_t
+    printk(KERN_DEBUG "snapshot_module: (MinimalParent) kernel_clone returned kernel PID %d\n", child_kpid_from_clone);
+
+    if (child_kpid_from_clone < 0) {
+        syscall_ret_val = child_kpid_from_clone;
+        printk(KERN_WARNING "snapshot_module: (MinimalParent) kernel_clone returned error %ld\n", syscall_ret_val);
+        return syscall_ret_val;
+    }
+    if (child_kpid_from_clone == 0) {
+        printk(KERN_WARNING "snapshot_module: (MinimalParent) kernel_clone returned PID 0, unexpected.\n");
+        return -EFAULT;
+    }
+
+    actual_child_pid_struct = find_get_pid(child_kpid_from_clone);
+    printk(KERN_DEBUG "snapshot_module: (MinimalParent) find_get_pid(%d) returned struct pid pointer: %p\n", child_kpid_from_clone, actual_child_pid_struct);
+    if (!actual_child_pid_struct) {
+        printk(KERN_WARNING "snapshot_module: (MinimalParent) find_get_pid failed for kernel PID %d\n", child_kpid_from_clone);
+        return -ESRCH;
+    }
+
+    // DO NOT get or put task_struct from parent in this version
+    // struct task_struct *child_task = pid_task(actual_child_pid_struct, PIDTYPE_PID);
+    // if (!child_task) { ... put_pid(actual_child_pid_struct); return -ESRCH; }
+    // pid_t child_vnr_for_display = task_pid_vnr(child_task);
+
+    {
+        struct kernel_siginfo info;
+        memset(&info, 0, sizeof(struct kernel_siginfo));
+        info.si_signo = SIGABRT;
+        info.si_code = SI_KERNEL;
+
+        printk(KERN_DEBUG "snapshot_module: (MinimalParent) Sending SIGABRT to child (kernel PID %d, struct pid %p)\n",
+               child_kpid_from_clone, actual_child_pid_struct);
+        if (kill_pid_info(SIGABRT, &info, actual_child_pid_struct) < 0) {
+            printk(KERN_WARNING "snapshot_module: (MinimalParent) kill_pid_info failed for child kernel PID %d\n", child_kpid_from_clone);
+        } else {
+            printk(KERN_DEBUG "snapshot_module: (MinimalParent) kill_pid_info for SIGABRT sent successfully to child kernel PID %d\n", child_kpid_from_clone);
+        }
+    }
+
+    // Use child_kpid_from_clone for the KERN_INFO log as we don't have vnr without task_struct
+    printk(KERN_INFO "snapshot_module: (MinimalParent) Parent PID %d forked. Child kernel PID %d sent SIGABRT.\n",
+           task_pid_vnr(current), child_kpid_from_clone);
+
+    syscall_ret_val = child_kpid_from_clone;
+
+    // Only put the pid_struct reference
+    printk(KERN_DEBUG "snapshot_module: (MinimalParent) About to call put_pid(%p) for child pid struct.\n", actual_child_pid_struct);
+    put_pid(actual_child_pid_struct);
+    // NO put_task_struct(child_task);
+
+    printk(KERN_DEBUG "snapshot_module: (MinimalParent) Exiting, returning %ld.\n", syscall_ret_val);
+    return syscall_ret_val;
+}
+
+
+static void handle_op_dump(struct mem_region *mem_region)
+{
+    igloo_pr_debug("igloo: Handling HYPER_OP_DUMP\n");
+    snprintf(mem_region->data, CHUNK_SIZE, "UNKNOWN_PID");
+    mem_region->size = cpu_to_le64(do_snapshot_and_coredump());
+    mem_region->op = cpu_to_le64(HYPER_RESP_READ_NUM);
+}
+
 // Operation handler table
 static const hypermem_op_handler op_handlers[] = {
     [HYPER_OP_NONE]             = NULL,
@@ -513,6 +591,7 @@ static const hypermem_op_handler op_handlers[] = {
     [HYPER_OP_READ_FILE]        = handle_op_read_file,
     [HYPER_OP_READ_PROCENV]     = handle_op_read_procenv, // Add handler to table
     [HYPER_OP_READ_PROCPID]     = handle_op_read_procpid, // Add handler for procpid
+    [HYPER_OP_DUMP]             = handle_op_dump, // Add handler for snapshot   
 };
 
 int igloo_hypermem_call(unsigned long num, unsigned long arg1, unsigned long arg2){
