@@ -54,8 +54,7 @@ enum HYPER_OP {
     HYPER_RESP_MAX,
 };
 
-// #define CHUNK_SIZE 4096- (sizeof(__le64)*3) // 4KB - 24
-#define CHUNK_SIZE 1000
+#define CHUNK_SIZE 4096- (sizeof(__le64)*3) - 1 
 struct mem_region {
     __le64 op;          // operation type
     __le64 addr;        // address
