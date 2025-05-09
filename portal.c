@@ -87,7 +87,7 @@ static bool do_debug = false;
 static DEFINE_PER_CPU(int, hypercall_num);
 
 // Define handler function type
-typedef void (*hypermem_op_handler)(struct mem_region *mem_region);
+typedef void (*portal_op_handler)(struct mem_region *mem_region);
 
 // Forward declarations for all operation handlers
 static void handle_op_read(struct mem_region *mem_region);
@@ -103,7 +103,7 @@ static void handle_op_dump(struct mem_region *mem_region);
 static long do_snapshot_and_coredump(void);
 
 // Operation handler table
-static const hypermem_op_handler op_handlers[] = {
+static const portal_op_handler op_handlers[] = {
     [HYPER_OP_READ]             = handle_op_read,
     [HYPER_OP_WRITE]            = handle_op_write,
     [HYPER_OP_READ_FD_NAME]     = handle_op_read_fd_name,
@@ -163,7 +163,7 @@ static void initialize_cpu_regions(struct cpu_mem_regions *regions)
 // bool -> was any work done?
 static bool handle_post_memregion(struct mem_region *mem_region){
     int op;
-    hypermem_op_handler handler;
+    portal_op_handler handler;
     // Get the operation code
     op = le64_to_cpu(mem_region->op);
     if (op == HYPER_OP_NONE) {
@@ -222,44 +222,47 @@ static bool handle_post_memregions(struct cpu_mem_regions *regions){
     return any_responses;
 }
 
-int igloo_hypermem_call(unsigned long num, unsigned long arg1, unsigned long arg2){
-    unsigned long ret;
-    struct cpu_mem_regions *regions = this_cpu_ptr(&cpu_regions);
-    int i;
-    
-    int call_num = this_cpu_inc_return(hypercall_num);
-    igloo_pr_debug( "igloo: hypermem_call: call_num=%d\n", call_num);
+int igloo_portal(unsigned long num, unsigned long arg1, unsigned long arg2)
+{
+	unsigned long ret;
+	struct cpu_mem_regions *regions = this_cpu_ptr(&cpu_regions);
+	int i;
 
-    // Initialize regions if this is the first call on this CPU
-    if (le64_to_cpu(regions->count) == 0) {
-        initialize_cpu_regions(regions);
-    }
+	int call_num = this_cpu_inc_return(hypercall_num);
+	igloo_pr_debug("igloo: portal call: call_num=%d\n", call_num);
 
-    regions->call_num = cpu_to_le64(call_num);
+	// Initialize regions if this is the first call on this CPU
+	if (le64_to_cpu(regions->count) == 0) {
+		initialize_cpu_regions(regions);
+	}
 
-    // reset all memory regions to default values
-    for (i = 0; i < le64_to_cpu(regions->count); i++) {
-        struct mem_region *mem_region = (struct mem_region*)(unsigned long)le64_to_cpu(regions->regions[i].mem_region);
-        mem_region->op = 0;
-        mem_region->addr = 0;
-        mem_region->size = 0;
-    	regions->regions[i].owner_id = 0;
-    }
-    int j = 0;
-    for (;;) {
-	    // Make the hypercall to get the next operation from the hypervisor
-	    ret = igloo_hypercall2(num, arg1, arg2);
-	    j++;
-        igloo_pr_debug( "igloo: hypermem_call loop %d\n", j);
-        // if no responses -> break
-	    if (!handle_post_memregions(regions)) {
-		    break;
-	    }
-    }
+	regions->call_num = cpu_to_le64(call_num);
 
-    igloo_pr_debug("igloo: hypermem_call exit: ret=%lu\n", ret);
-    do_debug = false;
-    return ret;
+	// reset all memory regions to default values
+	for (i = 0; i < le64_to_cpu(regions->count); i++) {
+		struct mem_region *mem_region =
+			(struct mem_region *)(unsigned long)le64_to_cpu(
+				regions->regions[i].mem_region);
+		mem_region->op = 0;
+		mem_region->addr = 0;
+		mem_region->size = 0;
+		regions->regions[i].owner_id = 0;
+	}
+	int j = 0;
+	for (;;) {
+		// Make the hypercall to get the next operation from the hypervisor
+		ret = igloo_hypercall2(num, arg1, arg2);
+		j++;
+		igloo_pr_debug("igloo: portal call loop %d\n", j);
+		// if no responses -> break
+		if (!handle_post_memregions(regions)) {
+			break;
+		}
+	}
+
+	igloo_pr_debug("igloo: portal call exit: ret=%lu\n", ret);
+	do_debug = false;
+	return ret;
 }
 
 static void handle_op_read(struct mem_region *mem_region)
