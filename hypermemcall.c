@@ -29,17 +29,11 @@
 #define igloo_pr_debug(fmt, ...) do {} while (0)
 #endif
 
-#define CHUNK_SIZE 4072 // 4KB - 8 bytes for op, addr, size
 
 enum HYPER_OP {
     HYPER_OP_NONE = 0,
     HYPER_OP_READ,
-    HYPER_RESP_READ_OK,
-    HYPER_RESP_READ_FAIL,
-    HYPER_RESP_READ_PARTIAL,
     HYPER_OP_WRITE,
-    HYPER_RESP_WRITE_OK,
-    HYPER_RESP_WRITE_FAIL,
     HYPER_OP_READ_FD_NAME,
     HYPER_OP_READ_PROCARGS,
     HYPER_OP_READ_SOCKET_INFO,
@@ -47,19 +41,50 @@ enum HYPER_OP {
     HYPER_OP_READ_FILE,
     HYPER_OP_READ_PROCENV,
     HYPER_OP_READ_PROCPID, 
-    HYPER_RESP_READ_NUM,
     HYPER_OP_DUMP,
+    HYPER_OP_MAX,
+    
+    HYPER_RESP_NONE = 0xf0000000,
+    HYPER_RESP_READ_OK,
+    HYPER_RESP_READ_FAIL,
+    HYPER_RESP_READ_PARTIAL,
+    HYPER_RESP_WRITE_OK,
+    HYPER_RESP_WRITE_FAIL,
+    HYPER_RESP_READ_NUM,
+    HYPER_RESP_MAX,
 };
 
+// #define CHUNK_SIZE 4096- (sizeof(__le64)*3) // 4KB - 24
+#define CHUNK_SIZE 1000
 struct mem_region {
-    __le64 op;
-    __le64 addr;
-    __le64 size;
+    __le64 op;          // operation type
+    __le64 addr;        // address
+    __le64 size;        // size
     char data[CHUNK_SIZE];
 };
 
-static DEFINE_PER_CPU(struct mem_region*, mem_regions);
+// Maximum number of memory regions per CPU
+#define MAX_MEM_REGIONS_PER_CPU 16
+#define DEFAULT_MEM_REGIONS 8  // Number of memory regions to allocate by default
+
+// Per-CPU array of memory regions
+
+struct cpu_mem_region {
+	__le64 owner_id;
+    __le64 mem_region; // struct mem_region*
+};
+
+struct cpu_mem_regions {
+	__le64 count; // Number of currently allocated regions
+	__le64 request_memregion; // Request for N new mem regions
+    __le64 call_num;    // global atomic hypercall number
+	struct cpu_mem_region
+		regions[MAX_MEM_REGIONS_PER_CPU]; //struct mem_region*
+};
+
+static DEFINE_PER_CPU(struct cpu_mem_regions, cpu_regions);
 static bool do_debug = false;
+static DEFINE_PER_CPU(int, hypercall_num);
 
 // Define handler function type
 typedef void (*hypermem_op_handler)(struct mem_region *mem_region);
@@ -76,6 +101,166 @@ static void handle_op_read_procenv(struct mem_region *mem_region); // Add forwar
 static void handle_op_read_procpid(struct mem_region *mem_region); // Add forward declaration for procpid
 static void handle_op_dump(struct mem_region *mem_region);
 static long do_snapshot_and_coredump(void);
+
+// Operation handler table
+static const hypermem_op_handler op_handlers[] = {
+    [HYPER_OP_READ]             = handle_op_read,
+    [HYPER_OP_WRITE]            = handle_op_write,
+    [HYPER_OP_READ_FD_NAME]     = handle_op_read_fd_name,
+    [HYPER_OP_READ_PROCARGS]    = handle_op_read_procargs,
+    [HYPER_OP_READ_SOCKET_INFO] = handle_op_read_socket_info,
+    [HYPER_OP_READ_STR]         = handle_op_read_str,
+    [HYPER_OP_READ_FILE]        = handle_op_read_file,
+    [HYPER_OP_READ_PROCENV]     = handle_op_read_procenv, // Add handler to table
+    [HYPER_OP_READ_PROCPID]     = handle_op_read_procpid, // Add handler for procpid
+    [HYPER_OP_DUMP]             = handle_op_dump, // Add handler for snapshot   
+};
+
+// Helper function to initialize memory regions for current CPU
+static bool allocate_new_mem_region(struct cpu_mem_regions *regions)
+{
+    struct mem_region *mem_region = NULL;
+    int current_count;
+
+    // Allocate a page-aligned memory region
+    mem_region = (struct mem_region *)__get_free_page(GFP_ATOMIC | __GFP_ZERO);
+    if (mem_region == NULL) {
+        pr_err("igloo: Failed to allocate page-aligned mem_region\n");
+	    return false;
+    }
+    current_count = le64_to_cpu(regions->count);
+
+    // Add to our array and increment count
+    regions->regions[current_count].mem_region = cpu_to_le64((unsigned long)mem_region);
+    regions->regions[current_count].owner_id = 0;
+    regions->count = cpu_to_le64(current_count + 1);
+
+    // Register with hypervisor
+    igloo_pr_debug("igloo: Registered new mem_region %p for CPU %d (page-aligned, idx: %d)\n", 
+                  mem_region, smp_processor_id(), le64_to_cpu(regions->count) - 1);
+    return true;
+}
+
+// Helper function to initialize memory regions for current CPU
+static void initialize_cpu_regions(struct cpu_mem_regions *regions)
+{
+    int i;
+    
+    // Allocate the default number of memory regions
+    for (i = 0; i < DEFAULT_MEM_REGIONS; i++) {
+        if (!allocate_new_mem_region(regions)) {
+            pr_err("igloo: Failed to allocate memory region %d during initialization\n", i);
+            return;
+        }
+    }
+    igloo_hypercall(IGLOO_HYPER_REGISTER_MEM_REGION, (unsigned long)regions);
+    
+    pr_info("igloo: Initialized %d memory regions for CPU %d\n", 
+           DEFAULT_MEM_REGIONS, smp_processor_id());
+}
+
+
+// bool -> was any work done?
+static bool handle_post_memregion(struct mem_region *mem_region){
+    int op;
+    hypermem_op_handler handler;
+    // Get the operation code
+    op = le64_to_cpu(mem_region->op);
+    if (op == HYPER_OP_NONE) {
+	    return false;
+    }
+
+    if (op <= HYPER_OP_NONE || op >= HYPER_OP_MAX) {
+        igloo_pr_debug("igloo: Invalid operation code: %d", op);
+        mem_region->op = cpu_to_le64(HYPER_RESP_WRITE_FAIL);
+        return false;
+    }
+
+    // Check if operation is within valid range
+    if (op < 0 || op >= ARRAY_SIZE(op_handlers)) {
+        igloo_pr_debug( "igloo: No handler for %d", op);
+        mem_region->op = cpu_to_le64(HYPER_RESP_WRITE_FAIL);
+        return false;
+    }
+    
+
+    // Get the handler for this operation
+    handler = op_handlers[op];
+
+    // Execute the handler if it exists
+    if (handler) {
+        handler(mem_region);
+    } else {
+        igloo_pr_debug( "igloo: No handler for operation: %d\n", op);
+        mem_region->op = cpu_to_le64(HYPER_RESP_WRITE_FAIL);
+    }
+    return true;
+}
+
+/*
+* bool -> should we stop the hypercall loop?
+*/
+static bool handle_post_memregions(struct cpu_mem_regions *regions){
+	int count = le64_to_cpu(regions->count);
+	int i = 0;
+	bool any_responses = false;
+	for (i = 0; i < count; i++) {
+		struct mem_region *mem_region =
+			(struct mem_region *)(unsigned long)le64_to_cpu(
+				regions->regions[i].mem_region);
+		if (!mem_region) {
+			igloo_pr_debug(
+			       "igloo: No mem_region found for CPU %d\n",
+			       smp_processor_id());
+			continue;
+		}
+		bool responded = handle_post_memregion(mem_region);
+        if (responded){
+            any_responses = true;
+        }
+	}
+    return any_responses;
+}
+
+int igloo_hypermem_call(unsigned long num, unsigned long arg1, unsigned long arg2){
+    unsigned long ret;
+    struct cpu_mem_regions *regions = this_cpu_ptr(&cpu_regions);
+    int i;
+    
+    int call_num = this_cpu_inc_return(hypercall_num);
+    igloo_pr_debug( "igloo: hypermem_call: call_num=%d\n", call_num);
+
+    // Initialize regions if this is the first call on this CPU
+    if (le64_to_cpu(regions->count) == 0) {
+        initialize_cpu_regions(regions);
+    }
+
+    regions->call_num = cpu_to_le64(call_num);
+
+    // reset all memory regions to default values
+    for (i = 0; i < le64_to_cpu(regions->count); i++) {
+        struct mem_region *mem_region = (struct mem_region*)(unsigned long)le64_to_cpu(regions->regions[i].mem_region);
+        mem_region->op = 0;
+        mem_region->addr = 0;
+        mem_region->size = 0;
+    	regions->regions[i].owner_id = 0;
+    }
+    int j = 0;
+    for (;;) {
+	    // Make the hypercall to get the next operation from the hypervisor
+	    ret = igloo_hypercall2(num, arg1, arg2);
+	    j++;
+        igloo_pr_debug( "igloo: hypermem_call loop %d\n", j);
+        // if no responses -> break
+	    if (!handle_post_memregions(regions)) {
+		    break;
+	    }
+    }
+
+    igloo_pr_debug("igloo: hypermem_call exit: ret=%lu\n", ret);
+    do_debug = false;
+    return ret;
+}
 
 static void handle_op_read(struct mem_region *mem_region)
 {
@@ -117,7 +302,7 @@ static void handle_op_write(struct mem_region *mem_region)
         (void __user *)(uintptr_t)le64_to_cpu(mem_region->addr),
         mem_region->data,
         le64_to_cpu(mem_region->size));
-    if (resp != 0) {
+    if (resp < 0) {
         igloo_pr_debug(
             "igloo: copy_to_user failed for addr %llu, size %llu resp %d\n",
             (unsigned long long)le64_to_cpu(mem_region->addr),
@@ -424,23 +609,23 @@ static void handle_op_read_str(struct mem_region *mem_region)
     unsigned long max_size = le64_to_cpu(mem_region->size);
     ssize_t copied = 0;
 
+    if (max_size == 0 || max_size > CHUNK_SIZE - 1){
+        max_size = CHUNK_SIZE - 1;
+    }
     igloo_pr_debug("igloo: Handling HYPER_OP_READ_STR: addr=%#lx, max_size=%lu\n",
                    user_addr, max_size);
 
-    if (max_size == 0 || max_size > CHUNK_SIZE - 1)
-        max_size = CHUNK_SIZE - 1;
-
     copied = strncpy_from_user(mem_region->data, (const char __user *)user_addr, max_size);
     if (copied < 0) {
-        igloo_pr_debug("igloo: strncpy_from_user failed for addr %#lx, max_size %lu, ret %zd\n",
+        igloo_pr_debug( "igloo: strncpy_from_user failed for addr %#lx, max_size %lu, ret %zd\n",
                        user_addr, max_size, copied);
         mem_region->op = cpu_to_le64(HYPER_RESP_READ_FAIL);
         mem_region->size = 0;
     } else {
-        mem_region->data[copied] = '\0';
         mem_region->size = cpu_to_le64(copied);
         mem_region->op = cpu_to_le64(HYPER_RESP_READ_OK);
-        igloo_pr_debug("igloo: Read string '%s' (len=%zd)\n", mem_region->data, copied);
+        igloo_pr_debug("igloo: Read string '%s' (len=%zd) written to %llx\n", mem_region->data, copied, (long long unsigned int) mem_region);
+        mem_region->data[copied+1] = '\0';
     }
 }
 
@@ -530,11 +715,6 @@ static long do_snapshot_and_coredump(void)
         return -ESRCH;
     }
 
-    // DO NOT get or put task_struct from parent in this version
-    // struct task_struct *child_task = pid_task(actual_child_pid_struct, PIDTYPE_PID);
-    // if (!child_task) { ... put_pid(actual_child_pid_struct); return -ESRCH; }
-    // pid_t child_vnr_for_display = task_pid_vnr(child_task);
-
     {
         struct kernel_siginfo info;
         memset(&info, 0, sizeof(struct kernel_siginfo));
@@ -572,101 +752,4 @@ static void handle_op_dump(struct mem_region *mem_region)
     snprintf(mem_region->data, CHUNK_SIZE, "UNKNOWN_PID");
     mem_region->size = cpu_to_le64(do_snapshot_and_coredump());
     mem_region->op = cpu_to_le64(HYPER_RESP_READ_NUM);
-}
-
-// Operation handler table
-static const hypermem_op_handler op_handlers[] = {
-    [HYPER_OP_NONE]             = NULL,
-    [HYPER_OP_READ]             = handle_op_read,
-    [HYPER_RESP_READ_OK]        = NULL,
-    [HYPER_RESP_WRITE_FAIL]     = NULL,
-    [HYPER_RESP_READ_PARTIAL]   = NULL,
-    [HYPER_OP_WRITE]            = handle_op_write,
-    [HYPER_RESP_WRITE_OK]       = NULL,
-    [HYPER_RESP_WRITE_FAIL]     = NULL,
-    [HYPER_OP_READ_FD_NAME]     = handle_op_read_fd_name,
-    [HYPER_OP_READ_PROCARGS]    = handle_op_read_procargs,
-    [HYPER_OP_READ_SOCKET_INFO] = handle_op_read_socket_info,
-    [HYPER_OP_READ_STR]         = handle_op_read_str,
-    [HYPER_OP_READ_FILE]        = handle_op_read_file,
-    [HYPER_OP_READ_PROCENV]     = handle_op_read_procenv, // Add handler to table
-    [HYPER_OP_READ_PROCPID]     = handle_op_read_procpid, // Add handler for procpid
-    [HYPER_OP_DUMP]             = handle_op_dump, // Add handler for snapshot   
-};
-
-int igloo_hypermem_call(unsigned long num, unsigned long arg1, unsigned long arg2){
-    unsigned long ret;
-    struct mem_region* mem_region;
-    
-    int op;
-    hypermem_op_handler handler;
-
-    mem_region = this_cpu_read(mem_regions); // Read the per-cpu pointer value
-    if (mem_region == NULL){ // Check if the stored pointer is NULL
-	    do_debug = true;
-	    igloo_pr_debug("igloo: Allocating new mem_region for CPU %d\n",
-			   smp_processor_id());
-	    // Allocate a page-aligned memory region
-	    mem_region = (struct mem_region *)__get_free_page(GFP_ATOMIC | __GFP_ZERO);
-	    if (mem_region == NULL) {
-		    pr_err("igloo: Failed to allocate page-aligned mem_region\n");
-		    return -ENOMEM;
-	    }
-        this_cpu_write(mem_regions, mem_region); // Store the allocated pointer back
-        igloo_pr_debug("igloo: Registered new mem_region %p for CPU %d (page-aligned)\n", 
-                      mem_region, smp_processor_id());
-        igloo_hypercall(IGLOO_HYPER_REGISTER_MEM_REGION, (unsigned long)mem_region);
-    }
-
-    // Initialize mem_region
-    mem_region->op = cpu_to_le64(HYPER_OP_NONE);
-    mem_region->addr = 0;
-    mem_region->size = 0;
-    memset(mem_region->data, 0, sizeof(mem_region->data));
-
-    for (;;) {
-        // Make the hypercall to get the next operation from the hypervisor
-        igloo_pr_debug("igloo: Before hypercall: op=%llu, addr=%llu, size=%llu\n",
-                 le64_to_cpu(mem_region->op), le64_to_cpu(mem_region->addr), 
-                 le64_to_cpu(mem_region->size));
-        ret = igloo_hypercall2(num, arg1, arg2);
-        
-        // Get the operation code
-        op = le64_to_cpu(mem_region->op);
-        
-        igloo_pr_debug("igloo: After hypercall: ret=%lu, op=%d, addr=%llu, size=%llu\n",
-                 ret, op, le64_to_cpu(mem_region->addr), le64_to_cpu(mem_region->size));
-        
-        if (op != HYPER_OP_NONE){
-            do_debug = true;
-        }
-        
-        // Break if no operation needed
-        if (op == HYPER_OP_NONE) {
-            igloo_pr_debug("igloo: Handling HYPER_OP_NONE, breaking loop\n");
-            break;
-        }
-        
-        // Check if operation is within valid range
-        if (op < 0 || op >= ARRAY_SIZE(op_handlers)) {
-            printk(KERN_ERR "igloo: Invalid operation code: %d\n", op);
-            mem_region->op = cpu_to_le64(HYPER_RESP_WRITE_FAIL);
-            continue;
-        }
-        
-        // Get the handler for this operation
-        handler = op_handlers[op];
-        
-        // Execute the handler if it exists
-        if (handler) {
-            handler(mem_region);
-        } else {
-            printk(KERN_ERR "igloo: No handler for operation: %d\n", op);
-            mem_region->op = cpu_to_le64(HYPER_RESP_WRITE_FAIL);
-        }
-    }
-    
-    igloo_pr_debug("igloo: hypermem_call exit: ret=%lu\n", ret);
-    do_debug = false;
-    return ret;
 }
