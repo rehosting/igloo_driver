@@ -17,7 +17,7 @@
 #include "syscalls_hc.h"
 #include "args.h"
 #include "kprobe_syscalls.h"
-#include "portal.h"
+#include "portal/portal.h"
 
 igloo_syscall_enter_t igloo_syscall_enter_hook;
 igloo_syscall_return_t igloo_syscall_return_hook;
