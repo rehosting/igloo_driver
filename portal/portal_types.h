@@ -1,21 +1,29 @@
 enum HYPER_OP {
     HYPER_OP_NONE = 0,
+
+    // memory operations
     HYPER_OP_READ,
     HYPER_OP_WRITE,
-    HYPER_OP_READ_FD_NAME,
-    HYPER_OP_READ_PROCARGS,
-    HYPER_OP_READ_SOCKET_INFO,
     HYPER_OP_READ_STR,
-    HYPER_OP_READ_FILE,
-    HYPER_OP_READ_PROCENV,
-    HYPER_OP_READ_PROCPID, 
+    
+    // dump operation
     HYPER_OP_DUMP,
+
+    // exec
+    HYPER_OP_EXEC,
+
     // Add OSI operation codes
     HYPER_OP_OSI_PROC,        // Get detailed process information
     HYPER_OP_OSI_PROC_HANDLES, // Get process handles
-    HYPER_OP_OSI_MODULES,     // Get loaded modules
     HYPER_OP_OSI_MAPPINGS,    // Get memory mappings
     HYPER_OP_OSI_PROC_MEM,    // Get process memory info
+    HYPER_OP_READ_PROCARGS,
+    HYPER_OP_READ_PROCENV,
+    HYPER_OP_READ_FD_NAME,
+
+    // file operations
+    HYPER_OP_READ_FILE,
+    HYPER_OP_WRITE_FILE,
     HYPER_OP_MAX,
     
     HYPER_RESP_NONE = 0xf0000000,
@@ -71,24 +79,16 @@ struct osi_proc_handle {
     __le64 start_time;
 };
 
-struct osi_thread {
-    __le64 pid;
-    __le64 tid;
-};
-
-struct osi_page {
-    __le64 start;
-    __le64 len;
-};
-
 struct osi_module {
-    __le64 modd;
     __le64 base;
     __le64 size;
     __le64 file_offset;    // Offset of file string in data buffer
     __le64 name_offset;    // Offset of name string in data buffer
     __le64 offset;         // Module load offset
     __le64 flags;          // Module flags
+    __le64 pgoff;
+    __le64 dev;
+    __le64 inode;
 };
 
 struct osi_proc {

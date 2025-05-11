@@ -1,1 +1,2 @@
-obj-y += portal.o
+obj-$(CONFIG_IGLOO) += portal.o portal_mem.o portal_osi.o \
+						portal_dump.o portal_fs.o portal_exec.o
