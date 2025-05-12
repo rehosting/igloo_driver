@@ -24,6 +24,11 @@ enum HYPER_OP {
     // file operations
     HYPER_OP_READ_FILE,
     HYPER_OP_WRITE_FILE,
+    
+    // Uprobe operations
+    HYPER_OP_REGISTER_UPROBE,
+    HYPER_OP_UNREGISTER_UPROBE,
+    
     HYPER_OP_MAX,
     
     HYPER_RESP_NONE = 0xf0000000,
@@ -113,4 +118,8 @@ struct osi_proc {
     __le64 saved_auxv;
     __le64 mmap_base;
     __le64 task_size;
+    __le64 uid;
+    __le64 gid;
+    __le64 euid;
+    __le64 egid;
 };

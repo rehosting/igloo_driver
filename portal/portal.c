@@ -21,6 +21,8 @@ static const portal_op_handler op_handlers[] = {
     [HYPER_OP_READ_FD_NAME]    = handle_op_read_fd_name,
     [HYPER_OP_READ_FILE]       = handle_op_read_file,
     [HYPER_OP_WRITE_FILE]      = handle_op_write_file,
+    [HYPER_OP_REGISTER_UPROBE] = handle_op_register_uprobe,
+    [HYPER_OP_UNREGISTER_UPROBE] = handle_op_unregister_uprobe,
 };
 
 // Helper function to initialize memory regions for current CPU
@@ -43,7 +45,7 @@ static bool allocate_new_mem_region(struct cpu_mem_regions *regions)
     regions->hdr.count = cpu_to_le64(current_count + 1);  // Use hdr.count instead of count
 
     // Register with hypervisor
-    printk(KERN_INFO "igloo: Registered new mem_region %p for CPU %d (page-aligned, idx: %lld)\n", 
+    igloo_pr_debug("igloo: Registered new mem_region %p for CPU %d (page-aligned, idx: %lld)\n", 
                   mem_region, smp_processor_id(), (long long)le64_to_cpu(regions->hdr.count) - 1);  // Use hdr.count
     return true;
 }
@@ -78,14 +80,14 @@ static bool handle_post_memregion(portal_region *mem_region){
     }
 
     if (op <= HYPER_OP_NONE || op >= HYPER_OP_MAX) {
-        printk(KERN_EMERG "igloo: Invalid operation code: %d", op);
+        igloo_pr_debug( "igloo: Invalid operation code: %d", op);
         mem_region->header.op = cpu_to_le64(HYPER_RESP_WRITE_FAIL);
         return false;
     }
 
     // Check if operation is within valid range
     if (op < 0 || op >= ARRAY_SIZE(op_handlers)) {
-        printk(KERN_EMERG "igloo: No handler for %d", op);
+        igloo_pr_debug( "igloo: No handler for %d", op);
         mem_region->header.op = cpu_to_le64(HYPER_RESP_WRITE_FAIL);
         return false;
     }
@@ -95,7 +97,7 @@ static bool handle_post_memregion(portal_region *mem_region){
     handler = op_handlers[op];
 
     // Execute the handler if it exists
-    printk(KERN_EMERG "igloo: Handling operation: %d\n", op);
+    igloo_pr_debug( "igloo: Handling operation: %d\n", op);
     if (handler) {
         handler(mem_region);
     } else {
@@ -137,7 +139,7 @@ int igloo_portal(unsigned long num, unsigned long arg1, unsigned long arg2)
 	int i;
 
 	int call_num = this_cpu_inc_return(hypercall_num);
-	printk(KERN_EMERG "igloo-call: portal call: call_num=%d\n", call_num);
+	igloo_pr_debug( "igloo-call: portal call: call_num=%d\n", call_num);
 
 	// Initialize regions if this is the first call on this CPU
 	if (le64_to_cpu(regions->hdr.count) == 0) {  // Use hdr.count instead of count

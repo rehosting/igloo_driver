@@ -76,6 +76,71 @@ static int __init early_igloo_block_halt(char *p)
 
 early_param("igloo_block_halt", early_igloo_block_halt);
 
+// Debug logging configuration for each module
+struct igloo_debug_config {
+    bool portal;       // Enable debug for portal module
+    bool uprobe;       // Enable debug for uprobe module
+    bool vma;          // Enable debug for VMA tracking
+    bool syscall;      // Enable debug for syscall tracking
+    bool osi;          // Enable debug for OSI features
+};
+
+// Global debug configuration
+struct igloo_debug_config igloo_debug = {
+    .portal = false,
+    .uprobe = false,
+    .vma = false,
+    .syscall = false,
+    .osi = false,
+};
+
+// Parse comma-separated list of modules to enable debug logging for
+static int __init early_igloo_debug_modules(char *p)
+{
+    char *token;
+    
+    // By default, all modules have debug disabled
+    memset(&igloo_debug, 0, sizeof(igloo_debug));
+    
+    // Special case: "all" enables all modules
+    if (!strcmp(p, "all")) {
+        memset(&igloo_debug, 1, sizeof(igloo_debug));
+        pr_warn_once("IGLOO: Debug enabled for all modules\n");
+        return 0;
+    }
+    
+    // Special case: "none" disables all modules (default)
+    if (!strcmp(p, "none")) {
+        memset(&igloo_debug, 0, sizeof(igloo_debug));
+        pr_warn_once("IGLOO: Debug disabled for all modules\n");
+        return 0;
+    }
+    
+    // Parse comma-separated module list
+    while ((token = strsep(&p, ",")) != NULL) {
+        if (!strcmp(token, "portal"))
+            igloo_debug.portal = true;
+        else if (!strcmp(token, "uprobe"))
+            igloo_debug.uprobe = true;
+        else if (!strcmp(token, "vma"))
+            igloo_debug.vma = true;
+        else if (!strcmp(token, "syscall"))
+            igloo_debug.syscall = true;
+        else if (!strcmp(token, "osi"))
+            igloo_debug.osi = true;
+        else
+            pr_warn("IGLOO: Unknown debug module: %s\n", token);
+    }
+    
+    pr_warn_once("IGLOO: Debug modules - portal:%d uprobe:%d vma:%d syscall:%d osi:%d\n",
+               igloo_debug.portal, igloo_debug.uprobe, igloo_debug.vma,
+               igloo_debug.syscall, igloo_debug.osi);
+    
+    return 0;
+}
+
+early_param("igloo_debug", early_igloo_debug_modules);
+
 /* Register probes for mmap and munmap */
 static int __init igloo_hc_init(void) {
 	printk(KERN_EMERG "IGLOO: Initializing\n");

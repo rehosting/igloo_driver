@@ -125,6 +125,10 @@ void handle_op_osi_proc(portal_region *mem_region)
     
     proc->pid = cpu_to_le64(task->pid);
     proc->ppid = cpu_to_le64(task->real_parent ? task->real_parent->pid : 0);
+    proc->uid = cpu_to_le64(task->cred->uid.val);
+    proc->gid = cpu_to_le64(task->cred->gid.val);
+    proc->euid = cpu_to_le64(task->cred->euid.val);
+    proc->egid = cpu_to_le64(task->cred->egid.val);
     
     // Put name after the struct
     proc->name_offset = cpu_to_le64(sizeof(struct osi_proc));
@@ -135,8 +139,8 @@ void handle_op_osi_proc(portal_region *mem_region)
     }
     strncpy(data_buf + sizeof(struct osi_proc), task->comm, name_len);
     data_buf[sizeof(struct osi_proc) + name_len] = '\0';
-    printk(KERN_EMERG "igloo: proc name: %s\n", task->comm);
-    printk(KERN_EMERG "igloo: proc name in buf: %s\n", data_buf + sizeof(struct osi_proc));
+    igloo_pr_debug("igloo: proc name: %s\n", task->comm);
+    igloo_pr_debug("igloo: proc name in buf: %s\n", data_buf + sizeof(struct osi_proc));
     
     total_size += name_len; // do not null terminator
     
@@ -329,11 +333,11 @@ void handle_op_osi_mappings(portal_region *mem_region)
             unsigned int minor = MINOR(dev);
             mapping->dev = cpu_to_le64(dev);
             mapping->inode = cpu_to_le64(inode->i_ino);
-            printk(KERN_EMERG "igloo: VMA mapping: %s, file: %s\n", 
+            igloo_pr_debug("igloo: VMA mapping: %s, file: %s\n", 
                    mapping_name, mapping_name);
-            printk(KERN_EMERG "igloo: VMA mapping: %s, offset: %llx, flags: %llx\n",
+            igloo_pr_debug("igloo: VMA mapping: %s, offset: %llx, flags: %llx\n",
                    mapping_name, (unsigned long long)vma->vm_pgoff << PAGE_SHIFT, (unsigned long long)vma->vm_flags);
-            printk(KERN_EMERG "igloo: VMA mapping: %s, dev: %x:%x (major:minor), raw: %llx, inode: %llx\n",
+            igloo_pr_debug("igloo: VMA mapping: %s, dev: %x:%x (major:minor), raw: %llx, inode: %llx\n",
                    mapping_name, major, minor, (unsigned long long)dev, (unsigned long long)mapping->inode);
         }else{
             mapping->pgoff = 0;

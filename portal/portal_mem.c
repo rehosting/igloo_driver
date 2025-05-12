@@ -6,10 +6,10 @@ struct task_struct *get_target_task_by_id(portal_region* mem_region)
     struct task_struct *task;
     // If addr is 0, use current process, otherwise find process by PID
     if (target_pid == CURRENT_PID_NUM) {
-        printk(KERN_EMERG "igloo: Using current task (pid=%d)\n", current->pid);
+        igloo_pr_debug("igloo: Using current task (pid=%d)\n", current->pid);
         task = current;
     } else {
-        printk(KERN_EMERG "igloo: Looking for task with pid=%d\n", target_pid);
+        igloo_pr_debug("igloo: Looking for task with pid=%d\n", target_pid);
         // Find task by PID
         rcu_read_lock();
         task = pid_task(find_vpid(target_pid), PIDTYPE_PID);

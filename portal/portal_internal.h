@@ -22,11 +22,12 @@
 #include "../hypercall.h"
 #include "../igloo.h"
 #include "../syscalls_hc.h"
+#include "../igloo_debug.h"
 #include "portal.h"
 #include "portal_types.h"
 
 // Always print debug messages with highest priority
-#define igloo_pr_debug(fmt, ...) printk(KERN_EMERG "igloo-debug: " fmt, ##__VA_ARGS__)
+#define igloo_pr_debug(fmt, ...) igloo_debug_portal(fmt, ##__VA_ARGS__)
 
 // Need to define a way to access data since it's now part of the raw buffer
 #define PORTAL_DATA_OFFSET (sizeof(region_header))
@@ -58,5 +59,8 @@ void handle_op_osi_proc_handles(portal_region *mem_region);
 void handle_op_osi_mappings(portal_region *mem_region);
 void handle_op_osi_proc_mem(portal_region *mem_region);
 
+// Uprobe operation handlers
+void handle_op_register_uprobe(portal_region *mem_region);
+void handle_op_unregister_uprobe(portal_region *mem_region);
 
 #endif /* __PORTAL_INTERNAL_H__ */

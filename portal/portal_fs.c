@@ -93,7 +93,7 @@ void handle_op_write_file(portal_region *mem_region)
             igloo_pr_debug("igloo: kernel_write failed for '%s', error=%zd\n", path, n);
         } else {
             mem_region->header.size = cpu_to_le64(n);
-            mem_region->header.op = cpu_to_le64(HYPER_RESP_WRITE_OK);
+            mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_NUM);
             igloo_pr_debug("igloo: Wrote file '%s' (%zd bytes at offset %llu)\n", 
                           path, n, (unsigned long long)(pos - n));
             filp_close(f, NULL);
