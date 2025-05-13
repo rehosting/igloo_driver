@@ -41,6 +41,12 @@ enum HYPER_OP {
     HYPER_RESP_MAX,
 };
 
+enum portal_type {
+	PORTAL_UPROBE_TYPE_ENTRY,
+	PORTAL_UPROBE_TYPE_RETURN,
+	PORTAL_UPROBE_TYPE_BOTH,
+};
+
 #define CURRENT_PID_NUM 0xffffffff
 
 typedef struct {
