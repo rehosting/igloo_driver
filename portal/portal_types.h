@@ -19,7 +19,7 @@ enum HYPER_OP {
     HYPER_OP_OSI_PROC_MEM,    // Get process memory info
     HYPER_OP_READ_PROCARGS,
     HYPER_OP_READ_PROCENV,
-    HYPER_OP_READ_FD_NAME,
+    HYPER_OP_READ_FDS,        // Get multiple file descriptors with names
 
     // file operations
     HYPER_OP_READ_FILE,
@@ -79,9 +79,9 @@ struct cpu_mem_regions {
 
 // OSI data structures based on osi_types.h
 struct osi_proc_handle {
-    __le64 taskd;
-    __le64 asid;
-    __le64 start_time;
+	__le64 pid;
+	__le64 taskd;
+	__le64 start_time;
 };
 
 struct osi_module {
@@ -122,4 +122,16 @@ struct osi_proc {
     __le64 gid;
     __le64 euid;
     __le64 egid;
+};
+
+// File descriptor entry structure for handle_op_read_fds
+struct osi_fd_entry {
+    __le64 fd;                 // File descriptor number
+    __le64 name_offset;        // Offset to the file name in the string buffer
+};
+
+// Generic header for OSI responses with pagination
+struct osi_result_header {
+    __le64 result_count;      // Number of items returned in this response
+    __le64 total_count;       // Total number of items available
 };

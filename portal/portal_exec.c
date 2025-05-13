@@ -10,8 +10,6 @@ void handle_op_exec(portal_region *mem_region)
     size_t offset = 0;
     int i;
     int ret;
-    char *output_path = NULL;
-    size_t output_path_len = 0;
 
     // Read executable path (null-terminated)
     strncpy(exe_path, PORTAL_DATA(mem_region), sizeof(exe_path) - 1);

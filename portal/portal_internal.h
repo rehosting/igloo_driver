@@ -44,7 +44,7 @@ struct task_struct *get_target_task_by_id(portal_region *mem_region);
 // Memory operation handlers
 void handle_op_read(portal_region *mem_region);
 void handle_op_write(portal_region *mem_region);
-void handle_op_read_fd_name(portal_region *mem_region);
+void handle_op_read_fds(portal_region *mem_region);
 void handle_op_read_procargs(portal_region *mem_region);
 void handle_op_read_str(portal_region *mem_region);
 void handle_op_read_file(portal_region *mem_region);
