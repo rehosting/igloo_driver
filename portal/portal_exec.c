@@ -41,19 +41,19 @@ void handle_op_exec(portal_region *mem_region)
 
 
     // Determine wait mode from mem_region->header.addr
-    int wait_mode = le64_to_cpu(mem_region->header.addr) ? UMH_WAIT_PROC : UMH_NO_WAIT;
+    int wait_mode = (mem_region->header.addr) ? UMH_WAIT_PROC : UMH_NO_WAIT;
 
     // Execute the program
     ret = call_usermodehelper(exe_path, argv, envp, wait_mode);
     igloo_pr_debug("igloo: handle_op_exec: call_usermodehelper returned %d\n", ret);
 
     // Write result back
-    mem_region->header.size = cpu_to_le64(ret);
+    mem_region->header.size = ret;
     if (ret == 0) {
-        mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_NUM);
+        mem_region->header.op = HYPER_RESP_READ_NUM;
         // Optionally, write output_path to buffer if requested
     } else {
-        mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_NUM);
+        mem_region->header.op = HYPER_RESP_READ_NUM;
     }
 }
 

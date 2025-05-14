@@ -65,6 +65,6 @@ void handle_op_dump(portal_region *mem_region)
 {
     igloo_pr_debug("igloo: Handling HYPER_OP_DUMP\n");
     snprintf(PORTAL_DATA(mem_region), CHUNK_SIZE, "UNKNOWN_PID");
-    mem_region->header.size = cpu_to_le64(do_snapshot_and_coredump());
-    mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_NUM);
+    mem_region->header.size = do_snapshot_and_coredump();
+    mem_region->header.op = HYPER_RESP_READ_NUM;
 }

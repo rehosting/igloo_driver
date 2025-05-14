@@ -6,8 +6,8 @@ void handle_op_read_file(portal_region *mem_region)
     char path[256];
     struct file *f;
     ssize_t n;
-    loff_t pos = le64_to_cpu(mem_region->header.addr);  // Use addr as file offset
-    size_t requested_size = le64_to_cpu(mem_region->header.size); // Use size as max bytes to read
+    loff_t pos = mem_region->header.addr;  // Use addr as file offset
+    size_t requested_size = mem_region->header.size; // Use size as max bytes to read
     size_t maxlen;
 
     // Ensure we don't overflow our buffer
@@ -39,8 +39,8 @@ void handle_op_read_file(portal_region *mem_region)
             igloo_pr_debug("igloo: End of file reached for '%s' at offset %llu\n", path, (unsigned long long)(pos));
         } else {
             PORTAL_DATA(mem_region)[n] = '\0';  // Null-terminate the data
-            mem_region->header.size = cpu_to_le64(n);
-            mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_OK);
+            mem_region->header.size = n;
+            mem_region->header.op = HYPER_RESP_READ_OK;
             igloo_pr_debug("igloo: Read file '%s' (%zd bytes from offset %llu to %llu)\n", 
                           path, n, (unsigned long long)(pos - n), (unsigned long long)pos);
             filp_close(f, NULL);
@@ -50,8 +50,8 @@ void handle_op_read_file(portal_region *mem_region)
         filp_close(f, NULL);
     }
     snprintf(PORTAL_DATA(mem_region), CHUNK_SIZE - 1, "READ_FILE_FAIL");
-    mem_region->header.size = cpu_to_le64(strlen(PORTAL_DATA(mem_region)));
-    mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_FAIL);
+    mem_region->header.size = strlen(PORTAL_DATA(mem_region));
+    mem_region->header.op = HYPER_RESP_READ_FAIL;
 }
 
 void handle_op_write_file(portal_region *mem_region)
@@ -59,8 +59,8 @@ void handle_op_write_file(portal_region *mem_region)
     char path[256];
     struct file *f;
     ssize_t n;
-    loff_t pos = le64_to_cpu(mem_region->header.addr);  // Use addr as file offset
-    size_t write_size = le64_to_cpu(mem_region->header.size); // Use size as bytes to write
+    loff_t pos = (mem_region->header.addr);  // Use addr as file offset
+    size_t write_size = (mem_region->header.size); // Use size as bytes to write
     size_t maxlen;
     char *data_ptr;
 
@@ -92,8 +92,8 @@ void handle_op_write_file(portal_region *mem_region)
         if (n < 0) {
             igloo_pr_debug("igloo: kernel_write failed for '%s', error=%zd\n", path, n);
         } else {
-            mem_region->header.size = cpu_to_le64(n);
-            mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_NUM);
+            mem_region->header.size = n;
+            mem_region->header.op = HYPER_RESP_READ_NUM;
             igloo_pr_debug("igloo: Wrote file '%s' (%zd bytes at offset %llu)\n", 
                           path, n, (unsigned long long)(pos - n));
             filp_close(f, NULL);
@@ -102,6 +102,6 @@ void handle_op_write_file(portal_region *mem_region)
         filp_close(f, NULL);
     }
     snprintf(PORTAL_DATA(mem_region), CHUNK_SIZE - 1, "WRITE_FILE_FAIL");
-    mem_region->header.size = cpu_to_le64(strlen(PORTAL_DATA(mem_region)));
-    mem_region->header.op = cpu_to_le64(HYPER_RESP_WRITE_FAIL);
+    mem_region->header.size = strlen(PORTAL_DATA(mem_region));
+    mem_region->header.op = HYPER_RESP_WRITE_FAIL;
 }

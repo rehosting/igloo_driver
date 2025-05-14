@@ -19,7 +19,7 @@ static inline bool is_kernel_addr(unsigned long addr)
 
 struct task_struct *get_target_task_by_id(portal_region* mem_region)
 {
-    pid_t target_pid = (pid_t)le64_to_cpu(mem_region->header.pid);
+    pid_t target_pid = (pid_t)(mem_region->header.pid);
     struct task_struct *task;
     // If addr is 0, use current process, otherwise find process by PID
     if (target_pid == CURRENT_PID_NUM) {
@@ -38,8 +38,8 @@ struct task_struct *get_target_task_by_id(portal_region* mem_region)
 void handle_op_read(portal_region *mem_region)
 {
     int resp;
-    unsigned long addr = le64_to_cpu(mem_region->header.addr);
-    size_t size = le64_to_cpu(mem_region->header.size);
+    unsigned long addr = mem_region->header.addr;
+    size_t size = mem_region->header.size;
     bool is_kernel_address = is_kernel_addr(addr);
     
     igloo_pr_debug("igloo: Handling HYPER_OP_READ: addr=%#llx, size=%#llx\n",
@@ -63,11 +63,11 @@ void handle_op_read(portal_region *mem_region)
             pagefault_enable();
             local_irq_restore(flags);
             
-            mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_OK);
-            mem_region->header.size = cpu_to_le64(size);
+            mem_region->header.op = HYPER_RESP_READ_OK;
+            mem_region->header.size = size;
         } else {
             igloo_pr_debug("igloo: Invalid kernel address %#lx\n", addr);
-            mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_FAIL);
+            mem_region->header.op = HYPER_RESP_READ_FAIL;
         }
     } else {
         // Handle user memory - use copy_from_user
@@ -76,18 +76,18 @@ void handle_op_read(portal_region *mem_region)
             (const void __user *)(uintptr_t)addr,
             size);
         if (resp == 0) {
-            mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_OK);
+            mem_region->header.op = HYPER_RESP_READ_OK;
         } else if (resp > 0) {
             igloo_pr_debug(
                 "igloo: copy_from_user partially failed for addr %#lx, size %zu, resp %d\n",
                 addr, size, resp);
-            mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_PARTIAL);
-            mem_region->header.size = cpu_to_le64(size - resp);
+            mem_region->header.op = HYPER_RESP_READ_PARTIAL;
+            mem_region->header.size = (size - resp);
         } else {
             igloo_pr_debug(
                 "igloo: copy_from_user failed for addr %#lx, size %zu, resp %d\n",
                 addr, size, resp);
-            mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_FAIL);
+            mem_region->header.op = HYPER_RESP_READ_FAIL;
         }
     }
 }
@@ -95,8 +95,8 @@ void handle_op_read(portal_region *mem_region)
 void handle_op_write(portal_region *mem_region)
 {
     int resp;
-    unsigned long addr = le64_to_cpu(mem_region->header.addr);
-    size_t size = le64_to_cpu(mem_region->header.size);
+    unsigned long addr = mem_region->header.addr;
+    size_t size = mem_region->header.size;
     
     igloo_pr_debug("igloo: Handling HYPER_OP_WRITE: addr=%#llx, size=%#llx\n",
         (unsigned long long)addr, (unsigned long long)size);
@@ -121,10 +121,10 @@ void handle_op_write(portal_region *mem_region)
             local_irq_restore(flags);
             
             igloo_pr_debug("igloo: Successfully wrote to kernel address %#lx\n", addr);
-            mem_region->header.op = cpu_to_le64(HYPER_RESP_WRITE_OK);
+            mem_region->header.op = HYPER_RESP_WRITE_OK;
         } else {
             igloo_pr_debug("igloo: Invalid kernel address %#lx\n", addr);
-            mem_region->header.op = cpu_to_le64(HYPER_RESP_WRITE_FAIL);
+            mem_region->header.op = HYPER_RESP_WRITE_FAIL;
         }
     } else {
         // Handle user memory writes - use copy_to_user
@@ -135,20 +135,20 @@ void handle_op_write(portal_region *mem_region)
         
         if (resp == 0) {
             igloo_pr_debug("igloo: Successfully wrote to user address %#lx\n", addr);
-            mem_region->header.op = cpu_to_le64(HYPER_RESP_WRITE_OK);
+            mem_region->header.op = HYPER_RESP_WRITE_OK;
         } else {
             igloo_pr_debug(
                 "igloo: copy_to_user failed for addr %#lx, size %zu, resp %d\n",
                 addr, size, resp);
-            mem_region->header.op = cpu_to_le64(HYPER_RESP_WRITE_FAIL);
+            mem_region->header.op = HYPER_RESP_WRITE_FAIL;
         }
     }
 }
 
 void handle_op_read_str(portal_region *mem_region)
 {
-    unsigned long addr = le64_to_cpu(mem_region->header.addr);
-    unsigned long max_size = le64_to_cpu(mem_region->header.size);
+    unsigned long addr = (mem_region->header.addr);
+    unsigned long max_size = (mem_region->header.size);
     ssize_t copied = 0;
     char *buf = PORTAL_DATA(mem_region);
 
@@ -163,7 +163,7 @@ void handle_op_read_str(portal_region *mem_region)
         
         if (!virt_addr_valid((void *)addr)) {
             igloo_pr_debug("igloo: Invalid kernel address %#lx\n", addr);
-            mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_FAIL);
+            mem_region->header.op = HYPER_RESP_READ_FAIL;
             mem_region->header.size = 0;
             return;
         }
@@ -203,19 +203,19 @@ void handle_op_read_str(portal_region *mem_region)
         }
         
         igloo_pr_debug("igloo: Read kernel string (len=%zd)\n", copied);
-        mem_region->header.size = cpu_to_le64(copied);
-        mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_OK);
+        mem_region->header.size = (copied);
+        mem_region->header.op = (HYPER_RESP_READ_OK);
     } else {
         // Handle user string - use strncpy_from_user
         copied = strncpy_from_user(buf, (const char __user *)addr, max_size);
         if (copied < 0) {
             igloo_pr_debug("igloo: strncpy_from_user failed for addr %#lx, max_size %lu, ret %zd\n",
                           addr, max_size, copied);
-            mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_FAIL);
+            mem_region->header.op = (HYPER_RESP_READ_FAIL);
             mem_region->header.size = 0;
         } else {
-            mem_region->header.size = cpu_to_le64(copied);
-            mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_OK);
+            mem_region->header.size = (copied);
+            mem_region->header.op = (HYPER_RESP_READ_OK);
             igloo_pr_debug("igloo: Read user string (len=%zd)\n", copied);
             
             // Ensure proper null termination

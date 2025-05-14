@@ -37,16 +37,16 @@ static bool allocate_new_mem_region(struct cpu_mem_regions *regions)
         pr_err("igloo: Failed to allocate page-aligned mem_region\n");
 	    return false;
     }
-    current_count = le64_to_cpu(regions->hdr.count);  // Use hdr.count instead of count
+    current_count = regions->hdr.count;  // Use hdr.count instead of count
 
     // Add to our array and increment count
-    regions->regions[current_count].mem_region = cpu_to_le64((unsigned long)mem_region);
+    regions->regions[current_count].mem_region = mem_region;
     regions->regions[current_count].owner_id = 0;
-    regions->hdr.count = cpu_to_le64(current_count + 1);  // Use hdr.count instead of count
+    regions->hdr.count = (current_count + 1);  // Use hdr.count instead of count
 
     // Register with hypervisor
     igloo_pr_debug("igloo: Registered new mem_region %p for CPU %d (page-aligned, idx: %lld)\n", 
-                  mem_region, smp_processor_id(), (long long)le64_to_cpu(regions->hdr.count) - 1);  // Use hdr.count
+                  mem_region, smp_processor_id(), (long long)(regions->hdr.count) - 1);  // Use hdr.count
     return true;
 }
 
@@ -74,21 +74,21 @@ static bool handle_post_memregion(portal_region *mem_region){
     int op;
     portal_op_handler handler;
     // Get the operation code
-    op = le64_to_cpu(mem_region->header.op);
+    op = mem_region->header.op;
     if (op == HYPER_OP_NONE) {
 	    return false;
     }
 
     if (op <= HYPER_OP_NONE || op >= HYPER_OP_MAX) {
         igloo_pr_debug( "igloo: Invalid operation code: %d", op);
-        mem_region->header.op = cpu_to_le64(HYPER_RESP_WRITE_FAIL);
+        mem_region->header.op = HYPER_RESP_WRITE_FAIL;
         return false;
     }
 
     // Check if operation is within valid range
     if (op < 0 || op >= ARRAY_SIZE(op_handlers)) {
         igloo_pr_debug( "igloo: No handler for %d", op);
-        mem_region->header.op = cpu_to_le64(HYPER_RESP_WRITE_FAIL);
+        mem_region->header.op = HYPER_RESP_WRITE_FAIL;
         return false;
     }
     
@@ -102,7 +102,7 @@ static bool handle_post_memregion(portal_region *mem_region){
         handler(mem_region);
     } else {
         igloo_pr_debug( "igloo: No handler for operation: %d\n", op);
-        mem_region->header.op = cpu_to_le64(HYPER_RESP_WRITE_FAIL);
+        mem_region->header.op = HYPER_RESP_WRITE_FAIL;
     }
     return true;
 }
@@ -111,12 +111,12 @@ static bool handle_post_memregion(portal_region *mem_region){
 * bool -> should we stop the hypercall loop?
 */
 static bool handle_post_memregions(struct cpu_mem_regions *regions){
-	int count = le64_to_cpu(regions->hdr.count);  // Use hdr.count instead of count
+	int count = regions->hdr.count;  // Use hdr.count instead of count
 	int i = 0;
 	bool any_responses = false;
 	for (i = 0; i < count; i++) {
 		portal_region *mem_region =
-			(portal_region *)(unsigned long)le64_to_cpu(
+			(portal_region *)(unsigned long)(
 				regions->regions[i].mem_region);
 		if (!mem_region) {
 			igloo_pr_debug(
@@ -142,16 +142,16 @@ int igloo_portal(unsigned long num, unsigned long arg1, unsigned long arg2)
 	igloo_pr_debug( "igloo-call: portal call: call_num=%d\n", call_num);
 
 	// Initialize regions if this is the first call on this CPU
-	if (le64_to_cpu(regions->hdr.count) == 0) {  // Use hdr.count instead of count
+	if (regions->hdr.count == 0) {  // Use hdr.count instead of count
 		initialize_cpu_regions(regions);
 	}
 
-	regions->hdr.call_num = cpu_to_le64(call_num);  // Use hdr.call_num instead of call_num
+	regions->hdr.call_num = call_num;  // Use hdr.call_num instead of call_num
 
 	// reset all memory regions to default values
-	for (i = 0; i < le64_to_cpu(regions->hdr.count); i++) {  // Use hdr.count instead of count
+	for (i = 0; i < regions->hdr.count; i++) {  // Use hdr.count instead of count
 		portal_region *mem_region =
-			(portal_region *)(unsigned long)le64_to_cpu(
+			(portal_region *)(unsigned long)(
 				regions->regions[i].mem_region);
 		mem_region->header.op = 0;
 		mem_region->header.addr = 0;

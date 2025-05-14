@@ -90,7 +90,7 @@ void handle_op_osi_proc(portal_region *mem_region)
     // Check for NULL task immediately after getting it
     if (!task) {
         igloo_debug_osi("igloo: Handling HYPER_OP_OSI_PROC for NULL task\n");
-        mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_FAIL);
+        mem_region->header.op = (HYPER_RESP_READ_FAIL);
         return;
     }
     
@@ -101,39 +101,39 @@ void handle_op_osi_proc(portal_region *mem_region)
 
     // Initialize the OSI proc structure at the beginning of data buffer
     proc = (struct osi_proc *)data_buf;
-    proc->taskd = cpu_to_le64((unsigned long)task);
+    proc->taskd = ((unsigned long)task);
     
     if (mm && mm->pgd) {
-        proc->pgd = cpu_to_le64((unsigned long)mm->pgd);
-        proc->map_count = cpu_to_le64(mm->map_count);
-        proc->start_brk = cpu_to_le64(mm->start_brk);
-        proc->brk = cpu_to_le64(mm->brk);
-        proc->start_stack = cpu_to_le64(mm->start_stack);
-        proc->start_code = cpu_to_le64(mm->start_code);
-        proc->end_code = cpu_to_le64(mm->end_code);
-        proc->start_data = cpu_to_le64(mm->start_data);
-        proc->end_data = cpu_to_le64(mm->end_data);
-        proc->arg_start = cpu_to_le64(mm->arg_start);
-        proc->arg_end = cpu_to_le64(mm->arg_end);
-        proc->env_start = cpu_to_le64(mm->env_start);
-        proc->env_end = cpu_to_le64(mm->env_end);
+        proc->pgd = ((unsigned long)mm->pgd);
+        proc->map_count = (mm->map_count);
+        proc->start_brk = (mm->start_brk);
+        proc->brk = (mm->brk);
+        proc->start_stack = (mm->start_stack);
+        proc->start_code = (mm->start_code);
+        proc->end_code = (mm->end_code);
+        proc->start_data = (mm->start_data);
+        proc->end_data = (mm->end_data);
+        proc->arg_start = (mm->arg_start);
+        proc->arg_end = (mm->arg_end);
+        proc->env_start = (mm->env_start);
+        proc->env_end = (mm->env_end);
         // saved_auxv is now a pointer to an array, not an integer
         proc->saved_auxv = 0; // Don't try to cast pointer to integer
-        proc->mmap_base = cpu_to_le64(mm->mmap_base);
-        proc->task_size = cpu_to_le64(mm->task_size);
+        proc->mmap_base = (mm->mmap_base);
+        proc->task_size = (mm->task_size);
     } else {
         proc->pgd = 0;
     }
     
-    proc->pid = cpu_to_le64(task->pid);
-    proc->ppid = cpu_to_le64(task->real_parent ? task->real_parent->pid : 0);
-    proc->uid = cpu_to_le64(task->cred->uid.val);
-    proc->gid = cpu_to_le64(task->cred->gid.val);
-    proc->euid = cpu_to_le64(task->cred->euid.val);
-    proc->egid = cpu_to_le64(task->cred->egid.val);
+    proc->pid = (task->pid);
+    proc->ppid = (task->real_parent ? task->real_parent->pid : 0);
+    proc->uid = (task->cred->uid.val);
+    proc->gid = (task->cred->gid.val);
+    proc->euid = (task->cred->euid.val);
+    proc->egid = (task->cred->egid.val);
     
     // Put name after the struct
-    proc->name_offset = cpu_to_le64(sizeof(struct osi_proc));
+    proc->name_offset = (sizeof(struct osi_proc));
     name_len = strnlen(task->comm, TASK_COMM_LEN);
     // Ensure we don't overflow our buffer
     if (sizeof(struct osi_proc) + name_len + 1 > CHUNK_SIZE) {
@@ -147,10 +147,10 @@ void handle_op_osi_proc(portal_region *mem_region)
     total_size += name_len; // do not null terminator
     
     // Set create time
-    proc->create_time = cpu_to_le64(task->start_time);
+    proc->create_time = (task->start_time);
     
-    mem_region->header.size = cpu_to_le64(total_size);
-    mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_OK);
+    mem_region->header.size = (total_size);
+    mem_region->header.op = (HYPER_RESP_READ_OK);
 }
 
 void handle_op_osi_proc_handles(portal_region *mem_region)
@@ -199,9 +199,9 @@ void handle_op_osi_proc_handles(portal_region *mem_region)
             continue; // Skip kernel threads
         }
         
-        handle->pid = cpu_to_le64((unsigned long)task->pid);
-        handle->taskd = cpu_to_le64((unsigned long)task);
-        handle->start_time = cpu_to_le64(task->start_time);
+        handle->pid = ((unsigned long)task->pid);
+        handle->taskd = ((unsigned long)task);
+        handle->start_time = (task->start_time);
         
         handle++;
         count++;
@@ -209,13 +209,13 @@ void handle_op_osi_proc_handles(portal_region *mem_region)
     rcu_read_unlock();
     
     // Update counts
-    header->result_count = cpu_to_le64(count);
-    header->total_count = cpu_to_le64(total_count);
+    header->result_count = (count);
+    header->total_count = (total_count);
     
     igloo_debug_osi("igloo: Returning %d process handles (total processes: %d)\n", count, total_count);
     
-    mem_region->header.size = cpu_to_le64(sizeof(struct osi_result_header) + (count * sizeof(struct osi_proc_handle)));
-    mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_OK);
+    mem_region->header.size = (sizeof(struct osi_result_header) + (count * sizeof(struct osi_proc_handle)));
+    mem_region->header.op = (HYPER_RESP_READ_OK);
 }
 
 void handle_op_osi_mappings(portal_region *mem_region)
@@ -238,8 +238,8 @@ void handle_op_osi_mappings(portal_region *mem_region)
     // Check for NULL task before using task->pid
     if (!task) {
         igloo_debug_osi("igloo: Handling HYPER_OP_OSI_MAPPINGS for NULL task\n");
-        mem_region->header.size = cpu_to_le64(sizeof(struct osi_result_header));  // Return at least the header
-        mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_FAIL);
+        mem_region->header.size = (sizeof(struct osi_result_header));  // Return at least the header
+        mem_region->header.op = (HYPER_RESP_READ_FAIL);
         return;
     }
     
@@ -257,13 +257,13 @@ void handle_op_osi_mappings(portal_region *mem_region)
     
     // Check if we have a valid mm_struct
     if (!mm) {
-        mem_region->header.size = cpu_to_le64(sizeof(struct osi_result_header));
-        mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_OK);
+        mem_region->header.size = (sizeof(struct osi_result_header));
+        mem_region->header.op = (HYPER_RESP_READ_OK);
         return;
     }
     
     // Store total number of VMAs in the process
-    header->total_count = cpu_to_le64(mm->map_count);
+    header->total_count = (mm->map_count);
     igloo_debug_osi("igloo: Process has %d total VMAs\n", mm->map_count);
     
     // Start filling mappings after the header
@@ -274,13 +274,13 @@ void handle_op_osi_mappings(portal_region *mem_region)
     string_buf = data_buf + string_offset;
     
     // Get skip count from the header - this is how many VMAs we've already processed
-    skip_count = le64_to_cpu(mem_region->header.addr);
+    skip_count = (mem_region->header.addr);
     igloo_debug_osi("igloo: Starting VMA scan, skipping first %d entries\n", skip_count);
     
     // Iterate through the process memory mappings
     if (mmap_read_lock_killable(mm)) {
-        mem_region->header.size = cpu_to_le64(sizeof(__le64) * 2);
-        mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_FAIL);
+        mem_region->header.size = (sizeof(__le64) * 2);
+        mem_region->header.op = (HYPER_RESP_READ_FAIL);
         return;
     }
 
@@ -301,7 +301,7 @@ void handle_op_osi_mappings(portal_region *mem_region)
         if (count >= max_mappings || 
             string_offset >= CHUNK_SIZE - 256) {
             // Store the total count of VMAs we've processed across all calls
-            mem_region->header.addr = cpu_to_le64(total_count);
+            mem_region->header.addr = (total_count);
             igloo_debug_osi("igloo: Buffer full, processed %d VMAs total\n", total_count);
             break;
         }
@@ -310,8 +310,8 @@ void handle_op_osi_mappings(portal_region *mem_region)
         portal_get_vma_name(vma, mapping_name, sizeof(mapping_name));
         
         // Fill mapping info
-        mapping->base = cpu_to_le64(vma->vm_start);
-        mapping->size = cpu_to_le64(vma->vm_end - vma->vm_start);
+        mapping->base = (vma->vm_start);
+        mapping->size = (vma->vm_end - vma->vm_start);
         
         // Add mapping name to string buffer
         curr_str = string_buf;
@@ -327,7 +327,7 @@ void handle_op_osi_mappings(portal_region *mem_region)
         strncpy(curr_str, mapping_name, name_len);
         curr_str[name_len] = '\0';
         
-        mapping->name_offset = cpu_to_le64(string_offset);
+        mapping->name_offset = (string_offset);
         string_offset += name_len + 1;
         string_buf += name_len + 1;
         
@@ -335,16 +335,16 @@ void handle_op_osi_mappings(portal_region *mem_region)
         mapping->file_offset = mapping->name_offset;
         
         // Additional fields
-        mapping->offset = cpu_to_le64(vma->vm_pgoff << PAGE_SHIFT);
-        mapping->flags = cpu_to_le64(vma->vm_flags);
+        mapping->offset = (vma->vm_pgoff << PAGE_SHIFT);
+        mapping->flags = (vma->vm_flags);
         if (vma->vm_file){
             const struct inode *inode = file_user_inode(vma->vm_file);
-            mapping->pgoff = cpu_to_le64(((loff_t)vma->vm_pgoff) << PAGE_SHIFT);
+            mapping->pgoff = (((loff_t)vma->vm_pgoff) << PAGE_SHIFT);
             dev_t dev = inode->i_sb->s_dev;
             unsigned int major = MAJOR(dev);
             unsigned int minor = MINOR(dev);
-            mapping->dev = cpu_to_le64(dev);
-            mapping->inode = cpu_to_le64(inode->i_ino);
+            mapping->dev = (dev);
+            mapping->inode = (inode->i_ino);
             igloo_debug_osi("igloo: VMA mapping: %s, file: %s\n", 
                    mapping_name, mapping_name);
             igloo_debug_osi("igloo: VMA mapping: %s, offset: %llx, flags: %llx\n",
@@ -371,10 +371,10 @@ void handle_op_osi_mappings(portal_region *mem_region)
     mmap_read_unlock(mm);
     
     // Update count of mappings we're returning
-    header->result_count = cpu_to_le64(count);
+    header->result_count = (count);
     
-    mem_region->header.size = cpu_to_le64(string_offset);
-    mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_OK);
+    mem_region->header.size = (string_offset);
+    mem_region->header.op = (HYPER_RESP_READ_OK);
     
     igloo_debug_osi("igloo: Returned %d VMA mappings (total VMAs: %d), buffer used: %zu bytes\n", 
                   count, mm->map_count, string_offset);
@@ -398,7 +398,7 @@ void handle_op_osi_proc_mem(portal_region *mem_region)
         proc_mem = (struct osi_proc_mem *)PORTAL_DATA(mem_region);
         proc_mem->start_brk = 0;
         proc_mem->brk = 0;
-        mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_FAIL);
+        mem_region->header.op = (HYPER_RESP_READ_FAIL);
         return;
     }
     
@@ -409,7 +409,7 @@ void handle_op_osi_proc_mem(portal_region *mem_region)
 
     // Check if we have enough buffer space for the structure
     if (sizeof(struct osi_proc_mem) > CHUNK_SIZE) {
-        mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_FAIL);
+        mem_region->header.op = (HYPER_RESP_READ_FAIL);
         return;
     }
     
@@ -418,15 +418,15 @@ void handle_op_osi_proc_mem(portal_region *mem_region)
     if (!mm) {
         proc_mem->start_brk = 0;
         proc_mem->brk = 0;
-        mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_FAIL);
+        mem_region->header.op = (HYPER_RESP_READ_FAIL);
         return;
     }
     
-    proc_mem->start_brk = cpu_to_le64(mm->start_brk);
-    proc_mem->brk = cpu_to_le64(mm->brk);
+    proc_mem->start_brk = (mm->start_brk);
+    proc_mem->brk = (mm->brk);
     
-    mem_region->header.size = cpu_to_le64(sizeof(struct osi_proc_mem));
-    mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_OK);
+    mem_region->header.size = (sizeof(struct osi_proc_mem));
+    mem_region->header.op = (HYPER_RESP_READ_OK);
 }
 
 void handle_op_read_procargs(portal_region *mem_region)
@@ -443,7 +443,7 @@ void handle_op_read_procargs(portal_region *mem_region)
     
     if (!task) {
         igloo_debug_osi("igloo: No task found for pid %llu\n", 
-                     (unsigned long long)le64_to_cpu(mem_region->header.addr));
+                     (unsigned long long)(mem_region->header.addr));
         goto fail;
     }
 
@@ -482,15 +482,15 @@ void handle_op_read_procargs(portal_region *mem_region)
     /* Ensure the buffer is null-terminated */
     buf[len] = '\0';
 
-    mem_region->header.size = cpu_to_le64(len);
-    mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_OK);
+    mem_region->header.size = (len);
+    mem_region->header.op = (HYPER_RESP_READ_OK);
     igloo_debug_osi("igloo: Read procargs: len=%zu\n", len);
     return;
 
 fail:
     snprintf(PORTAL_DATA(mem_region), CHUNK_SIZE, "UNKNOWN_PROCARGS");
-    mem_region->header.size = cpu_to_le64(strlen(PORTAL_DATA(mem_region)));
-    mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_FAIL);
+    mem_region->header.size = (strlen(PORTAL_DATA(mem_region)));
+    mem_region->header.op = (HYPER_RESP_READ_FAIL);
     igloo_debug_osi("igloo: procargs failure, returning '%s'\n", PORTAL_DATA(mem_region));
 }
 
@@ -550,15 +550,15 @@ void handle_op_read_procenv(portal_region *mem_region)
     // Ensure final null termination
     buf[len] = '\0';
 
-    mem_region->header.size = cpu_to_le64(len);
-    mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_OK);
+    mem_region->header.size = (len);
+    mem_region->header.op = (HYPER_RESP_READ_OK);
     igloo_debug_osi("igloo: Read procenv from stack: '%s' (len=%lu)\n", buf, len);
     return;
 
 fail:
     snprintf(PORTAL_DATA(mem_region), CHUNK_SIZE, "UNKNOWN_PROCENV");
-    mem_region->header.size = cpu_to_le64(strlen(PORTAL_DATA(mem_region)));
-    mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_FAIL);
+    mem_region->header.size = (strlen(PORTAL_DATA(mem_region)));
+    mem_region->header.op = (HYPER_RESP_READ_FAIL);
     igloo_debug_osi("igloo: procenv failure, returning '%s'\n", PORTAL_DATA(mem_region));
 }
 
@@ -580,7 +580,7 @@ void handle_op_read_fds(portal_region *mem_region)
     size_t string_offset;
     
     // Get start_fd from the header - this is where we'll start scanning FDs
-    start_fd = le64_to_cpu(mem_region->header.addr);
+    start_fd = (mem_region->header.addr);
     
     // Get target task using the same helper as other OSI functions
     task = get_target_task_by_id(mem_region);
@@ -592,8 +592,8 @@ void handle_op_read_fds(portal_region *mem_region)
         igloo_debug_osi("igloo: No task found\n");
         header->result_count = 0;
         header->total_count = 0;
-        mem_region->header.size = cpu_to_le64(sizeof(struct osi_result_header));
-        mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_FAIL);
+        mem_region->header.size = (sizeof(struct osi_result_header));
+        mem_region->header.op = (HYPER_RESP_READ_FAIL);
         return;
     }
     
@@ -615,8 +615,8 @@ void handle_op_read_fds(portal_region *mem_region)
     task_lock(task);
     if (!task->files) {
         task_unlock(task);
-        mem_region->header.size = cpu_to_le64(sizeof(struct osi_result_header));
-        mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_OK);
+        mem_region->header.size = (sizeof(struct osi_result_header));
+        mem_region->header.op = (HYPER_RESP_READ_OK);
         return;
     }
     
@@ -631,7 +631,7 @@ void handle_op_read_fds(portal_region *mem_region)
     }
     
     // Store total count in header
-    header->total_count = cpu_to_le64(total_count);
+    header->total_count = (total_count);
     
     // Start filling fd entries from start_fd
     for (i = start_fd; i < fdt->max_fds; i++) {
@@ -644,7 +644,7 @@ void handle_op_read_fds(portal_region *mem_region)
         
         if (count >= max_fds || string_offset >= CHUNK_SIZE - PATH_MAX) {
             // Store the next fd number to start from in the next call
-            mem_region->header.addr = cpu_to_le64(i + 1);
+            mem_region->header.addr = (i + 1);
             break;
         }
         
@@ -652,8 +652,8 @@ void handle_op_read_fds(portal_region *mem_region)
         get_file(file);
         
         // Fill in fd entry
-        fd_entry->fd = cpu_to_le64(i);
-        fd_entry->name_offset = cpu_to_le64(string_offset);
+        fd_entry->fd = (i);
+        fd_entry->name_offset = (string_offset);
         
         // Move to temporary string buffer for path
         char *path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
@@ -679,7 +679,7 @@ void handle_op_read_fds(portal_region *mem_region)
                     igloo_debug_osi("igloo: Processed fd %d: %s\n", i, path);
                 } else {
                     // Not enough space for this entry's name
-                    mem_region->header.addr = cpu_to_le64(i);
+                    mem_region->header.addr = (i);
                     igloo_debug_osi("igloo: Not enough space for fd %d path, will continue from here next time\n", i);
                     break;
                 }
@@ -700,10 +700,10 @@ void handle_op_read_fds(portal_region *mem_region)
     }
     
     // Update count of FDs we're returning
-    header->result_count = cpu_to_le64(count);
+    header->result_count = (count);
     
-    mem_region->header.size = cpu_to_le64(string_offset);
-    mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_OK);
+    mem_region->header.size = (string_offset);
+    mem_region->header.op = (HYPER_RESP_READ_OK);
     
     igloo_debug_osi("igloo: Returned %d file descriptors (total: %d), buffer used: %zu bytes\n", 
                   count, total_count, string_offset);
