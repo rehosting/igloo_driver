@@ -29,6 +29,9 @@ enum HYPER_OP {
     HYPER_OP_REGISTER_UPROBE,
     HYPER_OP_UNREGISTER_UPROBE,
     
+    // FFI operations
+    HYPER_OP_FFI_EXEC,        // Execute kernel function via FFI
+    
     HYPER_OP_MAX,
     
     HYPER_RESP_NONE = 0xf0000000,
@@ -50,10 +53,10 @@ enum portal_type {
 #define CURRENT_PID_NUM 0xffffffff
 
 typedef struct {
-    __le64 op;          // operation type
-    __le64 addr;        // address
-    __le64 size;        // size
-    __le64 pid;         // process ID (if relevant)
+    uint32_t op;          // operation type
+    uint64_t addr;        // address
+    uint32_t size;        // size
+    uint32_t pid;         // process ID (if relevant)
 } region_header;
 
 typedef union {
@@ -68,13 +71,13 @@ typedef union {
 // Per-CPU array of memory regions
 
 struct cpu_mem_region_hdr {
-	__le64 count; // Number of currently allocated regions
-    __le64 call_num;    // global atomic hypercall number
+	int count; // Number of currently allocated regions
+    uint64_t call_num;    // global atomic hypercall number
 };
 
 struct cpu_mem_region {
-	__le64 owner_id;
-    __le64 mem_region; // struct mem_region*
+	int owner_id;
+    portal_region *mem_region; // struct mem_region*
 };
 
 struct cpu_mem_regions {
@@ -85,59 +88,67 @@ struct cpu_mem_regions {
 
 // OSI data structures based on osi_types.h
 struct osi_proc_handle {
-	__le64 pid;
-	__le64 taskd;
-	__le64 start_time;
+	uint64_t pid;
+	uint64_t taskd;
+	uint64_t start_time;
 };
 
 struct osi_module {
-    __le64 base;
-    __le64 size;
-    __le64 file_offset;    // Offset of file string in data buffer
-    __le64 name_offset;    // Offset of name string in data buffer
-    __le64 offset;         // Module load offset
-    __le64 flags;          // Module flags
-    __le64 pgoff;
-    __le64 dev;
-    __le64 inode;
+    uint64_t base;
+    uint64_t size;
+    uint64_t file_offset;    // Offset of file string in data buffer
+    uint64_t name_offset;    // Offset of name string in data buffer
+    uint64_t offset;         // Module load offset
+    uint64_t flags;          // Module flags
+    uint64_t pgoff;
+    uint64_t dev;
+    uint64_t inode;
 };
 
 struct osi_proc {
-    __le64 taskd;
-    __le64 pgd;
-    __le64 pid;
-    __le64 ppid;
-    __le64 name_offset;    // Offset of name string in data buffer
-    __le64 create_time;
-    __le64 map_count;
-    __le64 start_brk;
-    __le64 brk;
-    __le64 start_stack;
-    __le64 start_code;
-    __le64 end_code;
-    __le64 start_data;
-    __le64 end_data;
-    __le64 arg_start;
-    __le64 arg_end;
-    __le64 env_start;
-    __le64 env_end;
-    __le64 saved_auxv;
-    __le64 mmap_base;
-    __le64 task_size;
-    __le64 uid;
-    __le64 gid;
-    __le64 euid;
-    __le64 egid;
+    uint64_t taskd;
+    uint64_t pgd;
+    uint64_t pid;
+    uint64_t ppid;
+    uint64_t name_offset;    // Offset of name string in data buffer
+    uint64_t create_time;
+    uint64_t map_count;
+    uint64_t start_brk;
+    uint64_t brk;
+    uint64_t start_stack;
+    uint64_t start_code;
+    uint64_t end_code;
+    uint64_t start_data;
+    uint64_t end_data;
+    uint64_t arg_start;
+    uint64_t arg_end;
+    uint64_t env_start;
+    uint64_t env_end;
+    uint64_t saved_auxv;
+    uint64_t mmap_base;
+    uint64_t task_size;
+    uint64_t uid;
+    uint64_t gid;
+    uint64_t euid;
+    uint64_t egid;
 };
 
 // File descriptor entry structure for handle_op_read_fds
 struct osi_fd_entry {
-    __le64 fd;                 // File descriptor number
-    __le64 name_offset;        // Offset to the file name in the string buffer
+    uint64_t fd;                 // File descriptor number
+    uint64_t name_offset;        // Offset to the file name in the string buffer
 };
 
 // Generic header for OSI responses with pagination
 struct osi_result_header {
-    __le64 result_count;      // Number of items returned in this response
-    __le64 total_count;       // Total number of items available
+    uint64_t result_count;      // Number of items returned in this response
+    uint64_t total_count;       // Total number of items available
+};
+
+/* Define the FFI execution structure */
+struct portal_ffi_call {
+    void *func_ptr;          /* Pointer to the function to call */
+    unsigned long num_args;  /* Number of arguments (up to 8) */
+    unsigned long args[8];   /* Array of arguments as unsigned long */
+    unsigned long result;    /* Return value of the function call */
 };
