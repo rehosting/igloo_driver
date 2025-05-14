@@ -23,6 +23,7 @@ static const portal_op_handler op_handlers[] = {
     [HYPER_OP_WRITE_FILE]      = handle_op_write_file,
     [HYPER_OP_REGISTER_UPROBE] = handle_op_register_uprobe,
     [HYPER_OP_UNREGISTER_UPROBE] = handle_op_unregister_uprobe,
+    [HYPER_OP_FFI_EXEC] = handle_op_ffi_exec,
 };
 
 // Helper function to initialize memory regions for current CPU
@@ -144,7 +145,7 @@ int igloo_portal(unsigned long num, unsigned long arg1, unsigned long arg2)
 	// Initialize regions if this is the first call on this CPU
 	if (regions->hdr.count == 0) {  // Use hdr.count instead of count
 		initialize_cpu_regions(regions);
-	}
+    }
 
 	regions->hdr.call_num = call_num;  // Use hdr.call_num instead of call_num
 
