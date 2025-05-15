@@ -63,6 +63,10 @@ void handle_op_osi_proc_mem(portal_region *mem_region);
 void handle_op_register_uprobe(portal_region *mem_region);
 void handle_op_unregister_uprobe(portal_region *mem_region);
 
+// Syscall hook operation handlers
+void handle_op_register_syscall_hook(portal_region *mem_region);
+void handle_op_unregister_syscall_hook(portal_region *mem_region);
+
 // FFI operation handler
 void handle_op_ffi_exec(portal_region *mem_region);
 

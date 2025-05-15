@@ -37,7 +37,7 @@ int igloo_printk(const char *fmt, ...)
     int ret;
 
     va_start(args, fmt);
-    ret = vprintk(err_fmt, args);
+    ret = vprintk(fmt, args);
     va_end(args);
 
     return ret;

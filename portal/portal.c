@@ -5,6 +5,8 @@ long do_snapshot_and_coredump(void);
 static DEFINE_PER_CPU(struct cpu_mem_regions, cpu_regions);
 static DEFINE_PER_CPU(int, hypercall_num);
 
+uint64_t portal_interrupt = 0;
+
 // Operation handler table
 static const portal_op_handler op_handlers[] = {
     [HYPER_OP_READ]            = handle_op_read,
@@ -23,6 +25,8 @@ static const portal_op_handler op_handlers[] = {
     [HYPER_OP_WRITE_FILE]      = handle_op_write_file,
     [HYPER_OP_REGISTER_UPROBE] = handle_op_register_uprobe,
     [HYPER_OP_UNREGISTER_UPROBE] = handle_op_unregister_uprobe,
+    [HYPER_OP_REGISTER_SYSCALL_HOOK] = handle_op_register_syscall_hook,
+    [HYPER_OP_UNREGISTER_SYSCALL_HOOK] = handle_op_unregister_syscall_hook,
     [HYPER_OP_FFI_EXEC] = handle_op_ffi_exec,
 };
 
@@ -105,6 +109,7 @@ static bool handle_post_memregion(portal_region *mem_region){
         igloo_pr_debug( "igloo: No handler for operation: %d\n", op);
         mem_region->header.op = HYPER_RESP_WRITE_FAIL;
     }
+    igloo_pr_debug( "igloo: Operation %d handled, result: %d\n", op, mem_region->header.op);
     return true;
 }
 
@@ -145,10 +150,9 @@ int igloo_portal(unsigned long num, unsigned long arg1, unsigned long arg2)
 	// Initialize regions if this is the first call on this CPU
 	if (regions->hdr.count == 0) {  // Use hdr.count instead of count
 		initialize_cpu_regions(regions);
-    }
+	}
 
 	regions->hdr.call_num = call_num;  // Use hdr.call_num instead of call_num
-
 	// reset all memory regions to default values
 	for (i = 0; i < regions->hdr.count; i++) {  // Use hdr.count instead of count
 		portal_region *mem_region =
@@ -159,18 +163,37 @@ int igloo_portal(unsigned long num, unsigned long arg1, unsigned long arg2)
 		mem_region->header.size = 0;
 		regions->regions[i].owner_id = 0;
 	}
+
+    if (unlikely(portal_interrupt != 0) && num != IGLOO_HYPER_PORTAL_INTERRUPT){
+        for (;;){
+            igloo_hypercall2(IGLOO_HYPER_PORTAL_INTERRUPT, (unsigned long) &portal_interrupt, 1);
+		    if (!handle_post_memregions(regions)) {
+		        break;
+		    }
+        }
+    }
+
 	int j = 0;
 	for (;;) {
 		// Make the hypercall to get the next operation from the hypervisor
 		ret = igloo_hypercall2(num, arg1, arg2);
 		j++;
-		igloo_pr_debug("igloo: portal call loop %d\n", j);
+		igloo_pr_debug("igloo: portal call loop %d in call_num %x %llx \n", j, call_num, regions->hdr.call_num);
 		// if no responses -> break
 		if (!handle_post_memregions(regions)) {
+            igloo_pr_debug("igloo: portal broke on loop %d %x %llx\n", j,  call_num, regions->hdr.call_num);
 			break;
 		}
 	}
 
 	igloo_pr_debug("portal call exit: ret=%lu\n", ret);
 	return ret;
+}
+
+
+int igloo_portal_init(void)
+{
+    igloo_hypercall2(IGLOO_HYPER_ENABLE_PORTAL_INTERRUPT, (unsigned long) &portal_interrupt, 0);
+    igloo_portal(IGLOO_HYPER_PORTAL_INTERRUPT, 1, 0);
+    return 0;
 }

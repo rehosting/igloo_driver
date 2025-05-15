@@ -50,6 +50,9 @@ enum igloo_hypercall_constants {
     /* Uprobe operations */
     IGLOO_HYP_UPROBE_ENTER  = 0x6901,
     IGLOO_HYP_UPROBE_RETURN = 0x6902,
+
+    IGLOO_HYPER_ENABLE_PORTAL_INTERRUPT = 0x7901,
+    IGLOO_HYPER_PORTAL_INTERRUPT = 0x7902,
     
     /* Miscellaneous operations */
     IGLOO_SIGSTOP_KTHREAD   = 0x0c6ea29a,

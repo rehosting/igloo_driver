@@ -29,6 +29,10 @@ enum HYPER_OP {
     HYPER_OP_REGISTER_UPROBE,
     HYPER_OP_UNREGISTER_UPROBE,
     
+    // Syscall operations
+    HYPER_OP_REGISTER_SYSCALL_HOOK,
+    HYPER_OP_UNREGISTER_SYSCALL_HOOK,
+    
     // FFI operations
     HYPER_OP_FFI_EXEC,        // Execute kernel function via FFI
     

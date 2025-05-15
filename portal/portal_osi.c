@@ -437,6 +437,7 @@ void handle_op_read_procargs(portal_region *mem_region)
     unsigned long arg_start, arg_end;
     size_t len = 0;
     int i;
+    int ret;
 
     igloo_debug_osi("igloo: Handling HYPER_OP_READ_PROCARGS (pid=%d, comm='%s')\n",
                    task ? task->pid : -1, task ? task->comm : "NULL");
@@ -464,10 +465,29 @@ void handle_op_read_procargs(portal_region *mem_region)
         goto fail;
     }
 
-    /* Read the arguments data */
-    if (access_remote_vm(mm, arg_start, buf, len, FOLL_FORCE) != len) {
-        igloo_debug_osi("igloo: Failed to read arguments area\n");
-        goto fail;
+    /* Read the arguments data - use different methods based on whether it's current task */
+    if (task != current) {
+        /* For other processes, use access_remote_vm */
+        igloo_debug_osi("igloo: Using access_remote_vm for process %d\n", task->pid);
+        if (access_remote_vm(mm, arg_start, buf, len, FOLL_FORCE) != len) {
+            igloo_debug_osi("igloo: Failed to read arguments area\n");
+            goto fail;
+        }
+    } else {
+        /* For current process, use copy_from_user */
+        igloo_debug_osi("igloo: Using copy_from_user for current process\n");
+        /* Check access permissions before copying */
+        if (!access_ok((void __user *)arg_start, len)) {
+            igloo_debug_osi("igloo: access_ok failed for procargs at %#lx (len %lu)\n", arg_start, len);
+            goto fail;
+        }
+        
+        /* Copy argument data from user space */
+        ret = copy_from_user(buf, (const void __user *)arg_start, len);
+        if (ret != 0) {
+            igloo_debug_osi("igloo: copy_from_user failed for procargs, ret %d\n", ret);
+            goto fail;
+        }
     }
 
     /* In Linux, arguments in the memory are already null-terminated.

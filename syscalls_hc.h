@@ -1,61 +1,56 @@
-#ifndef IGLOO_SYSCALLS_HC_H
-#define IGLOO_SYSCALLS_HC_H 1
-// Define the maximum number of arguments a syscall can have
-#define IGLOO_SYSCALL_MAXARGS 6
+#ifndef _SYSCALLS_HC_H
+#define _SYSCALLS_HC_H
 
-/**
- * igloo_syscall_setter_t - Typedef for the syscall argument setter function.
- * @args_ptr_array: Array containing the ADDRESSES of the original syscall
- * arguments, each cast to unsigned long.
- * @new_args_le64:  Array containing the new argument values, provided as
- * little-endian 64-bit values.
- *
- * This function, generated per syscall, casts the pointers and new values
- * to the correct types and updates the original arguments.
- * NOTE: This function is generated even for syscalls with const args
- * (using a (void *) cast to bypass compile errors). The hook MUST NOT
- * call this setter with modified values for const arguments.
- */
-typedef void (*igloo_syscall_setter_t)(const unsigned long args_ptr_array[],
-                                       const __le64 new_args_le64[]);
+#include <linux/types.h>
+#include <linux/spinlock.h>
+#include <linux/hashtable.h>
 
+#include "syscall_macros.h"
 
-/**
- * igloo_syscall_enter_t - Typedef for the enter hook function.
- * @syscall_name: The string name ("read", "openat", etc.) of the syscall.
- * @skip_ret_val: Pointer to store the return value if skipping the syscall.
- * @argc: Number of arguments passed to the syscall.
- * @args_ptr_array: Array containing the ADDRESSES of the syscall arguments.
- * @setter_func: Pointer to the type-safe setter function for this specific
- * syscall, or NULL if argc is 0. The hook can call this
- * function if it decides to modify arguments, but MUST respect
- * the const nature of arguments.
- *
- * Returns: true to skip the actual syscall execution, false to proceed.
- */
-typedef bool (*igloo_syscall_enter_t)(const char *syscall_name,
-                                      long *skip_ret_val,
-                                      int argc,
-                                      const unsigned long args_ptr_array[],
-                                      igloo_syscall_setter_t setter_func);
+/* Syscall hook structure */
+struct syscall_hook {
+    u32 id;                            /* Unique ID for this hook */
+    bool enabled;                      /* Is this hook enabled? */
+    bool on_enter;                     /* Hook on syscall entry */
+    bool on_return;                    /* Hook on syscall return */
+    bool on_all;                       /* Hook on all syscalls */
+    char name[32];                     /* Name of syscall to hook */
+    
+    /* Filtering options */
+    bool comm_filter_enabled;          /* Enable process name filtering */
+    char comm_filter[TASK_COMM_LEN];   /* Process name to filter on */
+    
+    /* PID filtering */
+    bool pid_filter_enabled;           /* Enable PID filtering */
+    pid_t filter_pid;                  /* Process ID to filter on */
+    
+    /* Argument filtering */
+    bool filter_args_enabled;          /* Enable arg filtering */
+    bool filter_arg[IGLOO_SYSCALL_MAXARGS]; /* Which args to filter */
+    unsigned long arg_filter[IGLOO_SYSCALL_MAXARGS]; /* Arg values to match */
+};
 
-/**
- * igloo_syscall_return_t - Typedef for the return hook function.
- * @syscall_name: The string name ("read", "openat", etc.) of the syscall.
- * @orig_ret: The original return value from the syscall (or skip value).
- * @argc: Number of arguments passed to the syscall.
- * @args_val_array: Array containing the final VALUES of the syscall arguments
- * (after potential modification by enter hook), each cast
- * to unsigned long.
- *
- * Returns: The potentially modified return value for the syscall.
- */
-typedef long (*igloo_syscall_return_t)(const char *syscall_name,
-                                       long orig_ret,
-                                       int argc,
-                                       const unsigned long args_val_array[]);
+/* Structure to track registered syscall hooks */
+struct kernel_syscall_hook {
+    struct syscall_hook hook;   /* The hook configuration */
+    struct hlist_node hlist;    /* For tracking in hash table */
+    bool in_use;                /* Whether this slot is used */
+};
 
+/* Global variables - defined in syscalls_hc.c */
+extern struct hlist_head syscall_hook_table[1024];
+extern spinlock_t syscall_hook_lock;
+
+/* Check if a syscall matches a hook's criteria */
+bool hook_matches_syscall(struct syscall_hook *hook, const char *syscall_name, 
+                         int argc, const unsigned long args[]);
+
+/* Register a new syscall hook */
+u32 register_syscall_hook(struct syscall_hook *hook);
+
+/* Unregister a syscall hook */
+int unregister_syscall_hook(u32 hook_id);
 
 int syscalls_hc_init(void);
 
-#endif /* IGLOO_SYSCALLS_HC_H */
+#endif /* _SYSCALLS_HC_H */
