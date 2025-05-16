@@ -2,8 +2,9 @@
 
 long do_snapshot_and_coredump(void);
 
-static DEFINE_PER_CPU(struct cpu_mem_regions, cpu_regions);
-static DEFINE_PER_CPU(int, hypercall_num);
+static DEFINE_PER_CPU(bool, reported_portal_region);
+static DEFINE_PER_CPU(portal_region, portal_regions);
+static DEFINE_PER_CPU(uint32_t, hypercall_num);
 
 uint64_t portal_interrupt = 0;
 
@@ -141,47 +142,38 @@ static bool handle_post_memregions(struct cpu_mem_regions *regions){
 int igloo_portal(unsigned long num, unsigned long arg1, unsigned long arg2)
 {
 	unsigned long ret;
-	struct cpu_mem_regions *regions = this_cpu_ptr(&cpu_regions);
-	int i;
+	portal_region *region = this_cpu_ptr(&portal_regions);
+    bool *rpr = this_cpu_ptr(&reported_portal_region);
+
+    if (unlikely(!*rpr)) {
+        igloo_hypercall2(IGLOO_HYPER_REGISTER_MEM_REGION, (unsigned long)region, (unsigned long) PAGE_SIZE - sizeof(region_header));
+        *rpr = true;
+    }
 
 	int call_num = this_cpu_inc_return(hypercall_num);
 	igloo_pr_debug( "igloo-call: portal call: call_num=%d\n", call_num);
 
-	// Initialize regions if this is the first call on this CPU
-	if (regions->hdr.count == 0) {  // Use hdr.count instead of count
-		initialize_cpu_regions(regions);
-	}
-
-	regions->hdr.call_num = call_num;  // Use hdr.call_num instead of call_num
-	// reset all memory regions to default values
-	for (i = 0; i < regions->hdr.count; i++) {  // Use hdr.count instead of count
-		portal_region *mem_region =
-			(portal_region *)(unsigned long)(
-				regions->regions[i].mem_region);
-		mem_region->header.op = 0;
-		mem_region->header.addr = 0;
-		mem_region->header.size = 0;
-		regions->regions[i].owner_id = 0;
-	}
+	region->header.op = 0;
+    region->header.addr = 0;
+    region->header.size = 0;
+    region->header.pid = 0;
+    region->header.call_num = call_num;
 
     if (unlikely(portal_interrupt != 0) && num != IGLOO_HYPER_PORTAL_INTERRUPT){
         for (;;){
             igloo_hypercall2(IGLOO_HYPER_PORTAL_INTERRUPT, (unsigned long) &portal_interrupt, 1);
-		    if (!handle_post_memregions(regions)) {
+		    if (!handle_post_memregion(region)) {
 		        break;
 		    }
         }
+	    region->header.call_num = this_cpu_inc_return(hypercall_num);
     }
 
-	int j = 0;
 	for (;;) {
 		// Make the hypercall to get the next operation from the hypervisor
 		ret = igloo_hypercall2(num, arg1, arg2);
-		j++;
-		igloo_pr_debug("igloo: portal call loop %d in call_num %x %llx \n", j, call_num, regions->hdr.call_num);
 		// if no responses -> break
-		if (!handle_post_memregions(regions)) {
-            igloo_pr_debug("igloo: portal broke on loop %d %x %llx\n", j,  call_num, regions->hdr.call_num);
+		if (!handle_post_memregion(region)) {
 			break;
 		}
 	}
