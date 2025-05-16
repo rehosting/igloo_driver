@@ -20,23 +20,57 @@ static int portal_uprobe_ret_handler(struct uprobe_consumer *uc, unsigned long f
 
 // Structure to track a registered uprobe
 struct portal_uprobe {
-    __le64 id;                 // Unique ID for this probe
+    uint64_t id;                 // Unique ID for this probe
     struct path path;          // Path to the file with the uprobe
-    __le64 offset;             // Offset in the file
+    uint64_t offset;             // Offset in the file
     struct hlist_node hlist;   // For tracking in hash table
     char *filename;            // Name of file (for reporting)
     char *filter_comm;         // Process name filter (NULL = no filter)
-    __le64 probe_type;         // Type of probe (entry or return)
+    uint64_t probe_type;         // Type of probe (entry or return)
     struct uprobe_consumer consumer; // Consumer for this probe
     
     // PID filtering support
-    __le64 filter_pid;         // PID to filter on (0 = no filter/match any)
+    uint64_t filter_pid;         // PID to filter on (0 = no filter/match any)
 };
+
+// Structure for uprobe registration
+struct uprobe_registration {
+    char path[256];       // Path to the file with the uprobe
+    unsigned long offset; // Offset in the file
+    unsigned long type;   // ENTRY, RETURN, or BOTH
+    unsigned long pid;    // PID filter or CURRENT_PID_NUM for any
+    char comm[TASK_COMM_LEN]; // Process name filter (empty for none)
+} __attribute__((packed));
 
 // Hash table to track uprobes by ID
 static DEFINE_HASHTABLE(uprobe_table, 10);  // 1024 buckets
 static DEFINE_SPINLOCK(uprobe_lock);
 static atomic_t uprobe_id_counter = ATOMIC_INIT(0);
+
+// Global atomic counter for syscall sequence numbers
+static atomic64_t syscall_sequence_counter = ATOMIC64_INIT(0);
+
+struct portal_event {
+    uint64_t id;
+    struct task_struct *task;
+    struct pt_regs *regs;
+};
+
+static void do_hyp(bool is_enter, uint64_t id, struct pt_regs *regs) {
+    // Set the sequence number atomically
+    uint64_t sequence = atomic64_inc_return(&syscall_sequence_counter);
+
+    struct portal_event pe = {
+	    .id = id,
+	    .task = current,
+	    .regs = regs,
+    };
+
+    // Add the hook_id and metadata to the call so the hypervisor knows which hook was triggered
+    // and has access to syscall metadata - pass the hook_id as third argument
+    igloo_portal(is_enter ? IGLOO_HYP_UPROBE_ENTER : IGLOO_HYP_UPROBE_RETURN,
+                sequence, (unsigned long)&pe);
+}
 
 static int portal_uprobe(struct uprobe_consumer *uc, struct pt_regs *regs, __u64 *data, bool is_enter){
     struct portal_uprobe *pu = container_of(uc, struct portal_uprobe, consumer);
@@ -52,13 +86,13 @@ static int portal_uprobe(struct uprobe_consumer *uc, struct pt_regs *regs, __u64
         return 0; // Not our target PID, silently continue
     }
     
-    // Log that the uprobe was hit
-    uprobe_debug("igloo: uprobe hit: id=%llu, file=%s, offset=%lld, proc=%s, pid=%d\n",
+    // Explicitly inform the user which type of probe we're detecting
+    uprobe_debug("igloo: %s uprobe hit: id=%llu, file=%s, offset=%lld, proc=%s, pid=%d\n",
+                 is_enter ? "Entry" : "Return",
                  (unsigned long long)(pu->id), pu->filename, 
                  (long long)(pu->offset), current->comm, task_pid_nr(current));
     
-    // Here we record the event, notify the hypervisor with the ID
-    igloo_hypercall2(is_enter ? IGLOO_HYP_UPROBE_ENTER : IGLOO_HYP_UPROBE_RETURN, pu->id, (unsigned long)current);
+    do_hyp(is_enter, pu->id, regs);
     return 0;
 }
 
@@ -95,54 +129,29 @@ static struct portal_uprobe *find_uprobe_by_id(unsigned long id)
 void handle_op_register_uprobe(portal_region *mem_region)
 {
     struct portal_uprobe *pu;
-    char *path;
-    char *filter_comm = NULL;
-    unsigned long offset;
+    struct uprobe_registration *reg;
     unsigned long id;
     int ret;
     struct path file_path;
     struct inode *inode;
-    unsigned long probe_type = PORTAL_UPROBE_TYPE_ENTRY; // Default is a standard uprobe
-    unsigned long pid_filter = CURRENT_PID_NUM; // Default: match any process
-    unsigned long data_offset = 0;
+    char *filter_comm = NULL;
     
-    // Data format: path\0[process_filter]\0[probe_type][pid_filter]
-    // Path is stored at the beginning of the data area as a null-terminated string
-    path = PORTAL_DATA(mem_region);
-    data_offset = strlen(path) + 1; // Move past path and null terminator
+    // Map the input data to our registration structure
+    reg = (struct uprobe_registration *) PORTAL_DATA(mem_region);
     
-    // Check for process filter string (optional)
-    if (data_offset < mem_region->header.size) {
-        filter_comm = PORTAL_DATA(mem_region) + data_offset;
-        if (strlen(filter_comm) > 0) {
-            data_offset += strlen(filter_comm) + 1; // Move past filter and null terminator
-        } else {
-            filter_comm = NULL; // Empty string means no filter
-        }
-    }
+    // Ensure the path is null-terminated
+    reg->path[sizeof(reg->path) - 1] = '\0';
+    reg->comm[TASK_COMM_LEN - 1] = '\0';
     
-    // Check for probe type (optional)
-    if (data_offset + sizeof(unsigned long) <= (mem_region->header.size)) {
-        probe_type = *(unsigned long*)(PORTAL_DATA(mem_region) + data_offset);
-        data_offset += sizeof(unsigned long);
-        
-        if (probe_type != PORTAL_UPROBE_TYPE_ENTRY && 
-            probe_type != PORTAL_UPROBE_TYPE_RETURN &&
-            probe_type != PORTAL_UPROBE_TYPE_BOTH) {
-            probe_type = PORTAL_UPROBE_TYPE_ENTRY; // Invalid type, use default
-        }
-    }
-    
-    // Check for PID filter (optional)
-    if (data_offset + sizeof(unsigned long) <= (mem_region->header.size)) {
-        pid_filter = *(unsigned long*)(PORTAL_DATA(mem_region) + data_offset);
-        data_offset += sizeof(unsigned long);
+    // Set filter_comm if not empty
+    if (reg->comm[0] != '\0') {
+        filter_comm = reg->comm;
     }
     
     uprobe_debug("igloo: Registering uprobe for path=%s, offset=%lu, type=%lu, filter=%s, pid=%lu\n", 
-                 path, offset, probe_type, 
+                 reg->path, reg->offset, reg->type, 
                  filter_comm ? filter_comm : "none", 
-                 pid_filter);
+                 reg->pid);
     
     // Allocate a new uprobe structure
     pu = kzalloc(sizeof(*pu), GFP_KERNEL);
@@ -152,24 +161,24 @@ void handle_op_register_uprobe(portal_region *mem_region)
     }
     
     // Allocate memory for filename
-    pu->filename = kstrdup(path, GFP_KERNEL);
+    pu->filename = kstrdup(reg->path, GFP_KERNEL);
     if (!pu->filename) {
         uprobe_debug("igloo: Failed to allocate filename memory\n");
         goto fail_free_pu;
     }
     
     // Look up the file inode
-    ret = kern_path(path, LOOKUP_FOLLOW, &file_path);
+    ret = kern_path(reg->path, LOOKUP_FOLLOW, &file_path);
     if (ret) {
-        uprobe_debug("igloo: Failed to look up path %s: %d\n", path, ret);
+        uprobe_debug("igloo: Failed to look up path %s: %d\n", reg->path, ret);
         goto fail_free_filename;
     }
     
     // Save the path 
     pu->path = file_path;
-    pu->offset = offset;
-    pu->probe_type = probe_type;
-    pu->filter_pid = pid_filter;
+    pu->offset = reg->offset;
+    pu->probe_type = reg->type;
+    pu->filter_pid = reg->pid;
     
     // Save process filter if provided
     if (filter_comm) {
@@ -182,24 +191,29 @@ void handle_op_register_uprobe(portal_region *mem_region)
     
     // Get a unique ID for this uprobe
     id = atomic_inc_return(&uprobe_id_counter);
-    pu->id = (id);
+    pu->id = id;
     
-    // Set up the uprobe consumer
-    pu->consumer.handler = portal_uprobe_handler;
+    // Zero the consumer struct to ensure clean state
+    memset(&pu->consumer, 0, sizeof(pu->consumer));
     
-    // For return probes or both, set the return handler
-    if (probe_type == PORTAL_UPROBE_TYPE_RETURN || probe_type == PORTAL_UPROBE_TYPE_BOTH) {
-        pu->consumer.ret_handler = portal_uprobe_ret_handler; // Separate return handler
-        
-        // For return-only probes, don't set the entry handler
-        if (probe_type == PORTAL_UPROBE_TYPE_RETURN) {
-            pu->consumer.handler = NULL; // No entry handler for uretprobe
-        }
+    // Set up handlers based on probe type
+    if (reg->type == PORTAL_UPROBE_TYPE_ENTRY) {
+        // Entry-only probe
+        pu->consumer.handler = portal_uprobe_handler;
+        pu->consumer.ret_handler = NULL;
+    } else if (reg->type == PORTAL_UPROBE_TYPE_RETURN) {
+        // Return-only probe
+        pu->consumer.handler = NULL;
+        pu->consumer.ret_handler = portal_uprobe_ret_handler;
+    } else if (reg->type == PORTAL_UPROBE_TYPE_BOTH) {
+        // Both entry and return
+        pu->consumer.handler = portal_uprobe_handler;
+        pu->consumer.ret_handler = portal_uprobe_ret_handler;
     }
     
     // Register the uprobe - this returns a pointer, we need to check for errors
     inode = file_path.dentry->d_inode;
-    struct uprobe *uprobe = uprobe_register(inode, offset, 0, &pu->consumer);
+    struct uprobe *uprobe = uprobe_register(inode, reg->offset, 0, &pu->consumer);
     if (IS_ERR(uprobe)) {
         ret = PTR_ERR(uprobe);
         uprobe_debug("igloo: Failed to register uprobe: %d\n", ret);
@@ -214,8 +228,9 @@ void handle_op_register_uprobe(portal_region *mem_region)
     spin_unlock(&uprobe_lock);
     
     // Return success with the unique ID
-    mem_region->header.addr = id; // Return the ID in addr
-    mem_region->header.op = HYPER_RESP_READ_OK;
+    mem_region->header.size = id; // Return the ID in size
+
+    mem_region->header.op = HYPER_RESP_READ_NUM;
     return;
     
 fail_put_path:
