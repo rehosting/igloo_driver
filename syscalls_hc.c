@@ -486,7 +486,7 @@ int syscalls_hc_init(void) {
     }
 
     int i = 0;
-    for (i = 0; i < NR_syscalls+1000; i++) {
+    for (i = 0; i < NR_syscalls; i++) {
         struct syscall_metadata *meta;
         unsigned long addr;
 		addr = arch_syscall_addr(i);
