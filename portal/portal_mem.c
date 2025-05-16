@@ -3,7 +3,7 @@
 #include <linux/mm.h>     /* For access_ok */
 
 /* Helper function to determine if an address is in kernel space */
-static inline bool is_kernel_addr(unsigned long addr)
+static inline bool igloo_is_kernel_addr(unsigned long addr)
 {
 #ifdef CONFIG_ARM64
     return (addr >= MODULES_VADDR);
@@ -11,9 +11,11 @@ static inline bool is_kernel_addr(unsigned long addr)
     return (addr >= PAGE_OFFSET);
 #elif defined(CONFIG_RISCV)
     return (addr >= KERNEL_LINK_ADDR);
+#elif defined(CONFIG_PPC)
+    return is_kernel_addr(addr);
 #else
     /* For other architectures, use a generic test based on access_ok */
-    return !access_ok((void __user *)(uintptr_t)addr, 1);
+    return !(access_ok(((void __user *)(uintptr_t)addr), 1));
 #endif
 }
 
@@ -40,7 +42,7 @@ void handle_op_read(portal_region *mem_region)
     int resp;
     unsigned long addr = mem_region->header.addr;
     size_t size = mem_region->header.size;
-    bool is_kernel_address = is_kernel_addr(addr);
+    bool is_kernel_address = igloo_is_kernel_addr(addr);
     
     igloo_pr_debug("igloo: Handling HYPER_OP_READ: addr=%#llx, size=%#llx\n",
         (unsigned long long)addr, (unsigned long long)size);
@@ -101,7 +103,7 @@ void handle_op_write(portal_region *mem_region)
     igloo_pr_debug("igloo: Handling HYPER_OP_WRITE: addr=%#llx, size=%#llx\n",
         (unsigned long long)addr, (unsigned long long)size);
     
-    if (is_kernel_addr(addr)) {
+    if (igloo_is_kernel_addr(addr)) {
         // Handle kernel memory writes - use memcpy, but with caution
         igloo_pr_debug("igloo: Writing to kernel address %#lx, size %zu\n", addr, size);
         
@@ -157,7 +159,7 @@ void handle_op_read_str(portal_region *mem_region)
     }
     igloo_pr_debug("igloo: Handling HYPER_OP_READ_STR: addr=%#lx, max_size=%lu\n", addr, max_size);
 
-    if (is_kernel_addr(addr)) {
+    if (igloo_is_kernel_addr(addr)) {
         // Handle kernel string - use strlcpy with safety checks
         igloo_pr_debug("igloo: Reading string from kernel address %#lx\n", addr);
         
