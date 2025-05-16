@@ -61,6 +61,7 @@ typedef struct {
     uint64_t addr;        // address
     uint32_t size;        // size
     uint32_t pid;         // process ID (if relevant)
+    uint32_t call_num;
 } region_header;
 
 typedef union {
