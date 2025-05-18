@@ -3,7 +3,7 @@
 #include <linux/mm.h>     /* For access_ok */
 
 /* Helper function to determine if an address is in kernel space */
-static inline bool igloo_is_kernel_addr(unsigned long addr)
+bool igloo_is_kernel_addr(unsigned long addr)
 {
 #ifdef CONFIG_ARM64
     return (addr >= MODULES_VADDR);

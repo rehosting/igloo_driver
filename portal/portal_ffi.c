@@ -57,10 +57,10 @@ void handle_op_ffi_exec(portal_region *mem_region)
     
     /* Map the data buffer to our FFI structure */
     ffi_data = (struct portal_ffi_call *)PORTAL_DATA(mem_region);
-    
+
     /* Validate function pointer */
-    if (!ffi_data->func_ptr || !virt_addr_valid(ffi_data->func_ptr)) {
-        igloo_pr_debug("igloo: Invalid function pointer %p\n", ffi_data->func_ptr);
+    if (!ffi_data->func_ptr || !igloo_is_kernel_addr(ffi_data->func_ptr)) {
+        igloo_pr_debug("igloo: Invalid function pointer %llx\n", (uintptr_t) ffi_data->func_ptr);
         mem_region->header.op = HYPER_RESP_READ_FAIL;
         return;
     }

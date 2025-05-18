@@ -26,6 +26,8 @@
 #include "portal.h"
 #include "portal_types.h"
 
+bool igloo_is_kernel_addr(unsigned long addr);
+
 // Always print debug messages with highest priority
 #define igloo_pr_debug(fmt, ...) igloo_debug_portal(fmt, ##__VA_ARGS__)
 
