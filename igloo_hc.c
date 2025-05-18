@@ -129,6 +129,11 @@ static int __init early_igloo_debug_modules(char *p)
             igloo_debug.syscall = true;
         else if (!strcmp(token, "osi"))
             igloo_debug.osi = true;
+        else if (!strcmp(token, "all")){
+            memset(&igloo_debug, 1, sizeof(igloo_debug));
+            pr_warn_once("IGLOO: Debug enabled for all modules\n");
+            return 0;
+        }
         else
             pr_warn("IGLOO: Unknown debug module: %s\n", token);
     }
