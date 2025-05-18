@@ -61,10 +61,91 @@ static long do_snapshot_and_coredump(void)
     return syscall_ret_val;
 }
 
+// New function to just send SIGABRT to current process
+static long do_self_abort(void)
+{
+    struct kernel_siginfo info;
+    
+    printk(KERN_DEBUG "snapshot_module: Sending SIGABRT to self (PID %d)\n", 
+           task_pid_vnr(current));
+           
+    memset(&info, 0, sizeof(struct kernel_siginfo));
+    info.si_signo = SIGABRT;
+    info.si_code = SI_KERNEL;
+    
+    if (send_sig_info(SIGABRT, &info, current) < 0) {
+        printk(KERN_WARNING "snapshot_module: Failed to send SIGABRT to self\n");
+        return -EFAULT;
+    }
+    
+    printk(KERN_INFO "snapshot_module: SIGABRT sent successfully to self (PID %d)\n", 
+           task_pid_vnr(current));
+           
+    return task_pid_vnr(current);
+}
+
+// New function to send a custom signal to current process
+static long do_self_signal(int signal)
+{
+    struct kernel_siginfo info;
+    
+    if (signal <= 0 || signal >= _NSIG) {
+        printk(KERN_WARNING "snapshot_module: Invalid signal number: %d\n", signal);
+        return -EINVAL;
+    }
+    
+    printk(KERN_DEBUG "snapshot_module: Sending signal %d to self (PID %d)\n", 
+           signal, task_pid_vnr(current));
+           
+    memset(&info, 0, sizeof(struct kernel_siginfo));
+    info.si_signo = signal;
+    info.si_code = SI_KERNEL;
+    
+    if (send_sig_info(signal, &info, current) < 0) {
+        printk(KERN_WARNING "snapshot_module: Failed to send signal %d to self\n", signal);
+        return -EFAULT;
+    }
+    
+    printk(KERN_INFO "snapshot_module: Signal %d sent successfully to self (PID %d)\n", 
+           signal, task_pid_vnr(current));
+           
+    return task_pid_vnr(current);
+}
+
 void handle_op_dump(portal_region *mem_region)
 {
+    unsigned int dump_mode = 0;
+    int signal = 0;
+    
     igloo_pr_debug("igloo: Handling HYPER_OP_DUMP\n");
+    
+    // Check if we have a mode specified in the header's addr field
+    dump_mode = mem_region->header.addr & 0xFF;  // Lower 8 bits for mode
+    signal = (mem_region->header.addr >> 8) & 0xFF;  // Next 8 bits for signal number
+    
+    igloo_pr_debug("igloo: Dump mode: %u, Signal: %d\n", dump_mode, signal);
+    
     snprintf(PORTAL_DATA(mem_region), CHUNK_SIZE, "UNKNOWN_PID");
-    mem_region->header.size = do_snapshot_and_coredump();
+    
+    // Select appropriate dump mode
+    switch (dump_mode) {
+        case 0: // Default - full snapshot and coredump
+            mem_region->header.size = do_snapshot_and_coredump();
+            break;
+            
+        case 1: // Self abort - just send SIGABRT to current process
+            mem_region->header.size = do_self_abort();
+            break;
+            
+        case 2: // Custom signal - send specified signal to current process
+            mem_region->header.size = do_self_signal(signal);
+            break;
+            
+        default: // Unknown mode - use default
+            printk(KERN_WARNING "snapshot_module: Unknown dump mode %u, using default\n", dump_mode);
+            mem_region->header.size = do_snapshot_and_coredump();
+            break;
+    }
+    
     mem_region->header.op = HYPER_RESP_READ_NUM;
 }
