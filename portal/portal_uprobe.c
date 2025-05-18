@@ -74,15 +74,22 @@ static void do_hyp(bool is_enter, uint64_t id, struct pt_regs *regs) {
 
 static int portal_uprobe(struct uprobe_consumer *uc, struct pt_regs *regs, __u64 *data, bool is_enter){
     struct portal_uprobe *pu = container_of(uc, struct portal_uprobe, consumer);
+
+    uprobe_debug("igloo: portal_uprobe: id=%llu, file=%s, offset=%lld, proc=%s, pid=%d\n",
+                 (unsigned long long)(pu->id), pu->filename, 
+                 (long long)(pu->offset), current->comm, task_pid_nr(current));
     
     // Apply process name filter if set
     if (pu->filter_comm && strncmp(current->comm, pu->filter_comm, TASK_COMM_LEN) != 0) {
+        uprobe_debug("igloo: Process name filter failed: %s != %s\n", current->comm, pu->filter_comm);
         return 0; // Not our target process, silently continue
     }
     
     // Apply PID filter if set (non-zero)
     if ((pu->filter_pid) != CURRENT_PID_NUM && 
         (pu->filter_pid) != task_pid_nr(current)) {
+        uprobe_debug("igloo: PID filter failed: %d != %d\n", 
+                     (int)(pu->filter_pid), task_pid_nr(current));
         return 0; // Not our target PID, silently continue
     }
     
