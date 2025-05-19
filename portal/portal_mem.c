@@ -5,16 +5,41 @@
 /* Helper function to determine if an address is in kernel space */
 bool igloo_is_kernel_addr(unsigned long addr)
 {
-#ifdef CONFIG_ARM64
-    return (addr >= MODULES_VADDR);
+#if defined(CONFIG_ARM64)
+    /* ARM64: Use proper macros from the kernel for address space checking */
+    /* VA_BITS is typically 48 or 39 in ARM64 kernels */
+    /* Kernel addresses have the high bits set like 0xffff... */
+    unsigned long high_bits_mask = ~((1UL << VA_BITS) - 1);
+    return (addr & high_bits_mask) == high_bits_mask;
+    
 #elif defined(CONFIG_X86_64)
     return (addr >= PAGE_OFFSET);
+    
 #elif defined(CONFIG_RISCV)
     return (addr >= KERNEL_LINK_ADDR);
+    
 #elif defined(CONFIG_PPC)
     return is_kernel_addr(addr);
+    
+#elif defined(CONFIG_MIPS)
+    /* Handle both MIPS32 and MIPS64 */
+    #if defined(CONFIG_64BIT)
+        /* MIPS64: Very broad check for kernel address space */
+        /* Kernel addresses have the most significant bit set on MIPS64 
+           and are typically in the range 0xffffffff8xxxxxxx */
+        return (addr >> 63) != 0; /* Check the MSB is set (sign bit) */
+    #else
+        /* MIPS32: Check for kernel address space (0x8/0x9/0xa/0xc) */
+        return (addr >= 0x80000000);
+    #endif
+    
 #else
-    /* For other architectures, use a generic test based on access_ok */
+    /* For other architectures, use a safer method that doesn't depend on specific memory protections */
+    /* First try checking address_ok which is safer than the access_ok test we were using */
+    if (addr >= TASK_SIZE)
+        return true;
+        
+    /* Fallback to the old method if TASK_SIZE isn't defined */
     return !(access_ok(((void __user *)(uintptr_t)addr), 1));
 #endif
 }
