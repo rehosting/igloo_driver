@@ -488,10 +488,10 @@ extern const syscall_fn_t compat_sys_call_table[];
 #define COMPAT_TABLE_SIZE NR_syscalls  /* Use NR_syscalls instead of __NR_syscalls */
 
 /* For PPC64 */
-#elif defined(CONFIG_PPC64)
-extern void *sys32_call_table[];
-#define compat_sys_call_table sys32_call_table
-#define COMPAT_TABLE_SIZE __NR_syscalls
+// #elif defined(CONFIG_PPC64)
+// extern void *sys32_call_table[];
+// #define compat_sys_call_table sys32_call_table
+// #define COMPAT_TABLE_SIZE __NR_syscalls
 
 /* For RISC-V64 */
 #elif defined(CONFIG_RISCV) && defined(CONFIG_64BIT) && defined(CONFIG_COMPAT)
