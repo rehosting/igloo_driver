@@ -474,17 +474,18 @@ extern const syscall_fn_t compat_sys_call_table[];
 #define COMPAT_TABLE_SIZE __NR_compat32_syscalls
 
 /* For x86_64 */
-#elif defined(CONFIG_X86_64)
-/* Use void* instead of syscall_fn_t for broader compatibility */
-extern const void * const ia32_sys_call_table[];
-#define compat_sys_call_table ia32_sys_call_table
-#define COMPAT_TABLE_SIZE IA32_NR_syscalls
+// #elif defined(CONFIG_X86_64)
+// /* Use void* instead of syscall_fn_t for broader compatibility */
+// extern const void * const ia32_sys_call_table[];
+// #define compat_sys_call_table ia32_sys_call_table
+// #define COMPAT_TABLE_SIZE IA32_NR_syscalls
 
 /* For MIPS64 */
 #elif defined(CONFIG_MIPS) && defined(CONFIG_64BIT)
-extern const void *sys32_call_table[];
+/* Use the correct declaration that matches what's in syscall.h */
+#include <asm/syscall.h>  /* Ensure we get the right declaration */
 #define compat_sys_call_table sys32_call_table 
-#define COMPAT_TABLE_SIZE __NR_syscalls
+#define COMPAT_TABLE_SIZE NR_syscalls  /* Use NR_syscalls instead of __NR_syscalls */
 
 /* For PPC64 */
 #elif defined(CONFIG_PPC64)
@@ -498,9 +499,6 @@ extern void *sys32_call_table[];
 #define COMPAT_TABLE_SIZE __NR_syscalls
 #endif
 #endif
-
-/* Add sys_ni_syscall declaration */
-extern asmlinkage long sys_ni_syscall(const struct pt_regs *);
 
 /* Get syscall name from a function pointer */
 static const char *get_syscall_name_from_func(void *func_ptr) {
@@ -610,6 +608,9 @@ int syscalls_hc_init(void) {
 #if defined(CONFIG_RISCV) && defined(CONFIG_64BIT) && defined(CONFIG_COMPAT)
         /* For RISC-V, use the already declared variable without casting */
         void *func_ptr = compat_sys_call_table[i];
+#elif defined(CONFIG_MIPS) && defined(CONFIG_64BIT)
+        /* For MIPS64, handle the unsigned long array correctly */
+        void *func_ptr = (void *)(unsigned long)compat_sys_call_table[i];
 #else
         /* For other architectures, use proper casting based on architecture pointer size */
         void *func_ptr = (void *)(uintptr_t)compat_sys_call_table[i];
@@ -620,14 +621,6 @@ int syscalls_hc_init(void) {
             continue;
         }
             
-        /* Only with MIPS and some other architectures, compare against sys_ni_syscall
-         * But to avoid further compatibility issues, skip this check on ARM64
-         */
-#if !defined(CONFIG_ARM64)
-        if (func_ptr == (void *)sys_ni_syscall)
-            continue;
-#endif
-        
         report_syscall_from_func(buffer, func_ptr, i);
     }
 #else
