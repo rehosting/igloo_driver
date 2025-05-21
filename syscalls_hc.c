@@ -39,19 +39,21 @@ extern struct syscall_metadata *__start_syscalls_metadata[];
 extern struct syscall_metadata *__stop_syscalls_metadata[];
 
 // add 1 if the struct syscall_event changes
-#define SYSCALL_HC_KNOWN_MAGIC 0x1234
+#define SYSCALL_HC_KNOWN_MAGIC 0x1234  // Incremented due to structure change
+#define SYSCALL_NAME_MAX_LEN 48        // Maximum length for syscall name
+
 struct syscall_event {
-    u64 known_magic;     /* Magic value to validate structure integrity */
-    u32 id;              /* Hook ID that triggered this event */
-    long nr;             /* Syscall number */
+    u16 known_magic;                   /* Magic value to validate structure integrity */
+    u32 id;                            /* Hook ID that triggered this event */
+    u32 argc;                          /* Number of arguments */
     uint64_t args[IGLOO_SYSCALL_MAXARGS]; /* Syscall arguments */
-    uint64_t pc;    /* Program counter */
-    long retval;         /* Return value */
-    bool skip_syscall;   /* Flag to skip syscall execution */
-    struct task_struct *task; /* Task pointer */
-    struct pt_regs *regs;     /* Pointer to current registers */
-    const char *syscall_name;
-} __packed __aligned(8); /* Ensure 8-byte alignment */
+    uint64_t pc;                       /* Program counter */
+    long retval;                       /* Return value */
+    bool skip_syscall;                 /* Flag to skip syscall execution */
+    struct task_struct *task;          /* Task pointer */
+    struct pt_regs *regs;              /* Pointer to current registers */
+    char syscall_name[SYSCALL_NAME_MAX_LEN]; /* Name of syscall (embedded in structure) */
+} __packed __aligned(8);               /* Ensure 8-byte alignment */
 
 // Replace mutex with spinlock which is safe for atomic contexts
 DEFINE_SPINLOCK(syscall_hc_lock); // Keep commented out unless hypercall needs external locking
@@ -65,18 +67,18 @@ void print_syscall_info(const struct syscall_event *sc, const char *prefix) {
     }
     
     printk(KERN_INFO "IGLOO: %s Syscall Info --------\n", prefix ? prefix : "");
-    printk(KERN_INFO "  Magic: 0x%llx\n", sc->known_magic);
+    printk(KERN_INFO "  Magic: 0x%x\n", sc->known_magic);
     printk(KERN_INFO "  Hook ID: %u\n", sc->id);
-    printk(KERN_INFO "  Syscall #: %ld\n", sc->nr);
-    printk(KERN_INFO "  PC: 0x%lx\n", sc->pc);
+    printk(KERN_INFO "  Syscall Name: %s\n", sc->syscall_name);
+    printk(KERN_INFO "  PC: 0x%llx\n", sc->pc);
     printk(KERN_INFO "  Return Val: %ld\n", sc->retval);
     printk(KERN_INFO "  Skip: %d\n", sc->skip_syscall);
     printk(KERN_INFO "  Task: %p\n", sc->task);
     printk(KERN_INFO "  Regs: %p\n", sc->regs);
     
-    printk(KERN_INFO "  Arguments:\n");
-    for (int i = 0; i < IGLOO_SYSCALL_MAXARGS; i++) {
-        printk(KERN_INFO "    arg[%d]: 0x%lx\n", i, sc->args[i]);
+    printk(KERN_INFO "  Arguments (%u):\n", sc->argc);
+    for (int i = 0; i < sc->argc && i < IGLOO_SYSCALL_MAXARGS; i++) {
+        printk(KERN_INFO "    arg[%d]: 0x%llx\n", i, sc->args[i]);
     }
     printk(KERN_INFO "IGLOO: ------------------------\n");
 }
@@ -88,7 +90,15 @@ static void fill_handler(struct syscall_event *args, int argc, const unsigned lo
     args->known_magic = SYSCALL_HC_KNOWN_MAGIC;
     args->id = hook_id;
     args->skip_syscall = false;
-    args->syscall_name = syscall_name;
+    args->argc = argc;
+    
+    // Copy syscall name into the structure (with bounds checking)
+    if (syscall_name) {
+        strncpy(args->syscall_name, syscall_name, SYSCALL_NAME_MAX_LEN - 1);
+        args->syscall_name[SYSCALL_NAME_MAX_LEN - 1] = '\0';
+    } else {
+        args->syscall_name[0] = '\0';
+    }
 
     // Copy arguments safely - add proper NULL checks before dereferencing
     for (int i = 0; i < IGLOO_SYSCALL_MAXARGS; i++) {
@@ -115,12 +125,9 @@ static void fill_handler(struct syscall_event *args, int argc, const unsigned lo
     if (regs != NULL) {
         // Use safe way to get instruction pointer that works across architectures
         args->pc = instruction_pointer(regs);
-        // Use proper syscall_get_nr function with just regs parameter
-        args->nr = syscall_get_nr(current, regs);
     } else {
-        DBG_PRINTK("IGLOO: Failed to get syscall number from pt_regs\n");
+        DBG_PRINTK("IGLOO: Failed to get pt_regs\n");
         args->pc = 0;
-        args->nr = 0;
     }
 }
 
@@ -183,14 +190,10 @@ bool hook_matches_syscall(struct syscall_hook *hook, const char *syscall_name,
     if (hook->filter_args_enabled) {
         for (int i = 0; i < IGLOO_SYSCALL_MAXARGS && i < argc; i++) {
             if (hook->filter_arg[i]) {
-                unsigned long arg_ptr = args[i];
-		        unsigned long arg_val = *(unsigned long *)arg_ptr;
-		        if (arg_val != hook->arg_filter[i]) {
-		        	// printk(KERN_EMERG
-		        	//        "Failed on arg filter[%d]: %lx != %lx\n",
-		        	//        i, arg_val, hook->arg_filter[i]);
-		        	return false;
-		        }
+                // Don't dereference args - they are already direct values
+                unsigned long arg_val = args[i];  
+                if (arg_val != hook->arg_filter[i])
+                    return false;
             }
         }
     }
@@ -375,7 +378,7 @@ static long syscall_ret_handler(const char *syscall_name, long orig_ret, int arg
         // Check if return value was modified
         long new_ret = syscall_args_holder.retval;
         if (new_ret != modified_ret) {
-            printk(KERN_EMERG "Hypercall modified return value: old=%ld, new=%ld\n",
+            DBG_PRINTK("Hypercall modified return value: old=%ld, new=%ld\n",
                       modified_ret, new_ret);
             modified_ret = new_ret;
         }
@@ -435,8 +438,8 @@ static void report_syscall(char * buffer, struct syscall_metadata *meta){
     }
     // Prepare JSON metadata for hypercall (ensure buffer is large enough)
     int x = snprintf(buffer, PAGE_SIZE,
-                   "{\"syscall_nr\": %d, \"name\": \"%s\", \"args\":[",
-                   meta->syscall_nr, meta->name);
+                   "{\"name\": \"%s\", \"args\":[",
+                    meta->name);
 
     for (int j = 0; j < meta->nb_args && x > 0 && x < PAGE_SIZE; j++) {
         // Append args safely, checking remaining buffer space
@@ -486,7 +489,7 @@ int syscalls_hc_init(void) {
     }
 
     int i = 0;
-    for (i = 0; i < NR_syscalls; i++) {
+    for (i = 0; i < NR_syscalls+1000; i++) {
         struct syscall_metadata *meta;
         unsigned long addr;
 		addr = arch_syscall_addr(i);
