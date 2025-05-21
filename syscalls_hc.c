@@ -201,7 +201,7 @@ bool hook_matches_syscall(struct syscall_hook *hook, const char *syscall_name,
             }
         }
     }
-    printk(KERN_EMERG "IGLOO: Hook matches syscall %s\n", syscall_name);
+    // printk(KERN_EMERG "IGLOO: Hook matches syscall %s\n", syscall_name);
     
     // All criteria matched
     return true;
