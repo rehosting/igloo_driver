@@ -190,14 +190,18 @@ bool hook_matches_syscall(struct syscall_hook *hook, const char *syscall_name,
     if (hook->filter_args_enabled) {
         for (int i = 0; i < IGLOO_SYSCALL_MAXARGS && i < argc; i++) {
             if (hook->filter_arg[i]) {
-                // Don't dereference args - they are already direct values
-                unsigned long arg_val = args[i];  
-                if (arg_val != hook->arg_filter[i])
-                    return false;
+                unsigned long arg_ptr = args[i];
+		        unsigned long arg_val = *(unsigned long *)arg_ptr;
+		        if (arg_val != hook->arg_filter[i]) {
+		        	// printk(KERN_EMERG
+		        	//        "Failed on arg filter[%d]: %lx != %lx\n",
+		        	//        i, arg_val, hook->arg_filter[i]);
+		        	return false;
+		        }
             }
         }
     }
-    // printk(KERN_EMERG "IGLOO: Hook matches syscall %s\n", syscall_name);
+    printk(KERN_EMERG "IGLOO: Hook matches syscall %s\n", syscall_name);
     
     // All criteria matched
     return true;
@@ -462,6 +466,94 @@ static void report_syscall(char * buffer, struct syscall_metadata *meta){
     igloo_hypercall(IGLOO_HYP_SETUP_SYSCALL, (unsigned long)buffer);
 }
 
+#ifdef CONFIG_COMPAT
+/* For ARM64 */
+#if defined(CONFIG_ARM64)
+extern const syscall_fn_t compat_sys_call_table[];
+/* Don't redeclare sys_call_table as it's already in syscall.h with correct type */
+#define COMPAT_TABLE_SIZE __NR_compat32_syscalls
+
+/* For x86_64 */
+#elif defined(CONFIG_X86_64)
+/* Use void* instead of syscall_fn_t for broader compatibility */
+extern const void * const ia32_sys_call_table[];
+#define compat_sys_call_table ia32_sys_call_table
+#define COMPAT_TABLE_SIZE IA32_NR_syscalls
+
+/* For MIPS64 */
+#elif defined(CONFIG_MIPS) && defined(CONFIG_64BIT)
+extern const void *sys32_call_table[];
+#define compat_sys_call_table sys32_call_table 
+#define COMPAT_TABLE_SIZE __NR_syscalls
+
+/* For PPC64 */
+#elif defined(CONFIG_PPC64)
+extern void *sys32_call_table[];
+#define compat_sys_call_table sys32_call_table
+#define COMPAT_TABLE_SIZE __NR_syscalls
+
+/* For RISC-V64 */
+#elif defined(CONFIG_RISCV) && defined(CONFIG_64BIT) && defined(CONFIG_COMPAT)
+/* Use the correct declaration for RISC-V - it's already properly declared in syscall.h */
+#define COMPAT_TABLE_SIZE __NR_syscalls
+#endif
+#endif
+
+/* Add sys_ni_syscall declaration */
+extern asmlinkage long sys_ni_syscall(const struct pt_regs *);
+
+/* Get syscall name from a function pointer */
+static const char *get_syscall_name_from_func(void *func_ptr) {
+    char sym[KSYM_SYMBOL_LEN];
+    
+    if (!func_ptr || IS_ERR(func_ptr))
+        return NULL;
+        
+    kallsyms_lookup((unsigned long)func_ptr, NULL, NULL, NULL, sym);
+    
+    /* Skip if we couldn't identify the symbol */
+    if (!sym[0])
+        return NULL;
+    
+    /* Skip the "sys_" or similar prefix */
+    if (strncmp(sym, "sys_", 4) == 0)
+        return kstrdup(sym, GFP_KERNEL);
+    else if (strncmp(sym, "compat_sys_", 11) == 0) 
+        return kstrdup(sym + 7, GFP_KERNEL); /* Return without the "compat_" prefix */
+    else if (strncmp(sym, "__arm64_", 8) == 0)
+        return kstrdup(sym + 8, GFP_KERNEL); /* Return without the "__arm64_" prefix */
+    else if (strncmp(sym, "__loongarch_", 12) == 0)
+        return kstrdup(sym + 12, GFP_KERNEL); /* Return without the "__loongarch_" prefix */
+    else if (strncmp(sym, "__riscv_", 8) == 0)
+        return kstrdup(sym + 8, GFP_KERNEL); /* Return without the "__riscv_" prefix */
+    else if (strncmp(sym, "__se_", 5) == 0)
+        return kstrdup(sym + 5, GFP_KERNEL); /* Return without the "__se_" prefix */
+    
+    return kstrdup(sym, GFP_KERNEL);
+}
+
+static void report_syscall_from_func(char *buffer, void *func_ptr, int syscall_nr) {
+    const char *name;
+    int x;
+    
+    if (!func_ptr || IS_ERR(func_ptr))
+        return;
+    
+    name = get_syscall_name_from_func(func_ptr);
+    if (!name)
+        return;
+    
+    /* Create a simplified metadata report for compat syscalls */
+    x = snprintf(buffer, PAGE_SIZE, "{\"name\": \"%s\", \"compat\": true, \"args\":\"unknown\"}", name);
+    
+    if (x > 0 && x < PAGE_SIZE) {
+        /* Send this metadata via hypercall */
+        igloo_hypercall(IGLOO_HYP_SETUP_SYSCALL, (unsigned long)buffer);
+    }
+    
+    kfree(name);
+}
+
 int syscalls_hc_init(void) {
     printk(KERN_EMERG "IGLOO: Initializing syscall hypercalls\n");
     if (!igloo_do_hc) {
@@ -488,26 +580,61 @@ int syscalls_hc_init(void) {
         return -EINVAL;
     }
 
-    int i = 0;
+    // Process regular syscalls first
+    int i;
     for (i = 0; i < NR_syscalls+1000; i++) {
         struct syscall_metadata *meta;
         unsigned long addr;
-		addr = arch_syscall_addr(i);
-		meta = find_syscall_meta_copy(addr);
-		if (!meta)
-			continue;
-		meta->syscall_nr = i;
+        addr = arch_syscall_addr(i);
+        meta = find_syscall_meta_copy(addr);
+        if (!meta)
+            continue;
+        meta->syscall_nr = i;
         report_syscall(buffer, meta);
     }
 
-    for (; p < end; p++, i++) {
+    for (p = __start_syscalls_metadata; p < end; p++) {
         struct syscall_metadata *meta = *p;
         if (!meta) {
-             printk(KERN_WARNING "IGLOO: Found NULL metadata entry at index %d\n", i);
-             continue; // Skip invalid metadata
+            continue; // Skip invalid metadata
         }
         report_syscall(buffer, meta);
     }
+    
+    // Process compat syscalls
+#ifdef CONFIG_COMPAT
+#ifdef COMPAT_TABLE_SIZE
+    printk(KERN_INFO "IGLOO: Processing compat syscall table with %d entries\n", COMPAT_TABLE_SIZE);
+    
+    for (i = 0; i < COMPAT_TABLE_SIZE; i++) {
+#if defined(CONFIG_RISCV) && defined(CONFIG_64BIT) && defined(CONFIG_COMPAT)
+        /* For RISC-V, use the already declared variable without casting */
+        void *func_ptr = compat_sys_call_table[i];
+#else
+        /* For other architectures, use proper casting based on architecture pointer size */
+        void *func_ptr = (void *)(uintptr_t)compat_sys_call_table[i];
+#endif
+        
+        /* Skip non-existent syscalls (usually NULL) */
+        if (!func_ptr || IS_ERR(func_ptr)) {
+            continue;
+        }
+            
+        /* Only with MIPS and some other architectures, compare against sys_ni_syscall
+         * But to avoid further compatibility issues, skip this check on ARM64
+         */
+#if !defined(CONFIG_ARM64)
+        if (func_ptr == (void *)sys_ni_syscall)
+            continue;
+#endif
+        
+        report_syscall_from_func(buffer, func_ptr, i);
+    }
+#else
+    printk(KERN_INFO "IGLOO: No compat syscall table found for this architecture\n");
+#endif
+#endif
+
     kfree(buffer);
     /* Initialize the hash table */
     hash_init(syscall_hook_table);
