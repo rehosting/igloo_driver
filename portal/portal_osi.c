@@ -676,7 +676,7 @@ void handle_op_read_fds(portal_region *mem_region)
         fd_entry->name_offset = (string_offset);
         
         // Move to temporary string buffer for path
-        char *path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
+        char *path_buf = kmalloc(PATH_MAX, GFP_ATOMIC);
         if (path_buf) {
             char *path = d_path(&file->f_path, path_buf, PATH_MAX);
             if (!IS_ERR(path)) {
