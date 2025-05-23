@@ -1,10 +1,14 @@
 #include "portal_internal.h"
+#include <linux/wait.h>
+#include <linux/sched.h>
 
 long do_snapshot_and_coredump(void);
 
 static DEFINE_PER_CPU(bool, reported_portal_region);
 static DEFINE_PER_CPU(portal_region, portal_regions);
 static DEFINE_PER_CPU(uint32_t, hypercall_num);
+static DEFINE_PER_CPU(bool, portal_in_progress);
+static DEFINE_PER_CPU(wait_queue_head_t, portal_waitq);
 
 uint64_t portal_interrupt = 0;
 
@@ -141,9 +145,20 @@ static bool handle_post_memregions(struct cpu_mem_regions *regions){
 
 int igloo_portal(unsigned long num, unsigned long arg1, unsigned long arg2)
 {
-	unsigned long ret;
-	portal_region *region = this_cpu_ptr(&portal_regions);
+    unsigned long ret;
+    portal_region *region = this_cpu_ptr(&portal_regions);
+    bool *in_progress = this_cpu_ptr(&portal_in_progress);
+    wait_queue_head_t *wq = this_cpu_ptr(&portal_waitq);
     bool *rpr = this_cpu_ptr(&reported_portal_region);
+
+    // Debug log if we are about to block
+    if (unlikely(*in_progress)) {
+        igloo_pr_debug("igloo: Portal request blocked on CPU %d (another request in progress)\n", smp_processor_id());
+    }
+
+    // Wait if another portal request is in progress
+    wait_event(*wq, !(*in_progress));
+    *in_progress = true;
 
     if (unlikely(!*rpr)) {
         igloo_hypercall2(IGLOO_HYPER_REGISTER_MEM_REGION, (unsigned long)region, (unsigned long) PAGE_SIZE - sizeof(region_header));
@@ -179,12 +194,20 @@ int igloo_portal(unsigned long num, unsigned long arg1, unsigned long arg2)
 	}
 
 	igloo_pr_debug("portal call exit: ret=%lu\n", ret);
+    *in_progress = false;
+    wake_up(wq);
 	return ret;
 }
 
 
 int igloo_portal_init(void)
 {
+    int cpu;
+    for_each_possible_cpu(cpu) {
+        wait_queue_head_t *wq = per_cpu_ptr(&portal_waitq, cpu);
+        init_waitqueue_head(wq);
+        per_cpu(portal_in_progress, cpu) = false;
+    }
     igloo_hypercall2(IGLOO_HYPER_ENABLE_PORTAL_INTERRUPT, (unsigned long) &portal_interrupt, 0);
     igloo_portal(IGLOO_HYPER_PORTAL_INTERRUPT, 1, 0);
     return 0;
