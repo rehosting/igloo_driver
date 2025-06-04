@@ -210,6 +210,7 @@ bool hook_matches_syscall(struct syscall_hook *hook, const char *syscall_name,
 //Entry handler for system calls
 static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, int argc, const unsigned long args[], igloo_syscall_setter_t setter_func)
 {
+    check_portal_interrupt();
     if (!igloo_do_hc || !args || !skip_ret_val) {
         return 0;
     }
@@ -321,6 +322,7 @@ static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, 
 
 // Return handler for system calls
 static long syscall_ret_handler(const char *syscall_name, long orig_ret, int argc, const unsigned long args[]){
+    check_portal_interrupt();
     if (!igloo_do_hc) {
         return orig_ret;
     }
