@@ -4,11 +4,7 @@
 
 long do_snapshot_and_coredump(void);
 
-static DEFINE_PER_CPU(bool, reported_portal_region);
-static DEFINE_PER_CPU(portal_region, portal_regions);
 static DEFINE_PER_CPU(uint32_t, hypercall_num);
-static DEFINE_PER_CPU(bool, portal_in_progress);
-static DEFINE_PER_CPU(wait_queue_head_t, portal_waitq);
 
 uint64_t portal_interrupt = 0;
 
@@ -34,50 +30,6 @@ static const portal_op_handler op_handlers[] = {
     [HYPER_OP_UNREGISTER_SYSCALL_HOOK] = handle_op_unregister_syscall_hook,
     [HYPER_OP_FFI_EXEC] = handle_op_ffi_exec,
 };
-
-// Helper function to initialize memory regions for current CPU
-static bool allocate_new_mem_region(struct cpu_mem_regions *regions)
-{
-    portal_region *mem_region = NULL;
-    int current_count;
-
-    // Allocate a page-aligned memory region
-    mem_region = (portal_region *)__get_free_page(GFP_ATOMIC | __GFP_ZERO);
-    if (mem_region == NULL) {
-        pr_err("igloo: Failed to allocate page-aligned mem_region\n");
-	    return false;
-    }
-    current_count = regions->hdr.count;  // Use hdr.count instead of count
-
-    // Add to our array and increment count
-    regions->regions[current_count].mem_region = mem_region;
-    regions->regions[current_count].owner_id = 0;
-    regions->hdr.count = (current_count + 1);  // Use hdr.count instead of count
-
-    // Register with hypervisor
-    igloo_pr_debug("igloo: Registered new mem_region %p for CPU %d (page-aligned, idx: %lld)\n", 
-                  mem_region, smp_processor_id(), (long long)(regions->hdr.count) - 1);  // Use hdr.count
-    return true;
-}
-
-// Helper function to initialize memory regions for current CPU
-static void initialize_cpu_regions(struct cpu_mem_regions *regions)
-{
-    int i;
-    
-    // Allocate the default number of memory regions
-    for (i = 0; i < DEFAULT_MEM_REGIONS; i++) {
-        if (!allocate_new_mem_region(regions)) {
-            pr_err("igloo: Failed to allocate memory region %d during initialization\n", i);
-            return;
-        }
-    }
-    igloo_hypercall2(IGLOO_HYPER_REGISTER_MEM_REGION, (unsigned long)regions, (unsigned long) PAGE_SIZE - sizeof(region_header));
-    
-    pr_info("igloo: Initialized %d memory regions for CPU %d\n", 
-           DEFAULT_MEM_REGIONS, smp_processor_id());
-}
-
 
 // bool -> was any work done?
 static bool handle_post_memregion(portal_region *mem_region){
@@ -143,71 +95,52 @@ static bool handle_post_memregions(struct cpu_mem_regions *regions){
     return any_responses;
 }
 
+void check_portal_interrupt(void){
+    if (unlikely(portal_interrupt != 0)) {
+        // Clear the interrupt flag
+        igloo_portal(IGLOO_HYPER_PORTAL_INTERRUPT, (unsigned long) &portal_interrupt, 0);
+    }
+}
+
 int igloo_portal(unsigned long num, unsigned long arg1, unsigned long arg2)
 {
     unsigned long ret;
-    portal_region *region = this_cpu_ptr(&portal_regions);
-    bool *in_progress = this_cpu_ptr(&portal_in_progress);
-    wait_queue_head_t *wq = this_cpu_ptr(&portal_waitq);
-    bool *rpr = this_cpu_ptr(&reported_portal_region);
+    portal_region *region = (portal_region *)get_zeroed_page(GFP_ATOMIC);
+    
+    // Check if memory allocation failed
+    if (!region) {
+        pr_err("igloo: Failed to allocate memory for portal region\n");
+        return -ENOMEM;
+    }
+    
+    region->header.call_num = this_cpu_inc_return(hypercall_num);
+    igloo_pr_debug("igloo-call: portal call: call_num=%d\n", region->header.call_num);
 
-    // Debug log if we are about to block
-    if (unlikely(*in_progress)) {
-        igloo_pr_debug("igloo: Portal request blocked on CPU %d (another request in progress)\n", smp_processor_id());
+    if (num != IGLOO_HYPER_PORTAL_INTERRUPT){
+        check_portal_interrupt();
     }
 
-    // Wait if another portal request is in progress
-    wait_event(*wq, !(*in_progress));
-    *in_progress = true;
-
-    if (unlikely(!*rpr)) {
-        igloo_hypercall2(IGLOO_HYPER_REGISTER_MEM_REGION, (unsigned long)region, (unsigned long) PAGE_SIZE - sizeof(region_header));
-        *rpr = true;
-    }
-
-	int call_num = this_cpu_inc_return(hypercall_num);
-	igloo_pr_debug( "igloo-call: portal call: call_num=%d\n", call_num);
-
-	region->header.op = 0;
-    region->header.addr = 0;
-    region->header.size = 0;
-    region->header.pid = 0;
-    region->header.call_num = call_num;
-
-    if (unlikely(portal_interrupt != 0) && num != IGLOO_HYPER_PORTAL_INTERRUPT){
-        for (;;){
-            igloo_hypercall2(IGLOO_HYPER_PORTAL_INTERRUPT, (unsigned long) &portal_interrupt, 1);
-		    if (!handle_post_memregion(region)) {
-		        break;
-		    }
+    for (;;) {
+        // Make the hypercall to get the next operation from the hypervisor
+        ret = igloo_hypercall3(num, arg1, arg2, (unsigned long) region);
+        // if no responses -> break
+        if (!handle_post_memregion(region)) {
+            break;
         }
-	    region->header.call_num = this_cpu_inc_return(hypercall_num);
     }
 
-	for (;;) {
-		// Make the hypercall to get the next operation from the hypervisor
-		ret = igloo_hypercall2(num, arg1, arg2);
-		// if no responses -> break
-		if (!handle_post_memregion(region)) {
-			break;
-		}
-	}
-
-	igloo_pr_debug("portal call exit: ret=%lu\n", ret);
-    *in_progress = false;
-    wake_up(wq);
-	return ret;
+    igloo_pr_debug("portal call exit: ret=%lu\n", ret);
+    
+    // Free the allocated memory before returning
+    free_page((unsigned long)region);
+    
+    return ret;
 }
 
 
 int igloo_portal_init(void)
 {
-    int cpu;
-    for_each_possible_cpu(cpu) {
-        wait_queue_head_t *wq = per_cpu_ptr(&portal_waitq, cpu);
-        init_waitqueue_head(wq);
-        per_cpu(portal_in_progress, cpu) = false;
-    }
+    igloo_hypercall2(IGLOO_HYPER_REGISTER_MEM_REGION, (unsigned long) PAGE_SIZE - sizeof(region_header), 0);
     igloo_hypercall2(IGLOO_HYPER_ENABLE_PORTAL_INTERRUPT, (unsigned long) &portal_interrupt, 0);
     igloo_portal(IGLOO_HYPER_PORTAL_INTERRUPT, 1, 0);
     return 0;
