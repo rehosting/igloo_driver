@@ -444,8 +444,8 @@ static void report_syscall(char * buffer, struct syscall_metadata *meta){
     }
     // Prepare JSON metadata for hypercall (ensure buffer is large enough)
     int x = snprintf(buffer, PAGE_SIZE,
-                   "{\"name\": \"%s\", \"args\":[",
-                    meta->name);
+                     "{\"name\": \"%s\", \"syscall_nr\": %d, \"args\":[",
+                     meta->name, meta->syscall_nr);
 
     for (int j = 0; j < meta->nb_args && x > 0 && x < PAGE_SIZE; j++) {
         // Append args safely, checking remaining buffer space
@@ -544,7 +544,7 @@ static void report_syscall_from_func(char *buffer, void *func_ptr, int syscall_n
         return;
     
     /* Create a simplified metadata report for compat syscalls */
-    x = snprintf(buffer, PAGE_SIZE, "{\"name\": \"%s\", \"compat\": true, \"args\":\"unknown\"}", name);
+    x = snprintf(buffer, PAGE_SIZE, "{\"name\": \"%s\", \"compat\": true, \"args\":\"unknown\", \"syscall_nr\": %d}", name, syscall_nr);
     
     if (x > 0 && x < PAGE_SIZE) {
         /* Send this metadata via hypercall */
