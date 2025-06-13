@@ -15,15 +15,15 @@ struct syscall_hook {
     bool on_return;                    /* Hook on syscall return */
     bool on_all;                       /* Hook on all syscalls */
     char name[32];                     /* Name of syscall to hook */
-    
+
     /* Filtering options */
     bool comm_filter_enabled;          /* Enable process name filtering */
     char comm_filter[TASK_COMM_LEN];   /* Process name to filter on */
-    
+
     /* PID filtering */
     bool pid_filter_enabled;           /* Enable PID filtering */
     pid_t filter_pid;                  /* Process ID to filter on */
-    
+
     /* Argument filtering */
     bool filter_args_enabled;          /* Enable arg filtering */
     bool filter_arg[IGLOO_SYSCALL_MAXARGS]; /* Which args to filter */
@@ -42,7 +42,7 @@ extern struct hlist_head syscall_hook_table[1024];
 extern spinlock_t syscall_hook_lock;
 
 /* Check if a syscall matches a hook's criteria */
-bool hook_matches_syscall(struct syscall_hook *hook, const char *syscall_name, 
+bool hook_matches_syscall(struct syscall_hook *hook, const char *syscall_name,
                          int argc, const unsigned long args[]);
 
 /* Register a new syscall hook */
