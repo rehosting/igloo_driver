@@ -67,7 +67,7 @@ for TARGET in $TARGETS; do
     echo "Building IGLOO module for $TARGET with kernel at ${KERNEL_DIR}"
 
     # Create output directory
-    OUTPUT_DIR="/tmp/modules/${TARGET}"
+    OUTPUT_DIR="/tmp/build/${VERSION}/modules/${TARGET}"
     mkdir -p "${OUTPUT_DIR}"
 
     # Clean and build the module
@@ -78,6 +78,6 @@ for TARGET in $TARGETS; do
         O=${TARGET_BUILD_DIR} \
         clean all
 
-    chmod -R o+rw "${BUILD_DIR}/modules/${TARGET}"
+    chmod -R o+rw "${OUTPUT_DIR}"
     echo "IGLOO module for $TARGET built successfully"
 done
