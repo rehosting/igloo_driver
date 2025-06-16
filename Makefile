@@ -1,3 +1,4 @@
+ccflags-y += -g
 obj-m := igloo.o
 
 EXTRA_LDFLAGS += --print-map
@@ -15,7 +16,6 @@ PWD := $(shell pwd)
 ARCH ?= x86_64
 CROSS_COMPILE ?=
 ccflags-y := -I$(srctree)/drivers/igloo
-KBUILD_MODPOST_WARN = 1
 
 all:
 	make -C $(KDIR) M=$(PWD) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules V=1

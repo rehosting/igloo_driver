@@ -55,13 +55,15 @@ for TARGET in $TARGETS; do
         exit 1
     fi
 
-    if [ ! -d "${TARGET_BUILD_DIR}/include/generated" || ! -d "${TARGET_BUILD_DIR}/Module.symvers" ]; then
-        echo "Found kernel config but missing build artifacts. Preparing build environment..."
+    if [ ! -d "${TARGET_BUILD_DIR}/include/generated" ]; then
+        echo "include/generated directory not found in ${TARGET_BUILD_DIR}!"
+        echo "Found kernel config but missing generated headers."
+        exit 1
+    fi
 
-        # Generate headers and scripts needed for module building
-        make -C "${KERNEL_DIR}" O="${TARGET_BUILD_DIR}" ARCH="${short_arch}" CROSS_COMPILE="$(get_cc $TARGET)" modules_prepare scripts
-
-        echo "Build environment prepared for module compilation"
+    if [ ! -f "${TARGET_BUILD_DIR}/Module.symvers" ]; then
+        echo "Module.symvers not found in ${TARGET_BUILD_DIR}!"
+        exit 1
     fi
 
     echo "Building IGLOO module for $TARGET with kernel at ${KERNEL_DIR}"
@@ -77,6 +79,7 @@ for TARGET in $TARGETS; do
         CROSS_COMPILE="$(get_cc $TARGET)" \
         O=${TARGET_BUILD_DIR} \
         clean all
+    dwarf2json linux --elf ${MODULE_DIR}/igloo.ko | xz -c > ${OUTPUT_DIR}/cosi.igloo.ko.${TARGET}.json.xz
 
     chmod -R o+rw "${OUTPUT_DIR}"
     echo "IGLOO module for $TARGET built successfully"
