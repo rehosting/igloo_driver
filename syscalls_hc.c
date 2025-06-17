@@ -19,8 +19,9 @@
 #include "kprobe_syscalls.h"
 #include "portal/portal.h"
 
-igloo_syscall_enter_t igloo_syscall_enter_hook;
-igloo_syscall_return_t igloo_syscall_return_hook;
+// Use extern declarations instead of defining the symbols
+extern igloo_syscall_enter_t igloo_syscall_enter_hook;
+extern igloo_syscall_return_t igloo_syscall_return_hook;
 
 /* Global hash table and lock for syscall hooks */
 struct hlist_head syscall_hook_table[1024];
@@ -548,7 +549,13 @@ static void report_syscall_from_func(char *buffer, void *func_ptr, int syscall_n
 }
 
 int syscalls_hc_init(void) {
-    printk(KERN_EMERG "IGLOO: Initializing syscall hypercalls\n");
+    printk(KERN_EMERG "Initializing syscall hypercalls\n");
+    igloo_pr_debug("igloo_do_hc = %d\n", igloo_do_hc);
+    igloo_pr_debug("__start_syscalls_metadata = %p\n", __start_syscalls_metadata);
+    igloo_pr_debug("__stop_syscalls_metadata = %p\n", __stop_syscalls_metadata);
+    igloo_pr_debug("NR_syscalls = %d\n", NR_syscalls);
+    igloo_pr_debug("sys_call_table = %p\n", sys_call_table);
+
     if (!igloo_do_hc) {
         printk(KERN_INFO "IGLOO: Hypercalls disabled, syscalls tracing not activated\n");
         return 0;
@@ -559,6 +566,9 @@ int syscalls_hc_init(void) {
     igloo_syscall_enter_hook = syscall_entry_handler;
     igloo_syscall_return_hook = syscall_ret_handler;
 
+    igloo_pr_debug("IGLOO: Hooks set - enter: %p, return: %p\n",
+           igloo_syscall_enter_hook, igloo_syscall_return_hook);
+
     void *buffer = kzalloc(PAGE_SIZE, GFP_KERNEL);
 
     if (!buffer) {
@@ -568,6 +578,8 @@ int syscalls_hc_init(void) {
 
     // Count the number of syscalls
     int num_syscall_probes = end - p;
+    printk(KERN_EMERG "IGLOO: Found %d syscall metadata entries\n", num_syscall_probes);
+
     if (num_syscall_probes <= 0) {
         printk(KERN_WARNING "IGLOO: No syscall metadata found.\n");
         return -EINVAL;
@@ -575,6 +587,7 @@ int syscalls_hc_init(void) {
 
     // Process regular syscalls first
     int i;
+    int processed_count = 0;
     for (i = 0; i < NR_syscalls+1000; i++) {
         struct syscall_metadata *meta;
         unsigned long addr;
@@ -583,8 +596,16 @@ int syscalls_hc_init(void) {
         if (!meta)
             continue;
         meta->syscall_nr = i;
+
+        if (processed_count < 5) {  // Print first few
+            igloo_pr_debug("IGLOO: Processing syscall %d: %s\n", i, meta->name);
+        }
+
         report_syscall(buffer, meta);
+        processed_count++;
     }
+
+    igloo_pr_debug("IGLOO: Processed %d syscalls from sys_call_table\n", processed_count);
 
     for (p = __start_syscalls_metadata; p < end; p++) {
         struct syscall_metadata *meta = *p;
