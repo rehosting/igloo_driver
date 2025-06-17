@@ -4,6 +4,7 @@
 #include <linux/types.h>
 #include <linux/spinlock.h>
 #include <linux/hashtable.h>
+#include "igloo_debug.h"
 
 #include "syscall_macros.h"
 
@@ -52,5 +53,7 @@ u32 register_syscall_hook(struct syscall_hook *hook);
 int unregister_syscall_hook(u32 hook_id);
 
 int syscalls_hc_init(void);
+
+#define igloo_pr_debug(fmt, ...) igloo_debug_syscall(fmt, ##__VA_ARGS__)
 
 #endif /* _SYSCALLS_HC_H */

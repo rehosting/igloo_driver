@@ -28,13 +28,6 @@ DEFINE_SPINLOCK(syscall_hook_lock);
 
 #define MAX_MATCHING_HOOKS 32
 
-// Define IGLOO_DEBUG=1 during compilation to enable debug prints
-#ifdef IGLOO_DEBUG
-#define DBG_PRINTK(fmt, ...) printk(KERN_EMERG "IGLOO_DBG: " fmt, ##__VA_ARGS__)
-#else
-#define DBG_PRINTK(fmt, ...) do {} while (0)
-#endif
-
 extern struct syscall_metadata *__start_syscalls_metadata[];
 extern struct syscall_metadata *__stop_syscalls_metadata[];
 
@@ -62,7 +55,7 @@ DEFINE_SPINLOCK(syscall_hc_lock); // Keep commented out unless hypercall needs e
 void print_syscall_info(const struct syscall_event *sc, const char *prefix);
 void print_syscall_info(const struct syscall_event *sc, const char *prefix) {
     if (!sc) {
-        DBG_PRINTK( "IGLOO: %s NULL syscall structure\n", prefix ? prefix : "");
+        igloo_pr_debug("%s NULL syscall structure\n", prefix ? prefix : "");
         return;
     }
 
@@ -109,7 +102,7 @@ static void fill_handler(struct syscall_event *args, int argc, const unsigned lo
                 args->args[i] = *(unsigned long*)arg_ptr;
             } else {
                 args->args[i] = 0;
-                DBG_PRINTK("IGLOO: Invalid argument pointer at index %d\n", i);
+                igloo_pr_debug("Invalid argument pointer at index %d\n", i);
             }
         } else {
             args->args[i] = 0; // Initialize unused args to 0
@@ -126,7 +119,7 @@ static void fill_handler(struct syscall_event *args, int argc, const unsigned lo
         // Use safe way to get instruction pointer that works across architectures
         args->pc = instruction_pointer(regs);
     } else {
-        DBG_PRINTK("IGLOO: Failed to get pt_regs\n");
+        igloo_pr_debug("Failed to get pt_regs\n");
         args->pc = 0;
     }
 }
@@ -250,7 +243,7 @@ static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, 
                 matching_hook_ids[num_matching_hooks++] = hook->hook.id;
                 any_hook_matched = true;
             } else {
-                DBG_PRINTK("IGLOO: Too many matching hooks for syscall %s, some will be ignored\n", syscall_name);
+                igloo_pr_debug("Too many matching hooks for syscall %s, some will be ignored\n", syscall_name);
                 break;
             }
         }
@@ -259,7 +252,7 @@ static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, 
 
     // If no hooks matched, we can skip the hypercall entirely
     if (!any_hook_matched) {
-        DBG_PRINTK("IGLOO: No hooks matched for syscall %s, skipping hypercalls\n", syscall_name);
+        igloo_pr_debug("No hooks matched for syscall %s, skipping hypercalls\n", syscall_name);
         return false;
     }
 
@@ -273,7 +266,7 @@ static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, 
         // Make a local copy for this hook
         memcpy(&original_info, &syscall_args_holder, sizeof(struct syscall_event));
 
-        DBG_PRINTK("IGLOO: Syscall %s matched hook ID %u (%d of %d)\n",
+        igloo_pr_debug("Syscall %s matched hook ID %u (%d of %d)\n",
                   syscall_name, matched_hook_id, hook_idx + 1, num_matching_hooks);
 
         // Make the hypercall for this hook
@@ -283,7 +276,7 @@ static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, 
         bool was_modified = false;
         for (int i = 0; i < IGLOO_SYSCALL_MAXARGS && i < argc; i++) {
             if (syscall_args_holder.args[i] != original_info.args[i]) {
-                DBG_PRINTK("Hypercall modified arg[%d]: old=0x%lx, new=0x%lx\n",
+                igloo_pr_debug("Hypercall modified arg[%d]: old=0x%lx, new=0x%lx\n",
                           i, original_info.args[i], syscall_args_holder.args[i]);
                 was_modified = true;
                 break;
@@ -298,7 +291,7 @@ static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, 
         if (syscall_args_holder.skip_syscall) {
             skip_syscall = true;
             skip_ret_val_local = syscall_args_holder.retval;
-            DBG_PRINTK("IGLOO: Hook %u requested to skip syscall %s with return value %lx\n",
+            igloo_pr_debug("Hook %u requested to skip syscall %s with return value %lx\n",
                       matched_hook_id, syscall_name, skip_ret_val_local);
             break; // Exit early if any hook requests to skip
         }
@@ -312,7 +305,7 @@ static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, 
 
     // If no hooks matched, we didn't do anything
     if (!any_hook_matched) {
-        DBG_PRINTK("IGLOO: No hooks matched for syscall %s, skipping hypercall\n", syscall_name);
+        igloo_pr_debug("No hooks matched for syscall %s, skipping hypercall\n", syscall_name);
         return 0;
     }
 
@@ -352,7 +345,7 @@ static long syscall_ret_handler(const char *syscall_name, long orig_ret, int arg
                 matching_hook_ids[num_matching_hooks++] = hook->hook.id;
                 any_hook_matched = true;
             } else {
-                DBG_PRINTK("IGLOO: Too many matching hooks for syscall %s return, some will be ignored\n", syscall_name);
+                igloo_pr_debug("Too many matching hooks for syscall %s return, some will be ignored\n", syscall_name);
                 break;
             }
         }
@@ -361,7 +354,7 @@ static long syscall_ret_handler(const char *syscall_name, long orig_ret, int arg
 
     // If no hooks matched, we can skip the hypercall entirely
     if (!any_hook_matched) {
-        DBG_PRINTK("IGLOO: No hooks matched for syscall %s return, skipping hypercalls\n", syscall_name);
+        igloo_pr_debug("No hooks matched for syscall %s return, skipping hypercalls\n", syscall_name);
         return orig_ret;
     }
 
@@ -375,7 +368,7 @@ static long syscall_ret_handler(const char *syscall_name, long orig_ret, int arg
         // Update the return value
         syscall_args_holder.retval = modified_ret;
 
-        DBG_PRINTK("IGLOO: Syscall %s return matched hook ID %u (%d of %d)\n",
+        igloo_pr_debug("Syscall %s return matched hook ID %u (%d of %d)\n",
                   syscall_name, matched_hook_id, hook_idx + 1, num_matching_hooks);
 
         // Make the hypercall for this hook
@@ -384,7 +377,7 @@ static long syscall_ret_handler(const char *syscall_name, long orig_ret, int arg
         // Check if return value was modified
         long new_ret = syscall_args_holder.retval;
         if (new_ret != modified_ret) {
-            DBG_PRINTK("Hypercall modified return value: old=%ld, new=%ld\n",
+            igloo_pr_debug("Hypercall modified return value: old=%ld, new=%ld\n",
                       modified_ret, new_ret);
             modified_ret = new_ret;
         }
@@ -392,7 +385,7 @@ static long syscall_ret_handler(const char *syscall_name, long orig_ret, int arg
 
     // If no hooks matched, just return the original value
     if (!any_hook_matched) {
-        DBG_PRINTK("IGLOO: No hooks matched for syscall %s return, skipping hypercall\n", syscall_name);
+        igloo_pr_debug("No hooks matched for syscall %s return, skipping hypercall\n", syscall_name);
         return orig_ret;
     }
 
@@ -460,7 +453,7 @@ static void report_syscall(char * buffer, struct syscall_metadata *meta){
     }
 
     if (x <= 0 || x >= PAGE_SIZE) {
-         DBG_PRINTK( "IGLOO: Failed to format JSON for syscall %s (nr %d) - buffer overflow or snprintf error.\n", meta->name, meta->syscall_nr);
+         igloo_pr_debug( " Failed to format JSON for syscall %s (nr %d) - buffer overflow or snprintf error.\n", meta->name, meta->syscall_nr);
          // Decide how to handle: skip this probe or abort? Skipping for now.
          return;
     }
