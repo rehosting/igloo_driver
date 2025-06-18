@@ -29,8 +29,19 @@ DEFINE_SPINLOCK(syscall_hook_lock);
 
 #define MAX_MATCHING_HOOKS 32
 
-extern struct syscall_metadata *__start_syscalls_metadata[];
-extern struct syscall_metadata *__stop_syscalls_metadata[];
+struct syscall_metadata *igloo_syscall_nr_to_meta(int nr)
+{
+    int max_syscalls = igloo_get_nr_syscalls();
+    if (max_syscalls == -1) {
+        max_syscalls = NR_syscalls;  // Use the module's access to NR_syscalls
+    }
+
+    if (nr >= max_syscalls || nr < 0)
+        return NULL;
+
+    // Use the copied metadata first, fall back to original if needed
+    return igloo_get_syscall_metadata_copy(nr);
+}
 
 // add 1 if the struct syscall_event changes
 #define SYSCALL_HC_KNOWN_MAGIC 0x1234  // Incremented due to structure change
@@ -94,33 +105,27 @@ static void fill_handler(struct syscall_event *args, int argc, const unsigned lo
         args->syscall_name[0] = '\0';
     }
 
-    // Copy arguments safely - add proper NULL checks before dereferencing
     for (int i = 0; i < IGLOO_SYSCALL_MAXARGS; i++) {
-        if (i < argc && args_ptrs && args_ptrs[i]) {
-            // Safely copy argument value - verify valid pointer first
+        if (i < argc && args_ptrs) {
             unsigned long arg_ptr = args_ptrs[i];
             if (arg_ptr && !IS_ERR_VALUE(arg_ptr)) {
                 args->args[i] = *(unsigned long*)arg_ptr;
             } else {
                 args->args[i] = 0;
-                igloo_pr_debug("Invalid argument pointer at index %d\n", i);
             }
         } else {
-            args->args[i] = 0; // Initialize unused args to 0
+            args->args[i] = 0;
         }
     }
 
     args->task = current;
-    args->retval = 0; // Initialize to 0, will be set by hypercall
 
     regs = task_pt_regs(current);
     args->regs = regs;
 
     if (regs != NULL) {
-        // Use safe way to get instruction pointer that works across architectures
         args->pc = instruction_pointer(regs);
     } else {
-        igloo_pr_debug("Failed to get pt_regs\n");
         args->pc = 0;
     }
 }
@@ -214,13 +219,14 @@ static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, 
         return 0;
     }
 
-    // Create our own copy of args to avoid dereferencing directly
-    unsigned long safe_args[IGLOO_SYSCALL_MAXARGS] = {0};
-
-    // Copy the args values safely without dereferencing
-    for (int i = 0; i < IGLOO_SYSCALL_MAXARGS && i < argc; i++) {
-        safe_args[i] = args[i];  // These are values, not pointers to values
+    // Debug: Print what we received from the syscall wrapper
+    igloo_pr_debug("syscall_entry_handler: %s argc=%d args=%p\n", syscall_name, argc, args);
+    for (int i = 0; i < argc && i < IGLOO_SYSCALL_MAXARGS; i++) {
+        igloo_pr_debug("  received arg[%d] = 0x%lx\n", i, args[i]);
     }
+
+    // The args[] array from the syscall wrapper contains pointers to the argument values
+    // We should pass it directly to fill_handler, not copy the pointer values
 
     // Check for hooks that match this syscall
     struct kernel_syscall_hook *hook;
@@ -239,7 +245,7 @@ static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, 
 
     spin_lock(&syscall_hook_lock);
     hash_for_each_safe(syscall_hook_table, i, tmp, hook, hlist) {
-        if (hook->hook.on_enter && hook_matches_syscall(&hook->hook, syscall_name, argc, safe_args)) {
+        if (hook->hook.on_enter && hook_matches_syscall(&hook->hook, syscall_name, argc, args)) {
             if (num_matching_hooks < MAX_MATCHING_HOOKS) {
                 matching_hook_ids[num_matching_hooks++] = hook->hook.id;
                 any_hook_matched = true;
@@ -261,8 +267,8 @@ static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, 
     for (int hook_idx = 0; hook_idx < num_matching_hooks; hook_idx++) {
         u32 matched_hook_id = matching_hook_ids[hook_idx];
 
-        // Fill syscall args structure once - we'll use it for all matching hooks
-        fill_handler(&syscall_args_holder, argc, safe_args, matched_hook_id, syscall_name);
+        // Pass the args array directly to fill_handler - it expects pointers
+        fill_handler(&syscall_args_holder, argc, args, matched_hook_id, syscall_name);
 
         // Make a local copy for this hook
         memcpy(&original_info, &syscall_args_holder, sizeof(struct syscall_event));
@@ -304,13 +310,7 @@ static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, 
         return true;
     }
 
-    // If no hooks matched, we didn't do anything
-    if (!any_hook_matched) {
-        igloo_pr_debug("No hooks matched for syscall %s, skipping hypercall\n", syscall_name);
-        return 0;
-    }
-
-    // Continue with syscall execution - we already processed all matches above
+    // Continue with syscall execution
     return false;
 }
 
@@ -406,31 +406,6 @@ static inline bool arch_syscall_match_sym_name(const char *sym, const char *name
 	return !strcmp(sym + 3, name + 3);
 }
 #endif
-
-// copied from trace_syscalls.c
-static struct syscall_metadata *
-find_syscall_meta_copy(unsigned long syscall);
-static struct syscall_metadata *
-find_syscall_meta_copy(unsigned long syscall)
-{
-	struct syscall_metadata **start;
-	struct syscall_metadata **stop;
-	char str[KSYM_SYMBOL_LEN];
-
-
-	start = __start_syscalls_metadata;
-	stop = __stop_syscalls_metadata;
-	kallsyms_lookup(syscall, NULL, NULL, NULL, str);
-
-	if (arch_syscall_match_sym_name(str, "sys_ni_syscall"))
-		return NULL;
-
-	for ( ; start < stop; start++) {
-		if ((*start)->name && arch_syscall_match_sym_name(str, (*start)->name))
-			return *start;
-	}
-	return NULL;
-}
 
 static void report_syscall(char * buffer, struct syscall_metadata *meta){
     if (!meta || !meta->name) {
@@ -551,17 +526,27 @@ static void report_syscall_from_func(char *buffer, void *func_ptr, int syscall_n
 int syscalls_hc_init(void) {
     printk(KERN_EMERG "Initializing syscall hypercalls\n");
     igloo_pr_debug("igloo_do_hc = %d\n", igloo_do_hc);
-    igloo_pr_debug("__start_syscalls_metadata = %p\n", __start_syscalls_metadata);
-    igloo_pr_debug("__stop_syscalls_metadata = %p\n", __stop_syscalls_metadata);
-    igloo_pr_debug("NR_syscalls = %d\n", NR_syscalls);
+
+    // Get metadata info using copied functions
+    int metadata_count = igloo_get_syscall_metadata_count_copy();
+    int nr_syscalls = igloo_get_nr_syscalls();
+    if (nr_syscalls == -1) {
+        nr_syscalls = NR_syscalls;  // Use module's NR_syscalls if kernel returns -1
+    }
+
+    igloo_pr_debug("copied metadata_count = %d\n", metadata_count);
+    igloo_pr_debug("NR_syscalls = %d\n", nr_syscalls);
     igloo_pr_debug("sys_call_table = %p\n", sys_call_table);
 
     if (!igloo_do_hc) {
         printk(KERN_INFO "IGLOO: Hypercalls disabled, syscalls tracing not activated\n");
         return 0;
     }
-    struct syscall_metadata **p = __start_syscalls_metadata;
-    struct syscall_metadata **end = __stop_syscalls_metadata;
+
+    if (metadata_count == 0 || !sys_call_table) {
+        printk(KERN_ERR "IGLOO: No syscall metadata available or sys_call_table not initialized\n");
+        return -EINVAL;
+    }
 
     igloo_syscall_enter_hook = syscall_entry_handler;
     igloo_syscall_return_hook = syscall_ret_handler;
@@ -576,60 +561,85 @@ int syscalls_hc_init(void) {
         return -ENOMEM;
     }
 
-    // Count the number of syscalls
-    int num_syscall_probes = end - p;
-    printk(KERN_EMERG "IGLOO: Found %d syscall metadata entries\n", num_syscall_probes);
-
-    if (num_syscall_probes <= 0) {
-        printk(KERN_WARNING "IGLOO: No syscall metadata found.\n");
-        return -EINVAL;
+    // Count the number of syscalls with metadata using copied approach
+    int num_syscalls_with_metadata = 0;
+    for (int i = 0; i < nr_syscalls; i++) {
+        if (igloo_get_syscall_metadata_copy(i) != NULL) {
+            num_syscalls_with_metadata++;
+        }
     }
 
-    // Process regular syscalls first
-    int i;
+    printk(KERN_EMERG "IGLOO: Found %d syscalls with copied metadata out of %d total\n",
+           num_syscalls_with_metadata, nr_syscalls);
+
+    // Debug: Print first 10 metadata entries from our copy
+    printk(KERN_ERR "IGLOO: First 10 syscalls with copied metadata:\n");
+    int debug_count = 0;
+
+    for (int i = 0; i < nr_syscalls && debug_count < 10; i++) {
+        struct syscall_metadata *meta = igloo_get_syscall_metadata_copy(i);
+        if (meta && meta->name) {
+            printk(KERN_ERR "  [%d] %s (nb_args=%d, syscall_nr=%d)\n",
+                   debug_count, meta->name, meta->nb_args, i);
+            debug_count++;
+        }
+    }
+
+    // Process regular syscalls - iterate through the syscalls using new functions
     int processed_count = 0;
-    for (i = 0; i < NR_syscalls+1000; i++) {
-        struct syscall_metadata *meta;
+    int unregistered_count = 0;
+
+    for (int i = 0; i < nr_syscalls; i++) {
+        struct syscall_metadata *meta = igloo_syscall_nr_to_meta(i);
         unsigned long addr;
+        char sym_name[KSYM_SYMBOL_LEN];
+
         addr = sys_call_table[i];
-        meta = find_syscall_meta_copy(addr);
-        if (!meta)
+        if (!addr)
             continue;
-        meta->syscall_nr = i;
 
-        if (processed_count < 5) {  // Print first few
-            igloo_pr_debug("IGLOO: Processing syscall %d: %s\n", i, meta->name);
+        // Get the symbol name for this syscall
+        kallsyms_lookup(addr, NULL, NULL, NULL, sym_name);
+
+        // Check if it's a ni_syscall (unimplemented syscall)
+        if (strstr(sym_name, "ni_syscall"))
+            continue;
+
+        if (meta) {
+            // We have metadata for this syscall
+            report_syscall(buffer, meta);
+            processed_count++;
+        } else {
+            // No metadata found - only debug specific syscalls we care about
+            if (strstr(sym_name, "open") || strstr(sym_name, "read") || strstr(sym_name, "write")) {
+                printk(KERN_ERR "IGLOO: Missing metadata for %s (syscall %d)\n", sym_name, i);
+            }
+
+            if (sym_name[0] && !arch_syscall_match_sym_name(sym_name, "sys_ni_syscall")) {
+                report_syscall_from_func(buffer, (void*)addr, i);
+                unregistered_count++;
+            }
         }
-
-        report_syscall(buffer, meta);
-        processed_count++;
     }
 
-    igloo_pr_debug("IGLOO: Processed %d syscalls from sys_call_table\n", processed_count);
-
-    for (p = __start_syscalls_metadata; p < end; p++) {
-        struct syscall_metadata *meta = *p;
-        if (!meta) {
-            continue; // Skip invalid metadata
-        }
-        report_syscall(buffer, meta);
-    }
+    igloo_pr_debug("IGLOO: Processed %d syscalls with metadata, %d without metadata\n",
+                   processed_count, unregistered_count);
 
     // Process compat syscalls
 #ifdef CONFIG_COMPAT
 #ifdef COMPAT_TABLE_SIZE
     printk(KERN_INFO "IGLOO: Processing compat syscall table with %d entries\n", COMPAT_TABLE_SIZE);
 
-    for (i = 0; i < COMPAT_TABLE_SIZE; i++) {
+    for (int j = 0; j < COMPAT_TABLE_SIZE; j++) {  // Change 'i' to 'j' to avoid redeclaration
 #if defined(CONFIG_RISCV) && defined(CONFIG_64BIT) && defined(CONFIG_COMPAT)
         /* For RISC-V, use the already declared variable without casting */
-        void *func_ptr = compat_sys_call_table[i];
+        void *func_ptr = compat_sys_call_table[j];
 #elif defined(CONFIG_MIPS) && defined(CONFIG_64BIT)
         /* For MIPS64, handle the unsigned long array correctly */
-        void *func_ptr = (void *)(unsigned long)compat_sys_call_table[i];
+        void *func_ptr = (void *)(unsigned long)compat_sys_call_table[j];
 #else
         /* For other architectures, use proper casting based on architecture pointer size */
-        void *func_ptr = (void *)(uintptr_t)compat_sys_call_table[i];
+        void *func_ptr = (void *)(uintptr_t)compat_sys_call_table[j];
 #endif
 
         /* Skip non-existent syscalls (usually NULL) */
@@ -637,7 +647,7 @@ int syscalls_hc_init(void) {
             continue;
         }
 
-        report_syscall_from_func(buffer, func_ptr, i);
+        report_syscall_from_func(buffer, func_ptr, j);  // Change 'i' to 'j'
     }
 #else
     printk(KERN_INFO "IGLOO: No compat syscall table found for this architecture\n");
@@ -645,7 +655,6 @@ int syscalls_hc_init(void) {
 #endif
 
     kfree(buffer);
-    /* Initialize the hash table */
     hash_init(syscall_hook_table);
     return 0;
 }
