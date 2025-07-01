@@ -569,17 +569,17 @@ int syscalls_hc_init(void) {
         }
     }
 
-    printk(KERN_EMERG "IGLOO: Found %d syscalls with copied metadata out of %d total\n",
+    igloo_pr_debug("IGLOO: Found %d syscalls with copied metadata out of %d total\n",
            num_syscalls_with_metadata, nr_syscalls);
 
     // Debug: Print first 10 metadata entries from our copy
-    printk(KERN_ERR "IGLOO: First 10 syscalls with copied metadata:\n");
+    igloo_pr_debug("IGLOO: First 10 syscalls with copied metadata:\n");
     int debug_count = 0;
 
     for (int i = 0; i < nr_syscalls && debug_count < 10; i++) {
         struct syscall_metadata *meta = igloo_get_syscall_metadata_copy(i);
         if (meta && meta->name) {
-            printk(KERN_ERR "  [%d] %s (nb_args=%d, syscall_nr=%d)\n",
+            igloo_pr_debug("  [%d] %s (nb_args=%d, syscall_nr=%d)\n",
                    debug_count, meta->name, meta->nb_args, i);
             debug_count++;
         }
