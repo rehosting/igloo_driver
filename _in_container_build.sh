@@ -79,7 +79,14 @@ for TARGET in $TARGETS; do
         CROSS_COMPILE="$(get_cc $TARGET)" \
         O=${TARGET_BUILD_DIR} \
         clean all
-    dwarf2json linux --elf ${MODULE_DIR}/igloo.ko | xz -c > ${OUTPUT_DIR}/cosi.igloo.ko.${TARGET}.json.xz
+
+    # Generate symbols from the built kernel module using dwarf2json
+    if [ -f "${MODULE_DIR}/igloo.ko" ] && command -v dwarf2json >/dev/null 2>&1; then
+        echo "Generating symbols with dwarf2json for $TARGET..."
+        dwarf2json linux --elf "${MODULE_DIR}/igloo.ko" | xz -c > "${OUTPUT_DIR}/cosi.igloo.ko.${TARGET}.json.xz"
+    else
+        echo "Warning: igloo.ko or dwarf2json not found, skipping symbol generation for $TARGET."
+    fi
 
     chmod -R o+rw "${OUTPUT_DIR}"
     echo "IGLOO module for $TARGET built successfully"
