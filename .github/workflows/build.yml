@@ -1,0 +1,76 @@
+name: Build and Release igloo_driver modules
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout igloo_driver
+        uses: actions/checkout@v4
+
+      - name: Download kernel-devel-all.tar.gz
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-devel-all
+          path: local_packages
+        continue-on-error: true
+
+      - name: Download kernel-devel-all from release if not present
+        if: always()
+        run: |
+          if [ ! -f local_packages/kernel-devel-all.tar.gz ]; then
+            mkdir -p local_packages
+            curl -L -o local_packages/kernel-devel-all.tar.gz "https://github.com/rehosting/linux_builder/releases/latest/download/kernel-devel-all.tar.gz"
+          fi
+
+      - name: Extract and build all modules
+        run: |
+          mkdir -p cache/kernel-devel-extract
+          tar -xzf local_packages/kernel-devel-all.tar.gz -C cache/kernel-devel-extract
+          for pkg in cache/kernel-devel-extract/kernel-devel-*.tar.gz; do
+            name=$(basename "$pkg" .tar.gz)
+            target=${name#kernel-devel-}
+            version=${target##*.}
+            arch=${target%%.*}
+            mkdir -p cache/kernel-devel-extract/$name
+            tar -xzf "$pkg" -C cache/kernel-devel-extract/$name
+            ./build.sh --versions "$version" --targets "$arch" --kernel-devel-path $(pwd)/cache/kernel-devel-extract/$name
+          done
+
+      - name: Package all built modules and symbols
+        run: |
+          tar -czvf igloo-modules-all.tar.gz -C cache/build .
+
+      - name: Upload all built modules and symbols (always)
+        uses: actions/upload-artifact@v4
+        with:
+          name: igloo-modules-all
+          path: igloo-modules-all.tar.gz
+
+      - name: Get next version
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: reecetech/version-increment@2023.10.1
+        id: version
+        with:
+          use_api: true
+
+      - name: Create release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2.0.8
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.version.outputs.v-version }}
+          name: Release ${{ steps.version.outputs.v-version }}
+          body: |
+            Release ${{ steps.version.outputs.v-version }}
+          draft: false
+          generate_release_notes: true
+          prerelease: false
+          files: igloo-modules-all.tar.gz
