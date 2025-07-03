@@ -1,1 +1,0 @@
-int osi_hc_init(void);
