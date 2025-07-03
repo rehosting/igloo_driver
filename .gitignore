@@ -8,3 +8,5 @@ Module.symvers
 modules.order
 igloo.ko
 igloo.mod
+*.d
+igloo_driver_build_outputs.tar.gz
