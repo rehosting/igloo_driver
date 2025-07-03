@@ -23,6 +23,7 @@
 #include "igloo.h"
 #include "../syscalls_hc.h"
 #include "../igloo_debug.h"
+#include "../igloo_hypercall_consts.h"
 #include "portal.h"
 #include "portal_types.h"
 
