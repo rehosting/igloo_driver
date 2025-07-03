@@ -74,7 +74,8 @@ for VERSION in $VERSIONS; do
             if [ -f "$PKG" ]; then
                 echo "Extracting kernel-devel-${TARGET}.${VERSION}.tar.gz from $PKG..."
                 mkdir -p cache/kernel-devel-extract
-                tar -xzf "$PKG" -C cache/kernel-devel-extract "kernel-devel-${TARGET}.${VERSION}.tar.gz"
+                tar -xzf "$PKG" -C cache/kernel-devel-extract --wildcards --no-anchored "kernel-devel-${TARGET}.${VERSION}.tar.gz"
+                mkdir -p cache/kernel-devel-extract/kernel-devel-${TARGET}.${VERSION}
                 tar -xzf cache/kernel-devel-extract/kernel-devel-${TARGET}.${VERSION}.tar.gz -C cache/kernel-devel-extract/kernel-devel-${TARGET}.${VERSION}
                 KERNEL_DEVEL_DIR="$(pwd)/cache/kernel-devel-extract/kernel-devel-${TARGET}.${VERSION}"
             else
@@ -87,10 +88,11 @@ for VERSION in $VERSIONS; do
 
         # Run the container with proper environment variables and mounts
         docker run ${INTERACTIVE} --rm \
-            -v $KERNEL_DEVEL_DIR:/kernel-devel:ro \
+            -v $KERNEL_DEVEL_DIR:/tmp/build/${VERSION}/${TARGET}:ro \
+            -v $KERNEL_DEVEL_DIR:/kernel/${VERSION}:ro \
             -v $PWD:/app \
             $DOCKER_IMAGE \
-            bash -c "/app/_in_container_build.sh \"${TARGET}\" \"${VERSION}\" /kernel-devel /app"
+            bash -c "/app/_in_container_build.sh \"${TARGET}\" \"${VERSION}\" /tmp/build/${VERSION} /app"
 
         echo "Completed module build for kernel version ${VERSION}, target ${TARGET}"
     done
