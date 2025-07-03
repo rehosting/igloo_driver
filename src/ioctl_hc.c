@@ -13,6 +13,7 @@
 #include "ioctl_hc.h"
 #include <linux/dcache.h> // Required for d_path
 #include <linux/path.h> // Required for dentry_path_raw
+#include "igloo_hypercall_consts.h"
 
 /**
  * Called with a full path when a file or directory lookup results in -ENOENT.

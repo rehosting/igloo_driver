@@ -9,9 +9,7 @@
 #include <linux/delay.h>    // for msleep if needed
 #include "igloo.h"
 #include <linux/unistd.h>
-#include "vma_hc.h"
 #include "syscalls_hc.h"
-#include "osi_hc.h"
 #include "portal/portal.h"
 
 MODULE_LICENSE("GPL");
@@ -24,17 +22,6 @@ extern int hyperfs_init(void) __attribute__((weak)); // HyperFS init function
 static int __init igloo_hc_init(void) {
     printk(KERN_EMERG "IGLOO: Initializing\n");
     int ret = 0;
-    struct module *hyperfs_mod;
-
-    if ((ret = vma_hc_init()) != 0) {
-        printk(KERN_ERR "Failed to register vma_hc\n");
-        return ret;
-    }
-
-    if ((ret = osi_hc_init()) != 0) {
-        printk(KERN_ERR "Failed to register osi_hc\n");
-        return ret;
-    }
 
     if ((ret = syscalls_hc_init()) != 0) {
         printk(KERN_ERR "Failed to register syscalls_hc returning %d\n", ret);
