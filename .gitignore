@@ -2,3 +2,9 @@ cache/*
 local_packages/*
 *.o
 *.cmd
+*.ko
+*.mod.c
+Module.symvers
+modules.order
+igloo.ko
+igloo.mod
