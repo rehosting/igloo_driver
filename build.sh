@@ -86,16 +86,25 @@ for VERSION in $VERSIONS; do
 
         echo "Using kernel-devel directory: $KERNEL_DEVEL_DIR"
 
+        # Set build output directory in cache
+        BUILD_OUTPUT_DIR="$(pwd)/cache/build/${VERSION}/${TARGET}"
+        mkdir -p "$BUILD_OUTPUT_DIR"
+
         # Run the container with proper environment variables and mounts
         docker run ${INTERACTIVE} --rm \
             -v $KERNEL_DEVEL_DIR:/tmp/build/${VERSION}/${TARGET}:ro \
             -v $KERNEL_DEVEL_DIR:/kernel/${VERSION}:ro \
             -v $PWD:/app \
+            -v $BUILD_OUTPUT_DIR:/output \
             $DOCKER_IMAGE \
-            bash -c "/app/_in_container_build.sh \"${TARGET}\" \"${VERSION}\" /tmp/build/${VERSION} /app"
+            bash -c "/app/_in_container_build.sh \"${TARGET}\" \"${VERSION}\" /tmp/build/${VERSION} /app /output"
 
         echo "Completed module build for kernel version ${VERSION}, target ${TARGET}"
     done
 done
 
-echo "All builds completed successfully"
+# After all builds, create a tar archive of all build outputs
+OUTPUT_TAR="igloo_driver_build_outputs.tar.gz"
+echo "Creating tar archive $OUTPUT_TAR with all build outputs..."
+tar -czf "$OUTPUT_TAR" -C cache/build .
+echo "All builds completed successfully. Output archive: $OUTPUT_TAR"

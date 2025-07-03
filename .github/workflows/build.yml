@@ -43,15 +43,11 @@ jobs:
             ./build.sh --versions "$version" --targets "$arch" --kernel-devel-path $(pwd)/cache/kernel-devel-extract/$name
           done
 
-      - name: Package all built modules and symbols
-        run: |
-          tar -czvf igloo-modules-all.tar.gz -C cache/build .
-
       - name: Upload all built modules and symbols (always)
         uses: actions/upload-artifact@v4
         with:
           name: igloo-modules-all
-          path: igloo-modules-all.tar.gz
+          path: igloo_driver_build_outputs.tar.gz
 
       - name: Get next version
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -73,4 +69,4 @@ jobs:
           draft: false
           generate_release_notes: true
           prerelease: false
-          files: igloo-modules-all.tar.gz
+          files: igloo_driver_build_outputs.tar.gz
