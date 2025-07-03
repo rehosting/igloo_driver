@@ -6,7 +6,7 @@
 #include <linux/hashtable.h>
 #include "igloo_debug.h"
 
-#include "syscall_macros.h"
+#include "igloo_syscall_macros.h"
 
 /* Syscall hook structure */
 struct syscall_hook {

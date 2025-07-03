@@ -26,7 +26,6 @@
 #include <linux/mount.h>
 #include <linux/version.h>
 #include <asm/syscall.h>
-#include <../fs/mount.h> // bit of a hack
 #include <linux/tracepoint.h>
 #include <linux/trace_events.h>
 #include <trace/events/sched.h>
