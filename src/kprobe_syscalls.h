@@ -1,1 +1,0 @@
-int register_syscall_kretprobe(struct kretprobe *krp, const char *syscall_name);
