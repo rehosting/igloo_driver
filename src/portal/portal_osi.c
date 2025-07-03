@@ -478,7 +478,7 @@ void handle_op_read_procargs(portal_region *mem_region)
         igloo_debug_osi("igloo: Using copy_from_user for current process\n");
         /* Check access permissions before copying */
         if (!access_ok((void __user *)arg_start, len)) {
-            igloo_debug_osi("igloo: access_ok failed for procargs at %#lx (len %lu)\n", arg_start, len);
+            igloo_debug_osi("igloo: access_ok failed for procargs at %#lx (len %zu)\n", arg_start, len);
             goto fail;
         }
         

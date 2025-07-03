@@ -5,6 +5,7 @@ enum HYPER_OP {
     HYPER_OP_READ,
     HYPER_OP_WRITE,
     HYPER_OP_READ_STR,
+    HYPER_OP_READ_PTR_ARRAY,  // Read array of pointers to null-terminated strings
     
     // dump operation
     HYPER_OP_DUMP,
@@ -58,38 +59,15 @@ enum portal_type {
 
 typedef struct {
     uint32_t op;          // operation type
-    uint64_t addr;        // address
-    uint32_t size;        // size
     uint32_t pid;         // process ID (if relevant)
-    uint32_t call_num;
+    uint64_t addr;        // address
+    uint64_t size;        // size
 } region_header;
 
 typedef union {
     region_header header;  // Changed from mem_region_header to region_header
-    uint8_t raw[PAGE_SIZE];
+    uint8_t raw[PAGE_SIZE - sizeof(region_header)]; // Raw data buffer
 } portal_region;
-
-// Maximum number of memory regions per CPU
-#define MAX_MEM_REGIONS_PER_CPU 16
-#define DEFAULT_MEM_REGIONS 8  // Number of memory regions to allocate by default
-
-// Per-CPU array of memory regions
-
-struct cpu_mem_region_hdr {
-	int count; // Number of currently allocated regions
-    uint64_t call_num;    // global atomic hypercall number
-};
-
-struct cpu_mem_region {
-	int owner_id;
-    portal_region *mem_region; // struct mem_region*
-};
-
-struct cpu_mem_regions {
-    struct cpu_mem_region_hdr hdr;
-	struct cpu_mem_region
-		regions[MAX_MEM_REGIONS_PER_CPU]; //struct mem_region*
-};
 
 // OSI data structures based on osi_types.h
 struct osi_proc_handle {

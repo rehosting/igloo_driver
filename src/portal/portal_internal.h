@@ -46,6 +46,8 @@ struct task_struct *get_target_task_by_id(portal_region *mem_region);
 // Memory operation handlers
 void handle_op_read(portal_region *mem_region);
 void handle_op_write(portal_region *mem_region);
+// Forward declaration for new handler
+void handle_op_read_ptr_array(portal_region *mem_region);
 void handle_op_read_fds(portal_region *mem_region);
 void handle_op_read_procargs(portal_region *mem_region);
 void handle_op_read_str(portal_region *mem_region);
@@ -67,7 +69,6 @@ void handle_op_unregister_uprobe(portal_region *mem_region);
 
 // Syscall hook operation handlers
 void handle_op_register_syscall_hook(portal_region *mem_region);
-void handle_op_unregister_syscall_hook(portal_region *mem_region);
 
 // FFI operation handler
 void handle_op_ffi_exec(portal_region *mem_region);

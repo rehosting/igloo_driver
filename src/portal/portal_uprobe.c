@@ -192,7 +192,11 @@ void handle_op_register_uprobe(portal_region *mem_region)
         pu->filter_comm = kstrdup(filter_comm, GFP_KERNEL);
         if (!pu->filter_comm) {
             uprobe_debug("igloo: Failed to allocate filter_comm memory\n");
-            goto fail_free_filename;
+            path_put(&file_path);
+            kfree(pu->filename);
+            kfree(pu);
+            mem_region->header.op = HYPER_RESP_READ_FAIL;
+            return;
         }
     }
     

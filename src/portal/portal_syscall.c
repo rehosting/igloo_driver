@@ -5,49 +5,20 @@
 #include <linux/string.h>
 #include "../syscalls_hc.h"
 
-// Define maximum number of hooks we'll support
-#define MAX_SYSCALL_HOOKS 1024
+// Import functions and variables from syscalls_hc.c
+extern struct hlist_head syscall_hook_table[1024];
+extern struct hlist_head syscall_name_table[1024];
+extern struct hlist_head syscall_all_hooks;
+extern spinlock_t syscall_hook_lock;
 
-// Direct array lookup function prototype
-struct kernel_syscall_hook *find_hook_by_id(u32 id);
+// Using normalize_syscall_name and syscall_name_hash from syscalls_hc.h
 
-// Pre-allocated array of hooks for quick lookup by ID
-static struct kernel_syscall_hook syscall_hooks[MAX_SYSCALL_HOOKS];
-
-// Find a hook by ID - now simply retrieves from the array if ID is valid
-struct kernel_syscall_hook *find_hook_by_id(u32 id)
-{
-    // ID is the array index - bounds check and check if in use
-    if (id < MAX_SYSCALL_HOOKS && syscall_hooks[id].in_use) {
-        return &syscall_hooks[id];
-    }
-    
-    return NULL;
-}
-
-// Find an available hook slot and return its index
-static int get_free_hook_index(void)
-{
-    int i;
-    
-    spin_lock(&syscall_hook_lock);
-    for (i = 0; i < MAX_SYSCALL_HOOKS; i++) {
-        if (!syscall_hooks[i].in_use) {
-            syscall_hooks[i].in_use = true;
-            spin_unlock(&syscall_hook_lock);
-            return i;
-        }
-    }
-    spin_unlock(&syscall_hook_lock);
-    
-    return -1;  // No free hooks
-}
+// Using direct pointer addressing instead of ID lookup
 
 // Handler for registering a new syscall hook
 void handle_op_register_syscall_hook(portal_region *mem_region)
 {
     struct syscall_hook *hook;
-    int hook_id;
     struct kernel_syscall_hook *kernel_hook;
     
     igloo_pr_debug("igloo: Handling HYPER_OP_REGISTER_SYSCALL_HOOK\n");
@@ -55,56 +26,44 @@ void handle_op_register_syscall_hook(portal_region *mem_region)
     // Map the data buffer to our hook structure
     hook = (struct syscall_hook *)PORTAL_DATA(mem_region);
     
-    // Get a free slot index for the hook
-    hook_id = get_free_hook_index();
-    if (hook_id < 0) {
-        igloo_pr_debug("igloo: Failed to register syscall hook - no free slots\n");
+    // Allocate a new kernel hook structure
+    kernel_hook = kzalloc(sizeof(*kernel_hook), GFP_KERNEL);
+    if (!kernel_hook) {
+        igloo_pr_debug("igloo: Failed to allocate kernel_hook structure\n");
         mem_region->header.op = HYPER_RESP_READ_FAIL;
         return;
     }
-    
-    // Get the kernel hook at the allocated index
-    kernel_hook = &syscall_hooks[hook_id];
     
     // Copy the hook configuration
     memcpy(&kernel_hook->hook, hook, sizeof(struct syscall_hook));
-    kernel_hook->hook.id = hook_id;  // ID is now simply the array index
-    
-    // Add to hash table with the index as key
-    spin_lock(&syscall_hook_lock);
-    hash_add(syscall_hook_table, &kernel_hook->hlist, hook_id);
-    spin_unlock(&syscall_hook_lock);
-    
-    // Return the hook ID (array index) in the addr field
-    mem_region->header.size = hook_id;
-    mem_region->header.op = HYPER_RESP_READ_NUM;
-}
-
-// Handler for unregistering a syscall hook
-void handle_op_unregister_syscall_hook(portal_region *mem_region)
-{
-    u32 hook_id;
-    struct kernel_syscall_hook *hook;
-    
-    igloo_pr_debug("igloo: Handling HYPER_OP_UNREGISTER_SYSCALL_HOOK\n");
-    
-    // Get the hook ID from the addr field
-    hook_id = mem_region->header.addr;
-    
-    // Find the hook - now a direct array lookup
-    if (hook_id >= MAX_SYSCALL_HOOKS || !syscall_hooks[hook_id].in_use) {
-        igloo_pr_debug("igloo: Failed to unregister syscall hook - invalid ID\n");
-        mem_region->header.op = HYPER_RESP_READ_FAIL;
-        return;
+    kernel_hook->in_use = true;
+    // Cache the normalized syscall name for fast matching
+    if (kernel_hook->hook.name[0] != '\0') {
+        strncpy(kernel_hook->normalized_name,
+                normalize_syscall_name(kernel_hook->hook.name),
+                SYSCALL_NAME_MAX_LEN - 1);
+        kernel_hook->normalized_name[SYSCALL_NAME_MAX_LEN - 1] = '\0';
+    } else {
+        kernel_hook->normalized_name[0] = '\0';
     }
     
-    hook = &syscall_hooks[hook_id];
-    
-    // Remove from hash table
+    // Add to the main hook table indexed by pointer address
     spin_lock(&syscall_hook_lock);
-    hash_del(&hook->hlist);
-    hook->in_use = false;
+    hash_add_rcu(syscall_hook_table, &kernel_hook->hlist, (unsigned long)kernel_hook);
+    
+    // Also add to name-based hash table for faster lookups
+    if (kernel_hook->hook.on_all) {
+        // Special case for hooks that want all syscalls
+        hlist_add_head_rcu(&kernel_hook->name_hlist, &syscall_all_hooks);
+    } else if (kernel_hook->hook.name[0] != '\0') {
+        // Add to hash table based on syscall name
+        u32 name_hash = syscall_name_hash(kernel_hook->hook.name);
+        hash_add_rcu(syscall_name_table, &kernel_hook->name_hlist, name_hash);
+    }
+    
     spin_unlock(&syscall_hook_lock);
     
+    // Return the hook's memory address in the size field
+    mem_region->header.size = (unsigned long)kernel_hook;
     mem_region->header.op = HYPER_RESP_READ_NUM;
 }

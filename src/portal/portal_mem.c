@@ -254,3 +254,48 @@ void handle_op_read_str(portal_region *mem_region)
         }
     }
 }
+
+// Handler for reading an array of pointers to null-terminated strings, terminated by a NULL pointer
+// Returns: header.size = number of strings included, header.addr = 1 if more remain, 0 if all included
+void handle_op_read_ptr_array(portal_region *mem_region)
+{
+    unsigned long ptr_array_addr = mem_region->header.addr;
+    size_t max_buf = CHUNK_SIZE;
+    size_t buf_offset = 0;
+    unsigned long user_ptr;
+    char *buf = PORTAL_DATA(mem_region);
+    unsigned long __user *user_ptr_array = (unsigned long __user *)ptr_array_addr;
+    char tmp[128];
+    int ret;
+
+    while (buf_offset < max_buf) {
+        // Read pointer from user or kernel
+        if (igloo_is_kernel_addr((unsigned long)user_ptr_array)) {
+            user_ptr = *(unsigned long *)user_ptr_array;
+        } else {
+            if (copy_from_user(&user_ptr, user_ptr_array, sizeof(unsigned long)))
+                break;
+        }
+        if (!user_ptr)
+            break;
+        // Read string from pointer
+        if (igloo_is_kernel_addr(user_ptr)) {
+            strncpy(tmp, (const char *)user_ptr, sizeof(tmp) - 1);
+            tmp[sizeof(tmp) - 1] = '\0';
+        } else {
+            ret = strncpy_from_user(tmp, (const char __user *)user_ptr, sizeof(tmp) - 1);
+            if (ret < 0) break;
+            tmp[sizeof(tmp) - 1] = '\0';
+        }
+        size_t len = strnlen(tmp, sizeof(tmp));
+        if (buf_offset + len + 1 > max_buf) {
+            break;
+        }
+        memcpy(buf + buf_offset, tmp, len);
+        buf[buf_offset + len] = '\0';
+        buf_offset += len + 1;
+        user_ptr_array++;
+    }
+    mem_region->header.size = buf_offset;
+    mem_region->header.op = HYPER_RESP_READ_OK;
+}

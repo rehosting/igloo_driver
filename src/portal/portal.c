@@ -1,10 +1,8 @@
+#include <linux/gfp.h>
+#include <linux/mm.h>
 #include "portal_internal.h"
 #include <linux/wait.h>
 #include <linux/sched.h>
-
-long do_snapshot_and_coredump(void);
-
-static DEFINE_PER_CPU(uint32_t, hypercall_num);
 
 uint64_t portal_interrupt = 0;
 
@@ -13,6 +11,7 @@ static const portal_op_handler op_handlers[] = {
     [HYPER_OP_READ]            = handle_op_read,
     [HYPER_OP_WRITE]           = handle_op_write,
     [HYPER_OP_READ_STR]        = handle_op_read_str,
+    [HYPER_OP_READ_PTR_ARRAY]   = handle_op_read_ptr_array,
     [HYPER_OP_DUMP]            = handle_op_dump,
     [HYPER_OP_EXEC]            = handle_op_exec,
     [HYPER_OP_OSI_PROC]        = handle_op_osi_proc,
@@ -27,7 +26,6 @@ static const portal_op_handler op_handlers[] = {
     [HYPER_OP_REGISTER_UPROBE] = handle_op_register_uprobe,
     [HYPER_OP_UNREGISTER_UPROBE] = handle_op_unregister_uprobe,
     [HYPER_OP_REGISTER_SYSCALL_HOOK] = handle_op_register_syscall_hook,
-    [HYPER_OP_UNREGISTER_SYSCALL_HOOK] = handle_op_unregister_syscall_hook,
     [HYPER_OP_FFI_EXEC] = handle_op_ffi_exec,
 };
 
@@ -70,31 +68,6 @@ static bool handle_post_memregion(portal_region *mem_region){
     return true;
 }
 
-/*
-* bool -> should we stop the hypercall loop?
-*/
-static bool handle_post_memregions(struct cpu_mem_regions *regions){
-	int count = regions->hdr.count;  // Use hdr.count instead of count
-	int i = 0;
-	bool any_responses = false;
-	for (i = 0; i < count; i++) {
-		portal_region *mem_region =
-			(portal_region *)(unsigned long)(
-				regions->regions[i].mem_region);
-		if (!mem_region) {
-			igloo_pr_debug(
-			       "igloo: No mem_region found for CPU %d\n",
-			       smp_processor_id());
-			continue;
-		}
-		bool responded = handle_post_memregion(mem_region);
-        if (responded){
-            any_responses = true;
-        }
-	}
-    return any_responses;
-}
-
 void check_portal_interrupt(void){
     if (unlikely(portal_interrupt != 0)) {
         // Clear the interrupt flag
@@ -104,21 +77,27 @@ void check_portal_interrupt(void){
 
 int igloo_portal(unsigned long num, unsigned long arg1, unsigned long arg2)
 {
-    unsigned long ret;
-    portal_region *region = (portal_region *)get_zeroed_page(GFP_ATOMIC);
+    igloo_pr_debug("IGLOO: igloo_portal entry num=%lu arg1=%lx arg2=%lx\n", num, arg1, arg2);
+    unsigned long ret, page;
+    portal_region *region;
     
+    if (num != IGLOO_HYPER_PORTAL_INTERRUPT){
+        check_portal_interrupt();
+    }
+
+    page = __get_free_page(GFP_KERNEL);
+    region = (portal_region *)page;
+
+    // Debug: log allocation
+    igloo_pr_debug("igloo: Allocated portal_region at %p in igloo_portal\n", region);
+
     // Check if memory allocation failed
     if (!region) {
         pr_err("igloo: Failed to allocate memory for portal region\n");
         return -ENOMEM;
     }
-    
-    region->header.call_num = this_cpu_inc_return(hypercall_num);
-    igloo_pr_debug("igloo-call: portal call: call_num=%d\n", region->header.call_num);
-
-    if (num != IGLOO_HYPER_PORTAL_INTERRUPT){
-        check_portal_interrupt();
-    }
+    // Zero only the region_header
+    memset(&region->header, 0, sizeof(region_header));
 
     for (;;) {
         // Make the hypercall to get the next operation from the hypervisor
@@ -130,10 +109,12 @@ int igloo_portal(unsigned long num, unsigned long arg1, unsigned long arg2)
     }
 
     igloo_pr_debug("portal call exit: ret=%lu\n", ret);
-    
+    igloo_pr_debug("IGLOO: igloo_portal exit ret=%lu\n", ret);
+
     // Free the allocated memory before returning
-    free_page((unsigned long)region);
-    
+    igloo_pr_debug("igloo: Freeing portal_region at %p in igloo_portal\n", region);
+    free_page(page);
+
     return ret;
 }
 
