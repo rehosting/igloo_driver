@@ -1,7 +1,7 @@
 ccflags-y += -g
 obj-m := igloo.o
 
-EXTRA_LDFLAGS += --print-map
+# EXTRA_LDFLAGS += --print-map
 
 PORTAL_SRCS := $(wildcard portal/*.c)
 PORTAL_OBJS := $(PORTAL_SRCS:.c=.o)
@@ -18,7 +18,7 @@ CROSS_COMPILE ?=
 ccflags-y := -I$(srctree)/drivers/igloo
 
 all:
-	make -C $(KDIR) M=$(PWD) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules V=1
+	make -j$(nproc) -C $(KDIR) M=$(PWD) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules
 
 clean:
 	make -C $(KDIR) M=$(PWD) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) clean

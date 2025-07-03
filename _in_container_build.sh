@@ -7,7 +7,7 @@ TARGETS="$1"         # Target architectures
 VERSION="$2"       # Kernel version
 BUILD_DIR="/tmp/build/${VERSION}"  # Directory for build artifacts (e.g., cache/ from linux_builder)
 KERNEL_DIR="/kernel/${VERSION}"  # Directory containing the kernel source code:
-MODULE_DIR="/app"  # Directory containing the module source code
+MODULE_DIR="/app/src"  # Directory containing the module source code
 
 # Function to get cross-compiler prefix
 get_cc() {
