@@ -10,6 +10,7 @@
 #include <linux/socket.h>
 #include <linux/ipv6.h>
 #include <net/inet_sock.h>
+#include "igloo_hypercall_consts.h"
 
 void igloo_sock_bind(struct socket *sock, struct sockaddr_storage *address);
 void igloo_sock_release(struct socket *sock);

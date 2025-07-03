@@ -6,9 +6,8 @@ obj-m := igloo.o
 PORTAL_SRCS := $(wildcard portal/*.c)
 PORTAL_OBJS := $(PORTAL_SRCS:.c=.o)
 
-igloo-objs += igloo_hc.o vma_hc.o syscalls_hc.o exec_hc.o ioctl_hc.o \
-        open_hc.o sock_hc.o uname_hc.o block_mounts.o osi_hc.o \
-        kprobe_syscalls.o \
+igloo-objs += igloo_hc.o syscalls_hc.o ioctl_hc.o \
+        sock_hc.o uname_hc.o block_mounts.o \
 		$(PORTAL_OBJS)
 
 KDIR ?= /lib/modules/$(shell uname -r)/build

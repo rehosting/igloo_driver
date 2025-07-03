@@ -1,6 +1,5 @@
 enum igloo_hypercall_constants {
     /* General operations */
-    IGLOO_OPEN         = 100,
     IGLOO_IOCTL_ENOTTY = 105,
     
     /* Network-related operations */
@@ -15,21 +14,6 @@ enum igloo_hypercall_constants {
     IGLOO_HYP_UNAME    = 300,
     IGLOO_HYP_ENOENT   = 305,
     
-    /* Task info operations */
-    IGLOO_HYP_TASK_COMM    = 590,
-    IGLOO_HYP_TASK_TGID    = 591,
-    IGLOO_HYP_TASK_PTGID   = 592,
-    IGLOO_HYP_TASK_STIME   = 593,
-    IGLOO_HYP_TASK_KTHREAD = 594,
-    IGLOO_HYP_KTHREAD_CHANGE = 595,
-    IGLOO_HYP_THREAD_CHANGE  = 596,
-    IGLOO_HYP_TASK_ARGV    = 597,
-    IGLOO_HYP_TASK_ARGC    = 598,
-    IGLOO_HYP_TASK_ENVV    = 599,
-    IGLOO_HYP_TASK_ENVC    = 600,
-    IGLOO_HYP_TASK_EUID    = 601,
-    IGLOO_HYP_TASK_EGID    = 602,
-    
     /* Task and VMA changes */
     HC_TASK_CHANGE     = 5900,
     HC_VMA_UPDATE      = 5910,
@@ -41,7 +25,7 @@ enum igloo_hypercall_constants {
     IGLOO_HYP_TASK_PSTIME  = 1595,
     
     /* Syscall operations */
-    IGLOO_HYP_SETUP_SYSCALL  = 0x1337,
+    // IGLOO_HYP_SETUP_SYSCALL  = 0x1337,
     IGLOO_HYP_SYSCALL_ENTER  = 0x1338,
     IGLOO_HYP_SYSCALL_RETURN = 0x1339,
     IGLOO_HYP_SETUP_TASK_COMM = 0x133a,
@@ -56,7 +40,7 @@ enum igloo_hypercall_constants {
     
     /* Miscellaneous operations */
     IGLOO_SIGSTOP_KTHREAD   = 0x0c6ea29a,
-    IGLOO_HYPERFS_MAGIC     = 0x51ec3692, /* crc32("hyperfs") */
+    // IGLOO_HYPERFS_MAGIC     = 0x51ec3692, /* crc32("hyperfs") */
     IGLOO_SIGSTOP_ARGV      = 0xbae7babc,
     IGLOO_SIGSTOP_QUERY     = 0x7b7287d5,
     IGLOO_HYPER_REGISTER_MEM_REGION = 0xbebebebe,

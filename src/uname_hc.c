@@ -10,6 +10,7 @@
 #include <linux/binfmts.h>
 #include <trace/syscall.h>
 #include <linux/utsname.h>
+#include "igloo_hypercall_consts.h"
 
 void igloo_hc_newuname(struct new_utsname *name);
 
