@@ -18,11 +18,7 @@
 #include "args.h"
 #include "portal/portal.h"
 #include "igloo_hypercall_consts.h"
-
-// Use the syscall_event structure from syscalls_hc.h
-
-igloo_syscall_enter_t igloo_syscall_enter_hook;
-igloo_syscall_return_t igloo_syscall_return_hook;
+#include <linux/kallsyms.h>
 
 /* Global hash tables for organizing hooks */
 struct hlist_head syscall_hook_table[1024];                /* Main table indexed by hook pointer */
@@ -431,8 +427,23 @@ int syscalls_hc_init(void) {
         printk(KERN_INFO "IGLOO: Hypercalls disabled, syscalls tracing not activated\n");
         return 0;
     }
-    igloo_syscall_enter_hook = syscall_entry_handler;
-    igloo_syscall_return_hook = syscall_ret_handler;
+    // Dynamically look up and set igloo_syscall_enter_hook
+    igloo_syscall_enter_t *enter_hook_ptr = (igloo_syscall_enter_t *)kallsyms_lookup_name("igloo_syscall_enter_hook");
+    if (enter_hook_ptr) {
+        *enter_hook_ptr = syscall_entry_handler;
+        printk(KERN_INFO "IGLOO: Set igloo_syscall_enter_hook via kallsyms\n");
+    } else {
+        printk(KERN_ERR "IGLOO: Failed to find igloo_syscall_enter_hook symbol via kallsyms\n");
+    }
+
+    // Dynamically look up and set igloo_syscall_return_hook
+    igloo_syscall_return_t *ret_hook_ptr = (igloo_syscall_return_t *)kallsyms_lookup_name("igloo_syscall_return_hook");
+    if (ret_hook_ptr) {
+        *ret_hook_ptr = syscall_ret_handler;
+        printk(KERN_INFO "IGLOO: Set igloo_syscall_return_hook via kallsyms\n");
+    } else {
+        printk(KERN_ERR "IGLOO: Failed to find igloo_syscall_return_hook symbol via kallsyms\n");
+    }
 
     /* Initialize the hash table */
     hash_init(syscall_hook_table);
