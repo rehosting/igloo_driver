@@ -1,5 +1,5 @@
 cache/*
-local_packages/*
+local_packages
 *.o
 *.cmd
 *.ko
@@ -10,3 +10,4 @@ igloo.ko
 igloo.mod
 *.d
 igloo_driver_build_outputs.tar.gz
+cache
