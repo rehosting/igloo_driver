@@ -87,7 +87,7 @@ for VERSION in $VERSIONS; do
         echo "Using kernel-devel directory: $KERNEL_DEVEL_DIR"
 
         # Set build output directory in cache
-        BUILD_OUTPUT_DIR="$(pwd)/cache/build/${VERSION}/${TARGET}"
+        BUILD_OUTPUT_DIR="$(pwd)/cache/build"
         mkdir -p "$BUILD_OUTPUT_DIR"
 
         # Run the container with proper environment variables and mounts
@@ -103,8 +103,7 @@ for VERSION in $VERSIONS; do
     done
 done
 
-# After all builds, create a tar archive of all build outputs
-OUTPUT_TAR="igloo_driver_build_outputs.tar.gz"
-echo "Creating tar archive $OUTPUT_TAR with all build outputs..."
-tar -czf "$OUTPUT_TAR" -C cache/build .
-echo "All builds completed successfully. Output archive: $OUTPUT_TAR"
+echo "All builds completed successfully."
+echo "Creating igloo_driver.tar.gz archive in current directory..."
+tar -czf igloo_driver.tar.gz -C cache/build kernels
+echo "Archive created at $(pwd)/igloo_driver.tar.gz"

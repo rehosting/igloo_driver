@@ -8,6 +8,7 @@ VERSION="$2"       # Kernel version
 BUILD_DIR="/tmp/build/${VERSION}"  # Directory for build artifacts (e.g., cache/ from linux_builder)
 KERNEL_DIR="/kernel/${VERSION}"  # Directory containing the kernel source code:
 MODULE_DIR="/app/src"  # Directory containing the module source code
+OUTPUT_BASE="${5:-/output}"  # Output directory for built modules and symbols
 
 # Function to get cross-compiler prefix
 get_cc() {
@@ -69,7 +70,7 @@ for TARGET in $TARGETS; do
     echo "Building IGLOO module for $TARGET with kernel at ${KERNEL_DIR}"
 
     # Create output directory
-    OUTPUT_DIR="/tmp/build/${VERSION}/modules/${TARGET}"
+    OUTPUT_DIR="${OUTPUT_BASE}/kernels/${VERSION}"
     mkdir -p "${OUTPUT_DIR}"
 
     # Clean and build the module
@@ -77,15 +78,26 @@ for TARGET in $TARGETS; do
         KDIR="${KERNEL_DIR}" \
         ARCH="${short_arch}" \
         CROSS_COMPILE="$(get_cc $TARGET)" \
-        O=${TARGET_BUILD_DIR} \
-        clean all
+        all
+
+    # Copy built module to output directory with new naming
+    if [ -f "${MODULE_DIR}/igloo.ko" ]; then
+        cp "${MODULE_DIR}/igloo.ko" "${OUTPUT_DIR}/igloo.ko.${TARGET}"
+    fi
+    
+    # Clean and build the module
+    make -C "${MODULE_DIR}" \
+        KDIR="${KERNEL_DIR}" \
+        ARCH="${short_arch}" \
+        CROSS_COMPILE="$(get_cc $TARGET)" \
+        clean
 
     # Generate symbols from the built kernel module using dwarf2json
-    if [ -f "${MODULE_DIR}/igloo.ko" ] && command -v dwarf2json >/dev/null 2>&1; then
+    if [ -f "${OUTPUT_DIR}/igloo.ko.${TARGET}" ] && command -v dwarf2json >/dev/null 2>&1; then
         echo "Generating symbols with dwarf2json for $TARGET..."
-        dwarf2json linux --elf "${MODULE_DIR}/igloo.ko" | xz -c > "${OUTPUT_DIR}/cosi.igloo.ko.${TARGET}.json.xz"
+        dwarf2json linux --elf "${OUTPUT_DIR}/igloo.ko.${TARGET}" | xz -c > "${OUTPUT_DIR}/igloo.ko.${TARGET}.json.xz"
     else
-        echo "Warning: igloo.ko or dwarf2json not found, skipping symbol generation for $TARGET."
+        echo "Warning: igloo.ko.${TARGET} or dwarf2json not found, skipping symbol generation for $TARGET."
     fi
 
     chmod -R o+rw "${OUTPUT_DIR}"
