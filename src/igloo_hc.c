@@ -11,6 +11,8 @@
 #include <linux/unistd.h>
 #include "syscalls_hc.h"
 #include "portal/portal.h"
+#include "hypercall.h"
+#include "igloo_hypercall_consts.h"
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("IGLOO Kernel Inspection/Interventions");
@@ -18,10 +20,21 @@ MODULE_VERSION("0.1");
 MODULE_SOFTDEP("post: hyperfs");  // Load hyperfs after igloo
 extern int hyperfs_init(void) __attribute__((weak)); // HyperFS init function
 
+/**
+ * Report the base address of the module by picking a function in the .text
+ * section (just not init or exit)
+ */
+static void report_base_addr(){
+    unsigned long igloo_hc_addr = kallsyms_lookup_name("igloo_test_function");
+    igloo_hypercall(IGLOO_MODULE_BASE, igloo_hc_addr);
+
+}
+
 /* Register probes for mmap and munmap */
 static int __init igloo_hc_init(void) {
     printk(KERN_EMERG "IGLOO: Initializing\n");
     int ret = 0;
+    report_base_addr();
 
     if ((ret = syscalls_hc_init()) != 0) {
         printk(KERN_ERR "Failed to register syscalls_hc returning %d\n", ret);
