@@ -1,4 +1,4 @@
-ccflags-y += -g
+ccflags-y += -g -fno-reorder-functions
 obj-m := igloo.o
 
 # EXTRA_LDFLAGS += --print-map
@@ -14,7 +14,7 @@ KDIR ?= /lib/modules/$(shell uname -r)/build
 PWD := $(shell pwd)
 ARCH ?= x86_64
 CROSS_COMPILE ?=
-ccflags-y := -I$(srctree)/drivers/igloo
+ccflags-y += -I$(srctree)/drivers/igloo
 
 all:
 	make -j$(nproc) -C $(KDIR) M=$(PWD) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules
