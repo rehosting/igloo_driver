@@ -36,7 +36,7 @@ enum HYPER_OP {
     
     // FFI operations
     HYPER_OP_FFI_EXEC,        // Execute kernel function via FFI
-    
+    HYPER_OP_KALLSYMS_LOOKUP, // Lookup symbol address by name
     HYPER_OP_MAX,
     
     HYPER_RESP_NONE = 0xf0000000,

@@ -1,5 +1,6 @@
 #include "portal_internal.h"
 #include <linux/slab.h>
+#include <linux/kallsyms.h>
 
 int igloo_test_function(int a, int b, int c, int d, int e, int f, int g, int h);
 void *igloo_kzalloc(size_t size);
@@ -127,4 +128,20 @@ void handle_op_ffi_exec(portal_region *mem_region)
     igloo_pr_debug("igloo: Function call completed with result: %lu\n", result);
     mem_region->header.op = HYPER_RESP_READ_OK;
     mem_region->header.size = sizeof(struct portal_ffi_call);
+}
+
+/*
+ * Handle kallsyms_lookup operation
+ * Looks up a symbol by name and returns its address
+ */
+void handle_op_kallsyms_lookup(portal_region *mem_region)
+{
+    struct portal_kallsyms_lookup *lookup;
+    unsigned long addr;
+
+    igloo_pr_debug("igloo: Handling HYPER_OP_KALLSYMS_LOOKUP\n");
+
+    addr = kallsyms_lookup_name((char*)PORTAL_DATA(mem_region));
+    mem_region->header.size = addr;
+    mem_region->header.op = HYPER_RESP_READ_NUM;
 }
