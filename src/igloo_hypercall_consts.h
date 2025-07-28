@@ -1,5 +1,6 @@
 enum igloo_hypercall_constants {
     /* General operations */
+    IGLOO_OPEN         = 100,
     IGLOO_IOCTL_ENOTTY = 105,
     
     /* Network-related operations */

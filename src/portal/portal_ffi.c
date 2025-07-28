@@ -136,7 +136,6 @@ void handle_op_ffi_exec(portal_region *mem_region)
  */
 void handle_op_kallsyms_lookup(portal_region *mem_region)
 {
-    struct portal_kallsyms_lookup *lookup;
     unsigned long addr;
 
     igloo_pr_debug("igloo: Handling HYPER_OP_KALLSYMS_LOOKUP\n");

@@ -93,3 +93,17 @@ void igloo_ioctl(int error, struct file *filp, unsigned int cmd) {
         kfree(path_buffer);
     }
 }
+
+int ioctl_hc_init(void){
+    void (**ioctl_mod_ptr)(int, struct file *, unsigned int);
+    printk(KERN_EMERG "IGLOO: Initializing ioctl hypercalls\n");
+    ioctl_mod_ptr = (void (**)(int, struct file *, unsigned int))
+        kallsyms_lookup_name("igloo_ioctl_module");
+    if (ioctl_mod_ptr) {
+        *ioctl_mod_ptr = igloo_ioctl;
+        printk(KERN_INFO "IGLOO: Set igloo_ioctl_module via kallsyms\n");
+    } else {
+        printk(KERN_ERR "IGLOO: Failed to find igloo_ioctl_module symbol via kallsyms\n");
+    }
+    return 0;
+}

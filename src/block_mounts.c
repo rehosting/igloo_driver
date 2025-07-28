@@ -39,3 +39,16 @@ bool igloo_should_block_mount(struct path *path){
 	}
 	return false;
 }
+
+int block_mounts_init(void){
+    bool (**block_mount_mod_ptr)(struct path *);
+    printk(KERN_EMERG "IGLOO: Initializing block_mounts hypercalls\n");
+    block_mount_mod_ptr = (bool (**)(struct path *))kallsyms_lookup_name("igloo_should_block_mount_module");
+    if (block_mount_mod_ptr) {
+        *block_mount_mod_ptr = igloo_should_block_mount;
+        printk(KERN_INFO "IGLOO: Set igloo_should_block_mount_module via kallsyms\n");
+    } else {
+        printk(KERN_ERR "IGLOO: Failed to find igloo_should_block_mount_module symbol via kallsyms\n");
+    }
+    return 0;
+}
