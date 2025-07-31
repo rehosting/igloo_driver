@@ -85,6 +85,8 @@ for VERSION in $VERSIONS; do
         fi
 
         echo "Using kernel-devel directory: $KERNEL_DEVEL_DIR"
+        echo "Listing files in $KERNEL_DEVEL_DIR:"
+        ls -l $KERNEL_DEVEL_DIR
 
         # Set build output directory in cache
         BUILD_OUTPUT_DIR="$(pwd)/cache/build"
