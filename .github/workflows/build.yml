@@ -36,19 +36,17 @@ jobs:
           echo "Contents of cache/kernel-devel-extract after extraction:"
           ls -l cache/kernel-devel-extract
           shopt -s nullglob
-          files=(cache/kernel-devel-extract/kernel-devel-*.tar.gz)
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "No kernel-devel-*.tar.gz files found after extraction!"
+          dirs=(cache/kernel-devel-extract/*)
+          if [ ${#dirs[@]} -eq 0 ]; then
+            echo "No kernel-devel directories found after extraction!"
             exit 1
           fi
           shopt -u nullglob
-          for pkg in cache/kernel-devel-extract/kernel-devel-*.tar.gz; do
-            name=$(basename "$pkg" .tar.gz)
-            target=${name#kernel-devel-}
-            version=${target##*.}
-            arch=${target%%.*}
-            mkdir -p cache/kernel-devel-extract/$name
-            tar -xzf "$pkg" -C cache/kernel-devel-extract/$name
+          for dir in cache/kernel-devel-extract/*; do
+            name=$(basename "$dir")
+            target=${name%%.*}
+            version=${name#*.}
+            arch=$target
             ./build.sh --versions "$version" --targets "$arch" --kernel-devel-path $(pwd)/cache/kernel-devel-extract/$name
           done
 
