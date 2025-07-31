@@ -59,10 +59,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Build the local Docker image if not present
-DOCKER_IMAGE=igloo_driver_builder
-docker build -t $DOCKER_IMAGE .
-
 for VERSION in $VERSIONS; do
     for TARGET in $TARGETS; do
         echo "Building modules for kernel version ${VERSION}, target ${TARGET}..."
