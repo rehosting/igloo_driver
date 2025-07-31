@@ -30,7 +30,18 @@ get_cc() {
         fi
         arch="arm"
     fi
-    echo "/opt/cross/${arch}-linux-musl${abi}/bin/${arch}-linux-musl${abi}-"
+
+    if [[ $arch == *"loongarch"* ]]; then
+        echo "/opt/cross/loongarch64-linux-gcc-cross/bin/loongarch64-unknown-linux-gnu-"
+    elif [[ $arch == *"powerpc"* ]]; then
+        echo "/opt/cross/powerpc64-linux-musl-cross/bin/powerpc64-linux-musl-"
+    elif [[ $arch == "riscv64" ]]; then
+        # riscv64 linux-musl seems to run out of memory on linking so we switched
+        # to the glibc version
+        echo "/usr/bin/riscv64-linux-gnu-"
+    else
+        echo "/opt/cross/${arch}-linux-musl${abi}/bin/${arch}-linux-musl${abi}-"
+    fi
 }
 
 for TARGET in $TARGETS; do
