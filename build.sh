@@ -94,7 +94,7 @@ for VERSION in $VERSIONS; do
 
         # Run the container with proper environment variables and mounts
         docker run ${INTERACTIVE} --rm \
-            -v $KERNEL_DEVEL_DIR:/tmp/build/${VERSION}:ro \
+            -v $KERNEL_DEVEL_DIR:/tmp/build/${VERSION}/${TARGET}:ro \
             -v $KERNEL_DEVEL_DIR:/kernel/${VERSION}:ro \
             -v $PWD:/app \
             -v $BUILD_OUTPUT_DIR:/output \
