@@ -11,3 +11,6 @@ igloo.mod
 *.d
 igloo_driver_build_outputs.tar.gz
 cache
+
+# auto-generated files
+src/portal/portal_tramp_gen.h

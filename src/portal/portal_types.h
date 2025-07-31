@@ -37,6 +37,7 @@ enum HYPER_OP {
     // FFI operations
     HYPER_OP_FFI_EXEC,        // Execute kernel function via FFI
     HYPER_OP_KALLSYMS_LOOKUP, // Lookup symbol address by name
+    HYPER_OP_TRAMP_GENERATE,  // Generate trampoline and return id + address
     HYPER_OP_MAX,
     
     HYPER_RESP_NONE = 0xf0000000,
@@ -134,4 +135,11 @@ struct portal_ffi_call {
     unsigned long num_args;  /* Number of arguments (up to 8) */
     unsigned long args[8];   /* Array of arguments as unsigned long */
     unsigned long result;    /* Return value of the function call */
+};
+
+/* Structure for trampoline generate operation */
+struct portal_tramp_generate {
+    uint32_t tramp_id;         /* Unique trampoline id */
+    int status;                /* 0 = success, <0 = error */
+    unsigned long tramp_addr;          /* Function address */
 };

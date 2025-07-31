@@ -28,6 +28,7 @@ static const portal_op_handler op_handlers[] = {
     [HYPER_OP_REGISTER_SYSCALL_HOOK] = handle_op_register_syscall_hook,
     [HYPER_OP_FFI_EXEC] = handle_op_ffi_exec,
     [HYPER_OP_KALLSYMS_LOOKUP] = handle_op_kallsyms_lookup,
+    [HYPER_OP_TRAMP_GENERATE] = handle_op_tramp_generate,
 };
 
 // bool -> was any work done?

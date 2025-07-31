@@ -3,7 +3,7 @@ obj-m := igloo.o
 
 # EXTRA_LDFLAGS += --print-map
 
-PORTAL_SRCS := $(wildcard portal/*.c)
+PORTAL_SRCS := $(filter-out portal/portal_tramp_gen.c, $(wildcard portal/*.c))
 PORTAL_OBJS := $(PORTAL_SRCS:.c=.o)
 
 igloo-objs += igloo_hc.o syscalls_hc.o ioctl_hc.o \
@@ -17,7 +17,12 @@ ARCH ?= x86_64
 CROSS_COMPILE ?=
 ccflags-y += -I$(srctree)/drivers/igloo
 
-all:
+PORTAL_TRAMP_GEN := portal/portal_tramp_gen.h
+
+$(PORTAL_TRAMP_GEN): ../scripts/gen_portal_tramp.py
+	python3 $< > $@
+
+all: $(PORTAL_TRAMP_GEN)
 	make -j$(nproc) -C $(KDIR) M=$(PWD) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules
 
 clean:

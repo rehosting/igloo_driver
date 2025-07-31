@@ -75,4 +75,6 @@ void handle_op_register_syscall_hook(portal_region *mem_region);
 void handle_op_ffi_exec(portal_region *mem_region);
 void handle_op_kallsyms_lookup(portal_region *mem_region);
 
+void handle_op_tramp_generate(portal_region *mem_region);
+
 #endif /* __PORTAL_INTERNAL_H__ */
