@@ -33,6 +33,15 @@ jobs:
         run: |
           mkdir -p cache/kernel-devel-extract
           tar -xzf local_packages/kernel-devel-all.tar.gz -C cache/kernel-devel-extract
+          echo "Contents of cache/kernel-devel-extract after extraction:"
+          ls -l cache/kernel-devel-extract
+          shopt -s nullglob
+          files=(cache/kernel-devel-extract/kernel-devel-*.tar.gz)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No kernel-devel-*.tar.gz files found after extraction!"
+            exit 1
+          fi
+          shopt -u nullglob
           for pkg in cache/kernel-devel-extract/kernel-devel-*.tar.gz; do
             name=$(basename "$pkg" .tar.gz)
             target=${name#kernel-devel-}
