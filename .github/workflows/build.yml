@@ -9,17 +9,10 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: rehosting-arc
     steps:
       - name: Checkout igloo_driver
         uses: actions/checkout@v4
-
-      - name: Download kernel-devel-all.tar.gz
-        uses: actions/download-artifact@v4
-        with:
-          name: kernel-devel-all
-          path: local_packages
-        continue-on-error: true
 
       - name: Download kernel-devel-all from release if not present
         if: always()
@@ -41,6 +34,15 @@ jobs:
             echo "No kernel-devel directories found after extraction!"
             exit 1
           fi
+          # Extract inner kernel-devel tarballs
+          for dir in cache/kernel-devel-extract/*; do
+            name=$(basename "$dir")
+            inner_tar="$dir/kernel-devel-$name.tar.gz"
+            if [ -f "$inner_tar" ]; then
+              echo "Extracting $inner_tar into $dir"
+              tar -xzf "$inner_tar" -C "$dir"
+            fi
+          done
           shopt -u nullglob
           for dir in cache/kernel-devel-extract/*; do
             name=$(basename "$dir")
