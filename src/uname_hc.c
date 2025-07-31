@@ -52,9 +52,6 @@ static void make_igloo_utsname(char *buf, struct new_utsname *name){
 void igloo_hc_newuname(struct new_utsname *name){
 	int i, rv, idx, x;
 	char buf[395];
-	if (!igloo_do_hc) {
-		return;
-    }
     for (i = 0; i < 10; i++) {
 	    rv = igloo_hypercall2(IGLOO_HYP_UNAME, (unsigned long)&buf, 0);
 	    if (rv != 0xDEADBEEF)

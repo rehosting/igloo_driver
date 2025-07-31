@@ -59,9 +59,6 @@ void igloo_enoent(struct dentry *dentry){
  * Called from hyperfs_ioctl in fs/hyperfs/hyperfs.c
  */
 void igloo_ioctl(int error, struct file *filp, unsigned int cmd) {
-    if (!igloo_do_hc){
-	    return;
-    }
     if (error == -ENOTTY) {
         char *path;
         char *path_buffer = kmalloc(PATH_MAX, GFP_KERNEL);

@@ -50,10 +50,6 @@ static char *resolve_dfd_to_path(int dfd, char *buf, int buflen) {
 void igloo_hc_open(int dfd, struct filename *tmp, int fd);
 void igloo_hc_open(int dfd, struct filename *tmp, int fd)
 {
-    if (!igloo_do_hc)
-    {
-        return;
-    }
     char *resolved_path;
 	// Allocate memory for resolved_path only when necessary
 	resolved_path = kmalloc(PATH_MAX, GFP_KERNEL);

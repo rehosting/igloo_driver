@@ -396,7 +396,7 @@ static long process_syscall_hooks(
 static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, int argc, const unsigned long args[], igloo_syscall_setter_t setter_func)
 {
     check_portal_interrupt();
-    if (!igloo_do_hc || !args || !skip_ret_val) {
+    if (!args || !skip_ret_val) {
         return 0;
     }
     if (current->flags & PF_KTHREAD) {
@@ -412,7 +412,7 @@ static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, 
 // Return handler for system calls
 static long syscall_ret_handler(const char *syscall_name, long orig_ret, int argc, const unsigned long args[]){
     check_portal_interrupt();
-    if (!igloo_do_hc || !args) {
+    if (!args) {
         return orig_ret;
     }
     if (current->flags & PF_KTHREAD) {
@@ -423,10 +423,6 @@ static long syscall_ret_handler(const char *syscall_name, long orig_ret, int arg
 
 int syscalls_hc_init(void) {
     printk(KERN_EMERG "IGLOO: Initializing syscall hypercalls\n");
-    if (!igloo_do_hc) {
-        printk(KERN_INFO "IGLOO: Hypercalls disabled, syscalls tracing not activated\n");
-        return 0;
-    }
     // Dynamically look up and set igloo_syscall_enter_hook
     igloo_syscall_enter_t *enter_hook_ptr = (igloo_syscall_enter_t *)kallsyms_lookup_name("igloo_syscall_enter_hook");
     if (enter_hook_ptr) {

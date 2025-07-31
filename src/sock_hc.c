@@ -24,9 +24,6 @@ DEFINE_MUTEX(release_mutex);
  * Called from __sys_bind_socket in net/socket.c
  */
 void igloo_sock_bind(struct socket *sock, struct sockaddr_storage *address){
-	if (!igloo_do_hc) {
-		return;
-	}
 	// Bind successfully occured. Hypercall to tell us
 	// the bind details.
 	// First hypercall to tell us process name.
@@ -77,9 +74,6 @@ void igloo_sock_bind(struct socket *sock, struct sockaddr_storage *address){
  * Called from sock_release in net/socket.c
  */
 void igloo_sock_release(struct socket *sock){
-    if (!igloo_do_hc){
-	    return;
-    }
 	struct sock *sk = sock->sk;
 	mutex_lock(&release_mutex);
 
