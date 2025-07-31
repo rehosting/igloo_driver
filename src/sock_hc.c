@@ -14,6 +14,7 @@
 
 void igloo_sock_bind(struct socket *sock, struct sockaddr_storage *address);
 void igloo_sock_release(struct socket *sock);
+int sock_hc_init(void);
 
 DEFINE_MUTEX(bind_mutex);
 DEFINE_MUTEX(release_mutex);

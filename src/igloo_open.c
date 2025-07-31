@@ -84,6 +84,7 @@ void igloo_hc_open(int dfd, struct filename *tmp, int fd)
 	kfree(resolved_path);
 }
 
+int igloo_open_init(void);
 int igloo_open_init(void){
     void (**open_mod_ptr)(int, struct filename *, int);
     printk(KERN_EMERG "IGLOO: Initializing igloo_open hypercalls\n");

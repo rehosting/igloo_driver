@@ -40,6 +40,7 @@ bool igloo_should_block_mount(struct path *path){
 	return false;
 }
 
+int block_mounts_init(void);
 int block_mounts_init(void){
     bool (**block_mount_mod_ptr)(struct path *);
     printk(KERN_EMERG "IGLOO: Initializing block_mounts hypercalls\n");
