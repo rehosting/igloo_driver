@@ -48,5 +48,6 @@ enum igloo_hypercall_constants {
     IGLOO_SIGSTOP_QUERY     = 0x7b7287d5,
     IGLOO_HYPER_REGISTER_MEM_REGION = 0xbebebebe,
     IGLOO_SYSCALL           = 0x6408400B,
-    IGLOO_MODULE_BASE       = 0x6408400C
+    IGLOO_MODULE_BASE       = 0x6408400C,
+    IGLOO_INIT_MODULE       = 0x6408400D,
 };

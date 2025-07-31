@@ -83,7 +83,7 @@ static int __init igloo_hc_init(void) {
 		printk(KERN_ERR "Failed to initialize hyperfs, returning %d\n", ret);
         return ret;
     }
-
+    igloo_portal(IGLOO_INIT_MODULE, 0, 0);
     return 0;
 }
 
