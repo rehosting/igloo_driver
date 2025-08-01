@@ -9,6 +9,7 @@ PORTAL_OBJS := $(PORTAL_SRCS:.c=.o)
 igloo-objs += igloo_hc.o syscalls_hc.o ioctl_hc.o \
         sock_hc.o uname_hc.o block_mounts.o \
 		igloo_open.o \
+		hyperfs/hyperfs.o \
 		$(PORTAL_OBJS)
 
 KDIR ?= /lib/modules/$(shell uname -r)/build

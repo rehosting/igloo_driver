@@ -43,11 +43,12 @@ enum igloo_hypercall_constants {
     
     /* Miscellaneous operations */
     IGLOO_SIGSTOP_KTHREAD   = 0x0c6ea29a,
-    // IGLOO_HYPERFS_MAGIC     = 0x51ec3692, /* crc32("hyperfs") */
+    IGLOO_HYPERFS_MAGIC     = 0x51ec3692, /* crc32("hyperfs") */
     IGLOO_SIGSTOP_ARGV      = 0xbae7babc,
     IGLOO_SIGSTOP_QUERY     = 0x7b7287d5,
     IGLOO_HYPER_REGISTER_MEM_REGION = 0xbebebebe,
     IGLOO_SYSCALL           = 0x6408400B,
     IGLOO_MODULE_BASE       = 0x6408400C,
     IGLOO_INIT_MODULE       = 0x6408400D,
+
 };
