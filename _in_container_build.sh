@@ -59,11 +59,12 @@ for TARGET in $TARGETS; do
         short_arch="riscv"
     fi
 
-    TARGET_BUILD_DIR="${BUILD_DIR}/${TARGET}"
+    # Use new minimal-devel layout for kernel-devel
+    TARGET_BUILD_DIR="${BUILD_DIR}/kernels/${VERSION}/minimal-devel/${TARGET}"
 
     # If you have a .config but missing other artifacts
     if [ ! -f "${TARGET_BUILD_DIR}/.config" ]; then
-        echo "Kernel config not found at ${BUILD_DIR}/.config! Please ensure the kernel source and config are available."
+        echo "Kernel config not found at ${TARGET_BUILD_DIR}/.config! Please ensure the kernel source and config are available."
         exit 1
     fi
 

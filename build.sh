@@ -1,6 +1,7 @@
 #!/bin/bash
 
 set -eu
+set -x
 
 help() {
     cat >&2 <<EOF
@@ -70,12 +71,9 @@ for VERSION in $VERSIONS; do
         if [ -z "$KERNEL_DEVEL_DIR" ]; then
             PKG=local_packages/kernel-devel-all.tar.gz
             if [ -f "$PKG" ]; then
-                echo "Extracting kernel-devel-${TARGET}.${VERSION}.tar.gz from $PKG..."
                 mkdir -p cache/kernel-devel-extract
-                tar -xzf "$PKG" -C cache/kernel-devel-extract --wildcards --no-anchored "kernel-devel-${TARGET}.${VERSION}.tar.gz"
-                mkdir -p cache/kernel-devel-extract/kernel-devel-${TARGET}.${VERSION}
-                tar -xzf cache/kernel-devel-extract/kernel-devel-${TARGET}.${VERSION}.tar.gz -C cache/kernel-devel-extract/kernel-devel-${TARGET}.${VERSION}
-                KERNEL_DEVEL_DIR="$(pwd)/cache/kernel-devel-extract/kernel-devel-${TARGET}.${VERSION}"
+                pigz -dc "$PKG" | tar -xf - -C cache/kernel-devel-extract
+                KERNEL_DEVEL_DIR="$(pwd)/cache/kernel-devel-extract/kernels/${VERSION}/minimal-devel/${TARGET}"
             else
                 echo "Error: --kernel-devel-path not provided and $PKG not found."
                 exit 1
@@ -92,7 +90,7 @@ for VERSION in $VERSIONS; do
 
         # Run the container with proper environment variables and mounts
         docker run ${INTERACTIVE} --rm \
-            -v $KERNEL_DEVEL_DIR:/tmp/build/${VERSION}/${TARGET}:ro \
+            -v $KERNEL_DEVEL_DIR:/tmp/build/${VERSION}/kernels/${VERSION}/minimal-devel/${TARGET}:ro \
             -v $KERNEL_DEVEL_DIR:/kernel/${VERSION}:ro \
             -v $PWD:/app \
             -v $BUILD_OUTPUT_DIR:/output \
@@ -105,5 +103,5 @@ done
 
 echo "All builds completed successfully."
 echo "Creating igloo_driver.tar.gz archive in current directory..."
-tar -czf igloo_driver.tar.gz -C cache/build kernels
+tar --use-compress-program=pigz -cf igloo_driver.tar.gz -C cache/build kernels
 echo "Archive created at $(pwd)/igloo_driver.tar.gz"
