@@ -1495,7 +1495,6 @@ int hyperfs_init(void)
     pr_info("hyperfs: loading (igloo symbols resolved)\n");
     return register_filesystem(&hyperfs_fs_type);
 }
-EXPORT_SYMBOL(hyperfs_init);
 
 void hyperfs_exit(void)
 {
