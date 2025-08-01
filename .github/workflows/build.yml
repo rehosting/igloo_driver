@@ -71,33 +71,7 @@ jobs:
 
       - name: Extract and build all modules
         run: |
-          mkdir -p cache/kernel-devel-extract
-          tar -xzf local_packages/kernel-devel-all.tar.gz -C cache/kernel-devel-extract
-          echo "Contents of cache/kernel-devel-extract after extraction:"
-          ls -l cache/kernel-devel-extract
-          shopt -s nullglob
-          dirs=(cache/kernel-devel-extract/*)
-          if [ ${#dirs[@]} -eq 0 ]; then
-            echo "No kernel-devel directories found after extraction!"
-            exit 1
-          fi
-          # Extract inner kernel-devel tarballs
-          for dir in cache/kernel-devel-extract/*; do
-            name=$(basename "$dir")
-            inner_tar="$dir/kernel-devel-$name.tar.gz"
-            if [ -f "$inner_tar" ]; then
-              echo "Extracting $inner_tar into $dir"
-              tar -xzf "$inner_tar" -C "$dir"
-            fi
-          done
-          shopt -u nullglob
-          for dir in cache/kernel-devel-extract/*; do
-            name=$(basename "$dir")
-            target=${name%%.*}
-            version=${name#*.}
-            arch=$target
-            ./build.sh --versions "$version" --targets "$arch" --kernel-devel-path $(pwd)/cache/kernel-devel-extract/$name
-          done
+          ./build.sh --versions "6.13"
 
       - name: Upload all built modules and symbols (always)
         uses: actions/upload-artifact@v4
