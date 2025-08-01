@@ -73,7 +73,7 @@ for VERSION in $VERSIONS; do
             if [ -f "$PKG" ]; then
                 mkdir -p cache/kernel-devel-extract
                 pigz -dc "$PKG" | tar -xf - -C cache/kernel-devel-extract
-                KERNEL_DEVEL_DIR="$(pwd)/cache/kernel-devel-extract/kernels/${VERSION}/minimal-devel/${TARGET}"
+                KERNEL_DEVEL_DIR="$(pwd)/cache/kernel-devel-extract/${TARGET}.${VERSION}"
             else
                 echo "Error: --kernel-devel-path not provided and $PKG not found."
                 exit 1
