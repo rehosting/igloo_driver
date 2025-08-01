@@ -33,7 +33,7 @@ static int portal_tramp_kprobe_handler(struct kprobe *p, struct pt_regs *regs)
 {
     struct portal_tramp_entry *entry = container_of(p, struct portal_tramp_entry, kp);
     printk(KERN_EMERG "igloo: Trampoline hit for ID %d\n", entry->tramp_id);
-    igloo_portal(IGLOO_HYP_TRAMP_HIT, entry->tramp_id, regs);
+    igloo_portal(IGLOO_HYP_TRAMP_HIT, entry->tramp_id, (unsigned long)regs);
     return 0;
 }
 
@@ -47,7 +47,7 @@ void handle_op_tramp_generate(portal_region *mem_region)
     tramp_data = (struct portal_tramp_generate *)PORTAL_DATA(mem_region);
     id = atomic_inc_return(&tramp_id_counter) - 1;
     tramp_data->tramp_id = id;
-    tramp_data->tramp_addr = get_portal_tramp_fn(id);
+    tramp_data->tramp_addr = (unsigned long)get_portal_tramp_fn(id);
     char symname[64];
     snprintf(symname, sizeof(symname), "portal_tramp_fn_%d", id);
     unsigned long tramp_sym_addr = kallsyms_lookup_name(symname);
@@ -79,7 +79,7 @@ void handle_op_tramp_generate(portal_region *mem_region)
         tramp_data->status = 0;
         mem_region->header.op = HYPER_RESP_READ_OK;
     } else {
-        printk(KERN_EMERG "handle_op_tramp_generate: failed, id=%d addr=%p\n", id, tramp_data->tramp_addr);
+        printk(KERN_EMERG "handle_op_tramp_generate: failed, id=%d addr=%p\n", id, (void *)tramp_data->tramp_addr);
         tramp_data->status = -ENOENT;
         mem_region->header.op = HYPER_RESP_READ_FAIL;
     }
