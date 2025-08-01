@@ -13,12 +13,12 @@
 #include "portal/portal.h"
 #include "hypercall.h"
 #include "igloo_hypercall_consts.h"
+#include "hyperfs/hyperfs.h"
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("IGLOO Kernel Inspection/Interventions");
 MODULE_VERSION("0.1");
 MODULE_SOFTDEP("post: hyperfs");  // Load hyperfs after igloo
-extern int hyperfs_init(void) __attribute__((weak)); // HyperFS init function
 
 /**
  * Report the base address of the module by picking a function in the .text
