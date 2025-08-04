@@ -3,12 +3,11 @@
 set -eu
 
 # Input parameters
-TARGETS="$1"         # Target architectures
-VERSION="$2"       # Kernel version
-BUILD_DIR="/tmp/build/${VERSION}"  # Directory for build artifacts (e.g., cache/ from linux_builder)
-KERNEL_DIR="/kernel/${VERSION}"  # Directory containing the kernel source code:
-MODULE_DIR="/app/src"  # Directory containing the module source code
-OUTPUT_BASE="${5:-/output}"  # Output directory for built modules and symbols
+TARGETS="$1"         # Target architectures (space-separated)
+VERSIONS="$2"        # Kernel versions (space-separated)
+KERNEL_DEVEL_BASE="$3"  # Base directory containing extracted kernel-devel files
+MODULE_DIR="$4"         # Directory containing the module source code
+OUTPUT_BASE="$5"        # Output directory for built modules and symbols
 
 # Function to get cross-compiler prefix
 get_cc() {
@@ -44,6 +43,7 @@ get_cc() {
     fi
 }
 
+for VERSION in $VERSIONS; do
 for TARGET in $TARGETS; do
     # Set short_arch based on TARGET
     short_arch=$(echo $TARGET | sed -E 's/(.*)(e[lb]|eb64)$/\1/')
@@ -59,8 +59,8 @@ for TARGET in $TARGETS; do
         short_arch="riscv"
     fi
 
-    # Use new minimal-devel layout for kernel-devel
-    TARGET_BUILD_DIR="${BUILD_DIR}/kernels/${VERSION}/minimal-devel/${TARGET}"
+    # Use extracted kernel-devel directory structure
+    TARGET_BUILD_DIR="${KERNEL_DEVEL_BASE}/${TARGET}.${VERSION}"
 
     # If you have a .config but missing other artifacts
     if [ ! -f "${TARGET_BUILD_DIR}/.config" ]; then
@@ -79,27 +79,75 @@ for TARGET in $TARGETS; do
         exit 1
     fi
 
-    echo "Building IGLOO module for $TARGET with kernel at ${KERNEL_DIR}"
+    echo "Building IGLOO module for $TARGET with kernel at ${TARGET_BUILD_DIR}"
+    
+    # Debug: Check if crtsavres.o exists in the expected location
+    if [[ "$TARGET" == powerpc* ]]; then
+        echo "Debug: Checking for crtsavres.o in ${TARGET_BUILD_DIR}"
+        ls -la "${TARGET_BUILD_DIR}/arch/powerpc/lib/crtsavres.o" || echo "crtsavres.o not found!"
+        echo "Debug: Current working directory structure:"
+        pwd
+        ls -la "${TARGET_BUILD_DIR}/arch/powerpc/lib/" | head -5
+    fi
 
     # Create output directory
     OUTPUT_DIR="${OUTPUT_BASE}/kernels/${VERSION}"
     mkdir -p "${OUTPUT_DIR}"
 
-    # Clean and build the module
-    make -C "${MODULE_DIR}" \
-        KDIR="${KERNEL_DIR}" \
-        ARCH="${short_arch}" \
-        CROSS_COMPILE="$(get_cc $TARGET)" \
-        all
+    # Clean and build the module using the target build directory which has all artifacts
+    # For PowerPC, create symlinks to make crtsavres.o available where the linker expects it
+    if [[ "$TARGET" == powerpc* ]]; then
+        # Create symlinks in multiple possible locations where the linker might look
+        CROSS_COMPILER_PREFIX="$(get_cc $TARGET)"
+        CROSS_COMPILER_DIR=$(dirname "${CROSS_COMPILER_PREFIX}gcc")
+        CROSS_LIB_BASE="${CROSS_COMPILER_DIR}/../lib/gcc/powerpc64-linux-musl"
+        
+        echo "Debug: Looking for GCC lib directories in ${CROSS_LIB_BASE}"
+        # Find all possible gcc lib directories and create symlinks
+        find "${CROSS_LIB_BASE}" -type d 2>/dev/null | while read lib_dir; do
+            if [ -d "$lib_dir" ]; then
+                echo "Debug: Creating symlink in $lib_dir"
+                mkdir -p "$lib_dir/arch/powerpc/lib" 2>/dev/null || true
+                ln -sf "${TARGET_BUILD_DIR}/arch/powerpc/lib/crtsavres.o" "$lib_dir/arch/powerpc/lib/crtsavres.o" 2>/dev/null || true
+                # Also try creating it in the 32-bit subdirectory
+                if [ -d "$lib_dir/32" ]; then
+                    mkdir -p "$lib_dir/32/arch/powerpc/lib" 2>/dev/null || true
+                    ln -sf "${TARGET_BUILD_DIR}/arch/powerpc/lib/crtsavres.o" "$lib_dir/32/arch/powerpc/lib/crtsavres.o" 2>/dev/null || true
+                fi
+            fi
+        done
+        
+        # Also try creating symlinks in common relative paths from the build directory
+        mkdir -p "${MODULE_DIR}/arch/powerpc/lib" 2>/dev/null || true
+        ln -sf "${TARGET_BUILD_DIR}/arch/powerpc/lib/crtsavres.o" "${MODULE_DIR}/arch/powerpc/lib/crtsavres.o" 2>/dev/null || true
+        
+        # Create in current working directory as well
+        mkdir -p "arch/powerpc/lib" 2>/dev/null || true  
+        ln -sf "${TARGET_BUILD_DIR}/arch/powerpc/lib/crtsavres.o" "arch/powerpc/lib/crtsavres.o" 2>/dev/null || true
+        
+        # Build with additional library search path
+        make -C "${MODULE_DIR}" \
+            KDIR="${TARGET_BUILD_DIR}" \
+            ARCH="${short_arch}" \
+            CROSS_COMPILE="$(get_cc $TARGET)" \
+            EXTRA_LDFLAGS="-L${TARGET_BUILD_DIR}/arch/powerpc/lib" \
+            all
+    else
+        make -C "${MODULE_DIR}" \
+            KDIR="${TARGET_BUILD_DIR}" \
+            ARCH="${short_arch}" \
+            CROSS_COMPILE="$(get_cc $TARGET)" \
+            all
+    fi
 
     # Copy built module to output directory with new naming
     if [ -f "${MODULE_DIR}/igloo.ko" ]; then
         cp "${MODULE_DIR}/igloo.ko" "${OUTPUT_DIR}/igloo.ko.${TARGET}"
     fi
     
-    # Clean and build the module
+    # Clean the module
     make -C "${MODULE_DIR}" \
-        KDIR="${KERNEL_DIR}" \
+        KDIR="${TARGET_BUILD_DIR}" \
         ARCH="${short_arch}" \
         CROSS_COMPILE="$(get_cc $TARGET)" \
         clean
@@ -114,4 +162,5 @@ for TARGET in $TARGETS; do
 
     chmod -R o+rw "${OUTPUT_DIR}"
     echo "IGLOO module for $TARGET built successfully"
+done
 done

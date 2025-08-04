@@ -62,44 +62,36 @@ done
 
 DOCKER_IMAGE=igloo_driver_builder
 
-for VERSION in $VERSIONS; do
-    for TARGET in $TARGETS; do
-        echo "Building modules for kernel version ${VERSION}, target ${TARGET}..."
+echo "Building modules for kernel versions: ${VERSIONS}, targets: ${TARGETS}..."
 
-        # Determine kernel-devel path
-        KERNEL_DEVEL_DIR="$KERNEL_DEVEL_PATH"
-        if [ -z "$KERNEL_DEVEL_DIR" ]; then
-            PKG=local_packages/kernel-devel-all.tar.gz
-            if [ -f "$PKG" ]; then
-                mkdir -p cache/kernel-devel-extract
-                pigz -dc "$PKG" | tar -xf - -C cache/kernel-devel-extract
-                KERNEL_DEVEL_DIR="$(pwd)/cache/kernel-devel-extract/${TARGET}.${VERSION}/${TARGET}.${VERSION}"
-            else
-                echo "Error: --kernel-devel-path not provided and $PKG not found."
-                exit 1
-            fi
-        fi
+# Extract kernel-devel package if not using custom path
+if [ -z "$KERNEL_DEVEL_PATH" ]; then
+    PKG=local_packages/kernel-devel-all.tar.gz
+    if [ -f "$PKG" ]; then
+        mkdir -p cache/kernel-devel-extract
+        pigz -dc "$PKG" | tar -xf - -C cache/kernel-devel-extract
+        KERNEL_DEVEL_MOUNT_DIR="$(pwd)/cache/kernel-devel-extract"
+    else
+        echo "Error: --kernel-devel-path not provided and $PKG not found."
+        exit 1
+    fi
+else
+    KERNEL_DEVEL_MOUNT_DIR="$KERNEL_DEVEL_PATH"
+fi
 
-        echo "Using kernel-devel directory: $KERNEL_DEVEL_DIR"
-        echo "Listing files in $KERNEL_DEVEL_DIR:"
-        ls -l $KERNEL_DEVEL_DIR
+# Set build output directory in cache
+BUILD_OUTPUT_DIR="$(pwd)/cache/build"
+mkdir -p "$BUILD_OUTPUT_DIR"
 
-        # Set build output directory in cache
-        BUILD_OUTPUT_DIR="$(pwd)/cache/build"
-        mkdir -p "$BUILD_OUTPUT_DIR"
+# Run the container with proper environment variables and mounts
+docker run ${INTERACTIVE} --rm \
+    -v $KERNEL_DEVEL_MOUNT_DIR:/kernel-devel:ro \
+    -v $PWD:/app \
+    -v $BUILD_OUTPUT_DIR:/output \
+    $DOCKER_IMAGE \
+    bash -c "/app/_in_container_build.sh \"${TARGETS}\" \"${VERSIONS}\" /kernel-devel /app/src /output"
 
-        # Run the container with proper environment variables and mounts
-        docker run ${INTERACTIVE} --rm \
-            -v $KERNEL_DEVEL_DIR:/tmp/build/${VERSION}/kernels/${VERSION}/minimal-devel/${TARGET}:ro \
-            -v $KERNEL_DEVEL_DIR:/kernel/${VERSION}:ro \
-            -v $PWD:/app \
-            -v $BUILD_OUTPUT_DIR:/output \
-            $DOCKER_IMAGE \
-            bash -c "/app/_in_container_build.sh \"${TARGET}\" \"${VERSION}\" /tmp/build/${VERSION} /app /output"
-
-        echo "Completed module build for kernel version ${VERSION}, target ${TARGET}"
-    done
-done
+echo "Completed module build for all versions and targets"
 
 echo "All builds completed successfully."
 echo "Creating igloo_driver.tar.gz archive in current directory..."
