@@ -29,10 +29,10 @@
 #include <hypercall.h>
 #include "igloo.h"
 #include "hyperfs_consts.h"
-#include "../portal/portal.h"
-#include "../ioctl_hc.h"
+#include "portal.h"
+#include "ioctl_hc.h"
 #include "hyperfs.h"
-#include "../igloo_hypercall_consts.h"
+#include "igloo_hypercall_consts.h"
 
 
 #define HYPERFS_DEBUG 0

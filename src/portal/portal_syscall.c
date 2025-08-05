@@ -3,7 +3,7 @@
 #include <linux/hashtable.h>
 #include <linux/spinlock.h>
 #include <linux/string.h>
-#include "../syscalls_hc.h"
+#include "syscalls_hc.h"
 
 // Import functions and variables from syscalls_hc.c
 extern struct hlist_head syscall_hook_table[1024];
