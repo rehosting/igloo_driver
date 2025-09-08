@@ -1,6 +1,8 @@
 #include "portal_internal.h"
 #include <linux/uaccess.h>
 #include <linux/mm.h>     /* For access_ok */
+#include <linux/thread_info.h>  /* For test_thread_flag */
+#include <linux/compat.h>        /* For CONFIG_COMPAT */
 
 /* Helper function to determine if an address is in kernel space */
 bool igloo_is_kernel_addr(unsigned long addr)
@@ -262,22 +264,63 @@ void handle_op_read_ptr_array(portal_region *mem_region)
     unsigned long ptr_array_addr = mem_region->header.addr;
     size_t max_buf = CHUNK_SIZE;
     size_t buf_offset = 0;
-    unsigned long user_ptr;
+    unsigned long user_ptr = 0;
     char *buf = PORTAL_DATA(mem_region);
-    unsigned long __user *user_ptr_array = (unsigned long __user *)ptr_array_addr;
+    void __user *user_ptr_array = (void __user *)ptr_array_addr;
     char tmp[128];
     int ret;
+    size_t user_ptr_size;
+    bool is_32bit = false;
+
+    /* Check if we're dealing with a 32-bit process on 64-bit kernel
+     * using architecture-specific flags for 32-bit processes.
+     */
+#ifdef CONFIG_COMPAT
+#ifdef TIF_32BIT
+    is_32bit = is_32bit || test_thread_flag(TIF_32BIT);
+#endif // TIF_32BIT
+
+#ifdef TIF_32BIT_ADDR
+    is_32bit = is_32bit || test_thread_flag(TIF_32BIT_ADDR);
+#endif // TIF_32BIT_ADDR
+
+#ifdef TIF_32BIT_REGS
+    is_32bit = is_32bit || test_thread_flag(TIF_32BIT_REGS);
+#endif // TIF_32BIT_REGS
+
+#ifdef TIF_IA32
+    is_32bit = is_32bit || test_thread_flag(TIF_IA32);
+#endif // TIF_IA32
+
+#ifdef TIF_ADDR32
+    is_32bit = is_32bit || test_thread_flag(TIF_ADDR32);
+#endif // TIF_ADDR32
+#endif // CONFIG_COMPAT
+    user_ptr_size = is_32bit ? sizeof(u32) : sizeof(unsigned long);
 
     while (buf_offset < max_buf) {
         // Read pointer from user or kernel
         if (igloo_is_kernel_addr((unsigned long)user_ptr_array)) {
             user_ptr = *(unsigned long *)user_ptr_array;
         } else {
-            if (copy_from_user(&user_ptr, user_ptr_array, sizeof(unsigned long)))
-                break;
+            // For user addresses, handle 32-bit vs 64-bit
+            if (is_32bit) {
+                u32 ptr32;
+                if (copy_from_user(&ptr32, user_ptr_array, sizeof(u32))) {
+                    break;
+                }
+                user_ptr = (unsigned long)ptr32;
+            } else {
+                if (copy_from_user(&user_ptr, user_ptr_array,
+                                   sizeof(unsigned long))) {
+                    break;
+                }
+            }
         }
+
         if (!user_ptr)
             break;
+
         // Read string from pointer
         if (igloo_is_kernel_addr(user_ptr)) {
             strncpy(tmp, (const char *)user_ptr, sizeof(tmp) - 1);
@@ -294,7 +337,7 @@ void handle_op_read_ptr_array(portal_region *mem_region)
         memcpy(buf + buf_offset, tmp, len);
         buf[buf_offset + len] = '\0';
         buf_offset += len + 1;
-        user_ptr_array++;
+        user_ptr_array = (char *)user_ptr_array + user_ptr_size;
     }
     mem_region->header.size = buf_offset;
     mem_region->header.op = HYPER_RESP_READ_OK;
