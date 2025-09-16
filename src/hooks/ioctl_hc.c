@@ -90,8 +90,9 @@ void igloo_ioctl(int error, struct file *filp, unsigned int cmd) {
         kfree(path_buffer);
     }
 }
-
-int ioctl_hc_init(void){
+int ioctl_hc_init(void);
+int ioctl_hc_init(void)
+{
     void (**ioctl_mod_ptr)(int, struct file *, unsigned int);
     printk(KERN_EMERG "IGLOO: Initializing ioctl hypercalls\n");
     ioctl_mod_ptr = (void (**)(int, struct file *, unsigned int))

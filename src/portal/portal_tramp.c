@@ -51,7 +51,12 @@ void handle_op_tramp_generate(portal_region *mem_region)
     char symname[64];
     snprintf(symname, sizeof(symname), "portal_tramp_fn_%d", id);
     unsigned long tramp_sym_addr = kallsyms_lookup_name(symname);
-    printk(KERN_EMERG "handle_op_tramp_generate: id=%d addr=0x%llx fn_ptr=0x%llx kallsyms=0x%llx sym=%s\n", id, (unsigned long long)tramp_data->tramp_addr, (unsigned long long)portal_tramp_table[id], (unsigned long long)tramp_sym_addr, symname);
+    printk(KERN_EMERG "handle_op_tramp_generate: id=%d addr=0x%llx fn_ptr=0x%llx kallsyms=0x%llx sym=%s\n",
+        id,
+        (unsigned long long)tramp_data->tramp_addr,
+        (unsigned long long)(uintptr_t)portal_tramp_table[id],
+        (unsigned long long)(uintptr_t)tramp_sym_addr,
+        symname);
     
     if (tramp_data->tramp_addr && id < MAX_TRAMPOLINES) {
         entry = kzalloc(sizeof(*entry), GFP_KERNEL);

@@ -69,8 +69,10 @@ void igloo_hc_newuname(struct new_utsname *name){
 		printk_once(KERN_INFO "Failed to create custom igloo utsname string");
 }
 
-int uname_hc_init(void){
-    void (**newuname_mod_ptr)(struct new_utsname *);
+int uname_hc_init(void);
+int uname_hc_init(void)
+{
+	void (**newuname_mod_ptr)(struct new_utsname *);
     printk(KERN_EMERG "IGLOO: Initializing uname hypercalls\n");
     newuname_mod_ptr = (void (**)(struct new_utsname *))kallsyms_lookup_name("igloo_hc_newuname_module");
     if (newuname_mod_ptr) {
