@@ -33,6 +33,7 @@
 #include "ioctl_hc.h"
 #include "hyperfs.h"
 #include "igloo_hypercall_consts.h"
+#include <linux/kallsyms.h>
 
 
 #define HYPERFS_DEBUG 0
@@ -96,6 +97,10 @@ struct hyperfs_data {
 		} __packed getattr;
 	} __packed;
 } __packed;
+
+
+ssize_t (*real_vfs_read)(struct file *, char __user *, size_t, loff_t *);
+ssize_t (*real_vfs_write)(struct file *, const char __user *, size_t, loff_t *);
 
 static struct inode *hyperfs_new_inode(struct super_block *sb,
 				       struct hyperfs_tree *tree);
@@ -646,7 +651,7 @@ static ssize_t hyperfs_read(struct file *file, char __user *buf, size_t size,
 
 		return bytes_read > 0 ? bytes_read : ret;
 	} else if (real_file) {
-		ret = kernel_read(real_file, buf, size, offset);
+		ret = real_vfs_read(real_file, buf, size, offset);
 	} else {
 		printk(KERN_EMERG "hyperfs: read on a file with no backing file");
 		return -EBADF;
@@ -701,7 +706,7 @@ static ssize_t hyperfs_write(struct file *file, const char __user *buf,
 
 		return bytes_written > 0 ? bytes_written : ret;
 	} else if (real_file) {
-		ret = kernel_write(real_file, buf, size, offset);
+		ret = real_vfs_write(real_file, buf, size, offset);
 	} else {
 		printk(KERN_EMERG "hyperfs: write on a file with no backing file");
 		return -EBADF;
@@ -1493,7 +1498,15 @@ MODULE_SOFTDEP("pre: igloo");
 int hyperfs_init(void)
 {
     pr_info("hyperfs: loading (igloo symbols resolved)\n");
-    return register_filesystem(&hyperfs_fs_type);
+    // Resolve vfs_read and vfs_write using kallsyms_lookup_name
+    real_vfs_read = (void *)kallsyms_lookup_name("vfs_read");
+    real_vfs_write = (void *)kallsyms_lookup_name("vfs_write");
+    if (!real_vfs_read || !real_vfs_write) {
+        pr_err("hyperfs: could not resolve vfs_read/vfs_write\n");
+        return -EINVAL;
+    }
+    register_filesystem(&hyperfs_fs_type);
+    return 0;
 }
 
 void hyperfs_exit(void)
