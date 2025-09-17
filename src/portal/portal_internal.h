@@ -77,4 +77,7 @@ void handle_op_kallsyms_lookup(portal_region *mem_region);
 
 void handle_op_tramp_generate(portal_region *mem_region);
 
+// Add prototype for the new handler
+void handle_op_hyperfs_add_hyperfile(portal_region *region);
+
 #endif /* __PORTAL_INTERNAL_H__ */

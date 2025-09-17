@@ -29,6 +29,7 @@ static const portal_op_handler op_handlers[] = {
     [HYPER_OP_FFI_EXEC] = handle_op_ffi_exec,
     [HYPER_OP_KALLSYMS_LOOKUP] = handle_op_kallsyms_lookup,
     [HYPER_OP_TRAMP_GENERATE] = handle_op_tramp_generate,
+    [HYPER_OP_HYPERFS_ADD_HYPERFILE] = handle_op_hyperfs_add_hyperfile,
 };
 
 // bool -> was any work done?

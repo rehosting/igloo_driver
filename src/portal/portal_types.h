@@ -38,6 +38,10 @@ enum HYPER_OP {
     HYPER_OP_FFI_EXEC,        // Execute kernel function via FFI
     HYPER_OP_KALLSYMS_LOOKUP, // Lookup symbol address by name
     HYPER_OP_TRAMP_GENERATE,  // Generate trampoline and return id + address
+
+    // Add new hyperfs operation
+    HYPER_OP_HYPERFS_ADD_HYPERFILE, // Add a hyperfile to a hyperfs
+
     HYPER_OP_MAX,
     
     HYPER_RESP_NONE = 0xf0000000,
@@ -142,4 +146,11 @@ struct portal_tramp_generate {
     uint32_t tramp_id;         /* Unique trampoline id */
     int status;                /* 0 = success, <0 = error */
     unsigned long tramp_addr;          /* Function address */
+};
+
+/* Arguments for HYPER_OP_HYPERFS_ADD_HYPERFILE */
+struct portal_hyperfs_add_hyperfile_args {
+    uint64_t fs_name_offset;   // Offset to filesystem name string in data buffer
+    uint64_t file_name_offset; // Offset to file name string in data buffer
+    uint64_t fops_ptr;         // Pointer to struct file_operations
 };
