@@ -1,0 +1,1 @@
+int portal_tramp_generate(void);
