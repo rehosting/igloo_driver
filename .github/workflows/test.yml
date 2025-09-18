@@ -1,0 +1,74 @@
+name: Test igloo_driver modules
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: rehosting-arc
+    steps:
+      - name: Checkout igloo_driver
+        uses: actions/checkout@v4
+
+      - name: Trust Harbor's self-signed certificate
+        run: |
+          echo "Fetching certificate from ${{ secrets.REHOSTING_ARC_REGISTRY }}"
+          openssl s_client -showcerts -connect ${{ secrets.REHOSTING_ARC_REGISTRY }}:443 < /dev/null 2>/dev/null | openssl x509 -outform PEM | sudo tee /usr/local/share/ca-certificates/harbor.crt > /dev/null
+          sudo update-ca-certificates
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:master
+            network=host
+          buildkitd-config-inline: |
+            [registry."${{ secrets.REHOSTING_ARC_REGISTRY }}"]
+              insecure = true
+              http = true
+
+      - name: Log in to Rehosting Arc Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{secrets.REHOSTING_ARC_REGISTRY}}
+          username: ${{ secrets.REHOSTING_ARC_REGISTRY_USER }}
+          password: ${{ secrets.REHOSTING_ARC_REGISTRY_PASSWORD }}
+
+      # Build the kernel_builder docker image, but do NOT push
+      - name: Build kernel_builder docker image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: |
+            igloo_driver_builder:test
+          build-args: |
+            REGISTRY=${{ secrets.REHOSTING_ARC_REGISTRY }}/proxy
+          cache-from: |
+            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/igloo_driver_builder:cache,mode=max
+            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/igloo_driver_builder:cache-PR-${{github.event.number}},mode=max
+          cache-to: |
+            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/igloo_driver_builder:cache,mode=max
+            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/igloo_driver_builder:cache-PR-${{ github.event.number }}
+          outputs: type=docker
+
+      - name: Tag kernel_builder docker image
+        run: |
+          docker tag igloo_driver_builder:test igloo_driver_builder
+
+      - name: Download kernel-devel-all from release if not present
+        run: |
+          if [ ! -f local_packages/kernel-devel-all.tar.gz ]; then
+            mkdir -p local_packages
+            curl -L -o local_packages/kernel-devel-all.tar.gz "https://github.com/rehosting/linux_builder/releases/latest/download/kernel-devel-all.tar.gz"
+          fi
+
+      - name: Install pigz
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pigz
+
+      - name: Extract and build all modules
+        run: |
+          ./build.sh --versions "6.13"
