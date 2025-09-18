@@ -1,43 +1,27 @@
-// External hyperfs module
-#include <linux/init.h>
-#include <linux/module.h>
-#include <linux/kernel.h>
-#include <linux/fs.h>
 #include <linux/file.h>
 #include <linux/fs_struct.h>
+#include <linux/module.h>
 #include <linux/namei.h>
 #include <linux/pagemap.h>
 #include <linux/parser.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
-#include <linux/mount.h>
-#include <linux/path.h>
-#include <linux/dcache.h>
-#include <linux/uaccess.h>
-#include <linux/types.h>
-#include <linux/list.h>
-#include <linux/stat.h>
-#include <linux/string.h>
-#include <linux/errno.h>
-#include <linux/bug.h>
-#include <linux/printk.h>
-#include <linux/cred.h>
-#include <linux/security.h>
-#include <linux/hashtable.h>
-#include <linux/gfp.h>
-#include <linux/time.h>
-#include <hypercall.h>
-#include "igloo.h"
-#include "hyperfs_consts.h"
-#include "portal.h"
+#include "hypercall.h"
+#include "portal/portal.h"
+// #include "../internal.h"
 #include "ioctl_hc.h"
-#include "hyperfs.h"
 #include "igloo_hypercall_consts.h"
+#include "hyperfs_consts.h"
 #include <linux/kallsyms.h>
-#include "portal_hyperfs.h"  // added
-
+#include "hyperfs.h"
 
 #define HYPERFS_DEBUG 0
+
+// Function pointer declarations for vfs_read and vfs_write
+static ssize_t (*vfs_read_ptr)(struct file *, char __user *, size_t, loff_t *);
+static ssize_t (*vfs_write_ptr)(struct file *, const char __user *, size_t, loff_t *);
+
+
 
 struct hyperfs_tree {
 	bool is_dir;
@@ -55,7 +39,6 @@ struct hyperfs_tree_dir_entry {
 struct hyperfs {
 	const char *passthrough_path;
 	struct hyperfs_tree *tree;
-	const char *fs_name; // added
 };
 
 // Must be castable from real_ctx for hyperfs_real_iter_actor
@@ -68,13 +51,11 @@ struct hyperfs_iterate_data {
 enum {
 	HYPERFS_OPT_PASSTHROUGH_PATH,
 	HYPERFS_OPT_ERR,
-	HYPERFS_OPT_FS_NAME,
 };
 
 static const match_table_t hyperfs_tokens = {
 	{ HYPERFS_OPT_PASSTHROUGH_PATH, "passthrough_path=%s" },
 	{ HYPERFS_OPT_ERR, NULL },
-	{ HYPERFS_OPT_FS_NAME, "fs_name=%s" },
 };
 
 enum { DEV_MODE = S_IFREG | 0666, DIR_MODE = S_IFDIR | 0777 };
@@ -101,10 +82,6 @@ struct hyperfs_data {
 		} __packed getattr;
 	} __packed;
 } __packed;
-
-
-ssize_t (*real_vfs_read)(struct file *, char __user *, size_t, loff_t *);
-ssize_t (*real_vfs_write)(struct file *, const char __user *, size_t, loff_t *);
 
 static struct inode *hyperfs_new_inode(struct super_block *sb,
 				       struct hyperfs_tree *tree);
@@ -306,12 +283,15 @@ static int hyperfs_tree_add_hyperfile(struct super_block *sb,
 	entry->name = kstrdup(basename, GFP_KERNEL);
 	if (!entry->name) {
 		err = -ENOMEM;
+		kfree(entry);
 		goto out;
 	}
 
 	entry->tree = kzalloc(sizeof(struct hyperfs_tree), GFP_KERNEL);
 	if (!entry->tree) {
 		err = -ENOMEM;
+		kfree(entry->name);
+		kfree(entry);
 		goto out;
 	}
 
@@ -321,6 +301,9 @@ static int hyperfs_tree_add_hyperfile(struct super_block *sb,
 	entry->tree->inode = hyperfs_new_inode(sb, entry->tree);
 	if (!entry->tree->inode) {
 		err = -ENOMEM;
+		kfree(entry->tree);
+		kfree(entry->name);
+		kfree(entry);
 		goto out;
 	}
 
@@ -486,74 +469,57 @@ static struct dentry *hyperfs_lookup(struct inode *dir, struct dentry *dentry,
 				     unsigned int flags)
 {
 	struct super_block *sb = dir->i_sb;
-	struct hyperfs *fs = sb->s_fs_info;
+	struct hyperfs_tree *tree, *child = NULL;
 	struct path real_path;
 	struct dentry *real_dentry;
 	struct inode *wrap_inode;
 	int err = 0;
-	struct file_operations *reg_fops = NULL;
-	char *path_buf = NULL, *rel_path = NULL;
 
-	// First try dynamic hyperfile via portal_hyperfs
-	path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
-	if (path_buf) {
-		rel_path = dentry_path_raw(dentry, path_buf, PATH_MAX);
-		if (!IS_ERR(rel_path) && fs && fs->fs_name)
-			reg_fops = hyperfs_lookup_file(fs->fs_name, rel_path);
-		kfree(path_buf);
+	tree = dir->i_private;
+	if (tree) {
+		BUG_ON(!tree->is_dir);
+		child = hyperfs_dir_lookup(&tree->dir_entries,
+					   dentry->d_name.name,
+					   dentry->d_name.len);
 	}
-	if (reg_fops) {
-		struct inode *inode = new_inode(sb);
-		if (!inode) {
-			err = -ENOMEM;
-			goto out;
-		}
-		inode->i_ino = get_next_ino();
-		inode->i_mode = DEV_MODE;
-		inode->i_flags |= S_NOCMTIME;
-#ifdef CONFIG_FS_POSIX_ACL
-		inode->i_acl = inode->i_default_acl = ACL_DONT_CACHE;
-#endif
-		inode->i_fop = reg_fops;
-		d_add(dentry, inode);
-		goto out;
-	}
-
-	// Fallback to passthrough
-	err = hyperfs_real_path(dentry, &real_path);
-	if (err == -ENOENT) {
-		/* Report the full path of the missing entry (not just parent) */
-		char *path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
-		if (path_buf) {
-			char *full_path = dentry_path_raw(dentry, path_buf, PATH_MAX);
-			if (!IS_ERR(full_path)) {
-				igloo_enoent_path(full_path);
+	if (child) {
+		d_add(dentry, igrab(child->inode));
+	} else {
+		err = hyperfs_real_path(dentry, &real_path);
+		if (err == -ENOENT) {
+			/* Report the full path of the missing entry (not just parent) */
+			char *path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
+			if (path_buf) {
+				char *full_path = dentry_path_raw(dentry, path_buf, PATH_MAX);
+				if (!IS_ERR(full_path)) {
+					igloo_enoent_path(full_path);
+				} else {
+					igloo_enoent(dentry); /* Fallback */
+				}
+				kfree(path_buf);
 			} else {
 				igloo_enoent(dentry); /* Fallback */
 			}
-			kfree(path_buf);
-		} else {
-			igloo_enoent(dentry); /* Fallback */
+			err = 0; // Clear error after reporting
+			d_add(dentry, NULL);
+			goto out;
 		}
-		err = 0; // Clear error after reporting
-		d_add(dentry, NULL);
-		goto out;
+		if (err < 0)
+			goto out;
+
+		real_dentry = dget(real_path.dentry);
+		path_put(&real_path);
+
+		wrap_inode = hyperfs_wrap_real_inode(sb, d_inode(real_dentry));
+		if (!wrap_inode) {
+			dput(real_dentry);
+			err = -ENOMEM;
+			goto out;
+		}
+
+		dentry->d_fsdata = real_dentry;
+		d_add(dentry, wrap_inode);
 	}
-	if (err < 0)
-		goto out;
-
-	real_dentry = dget(real_path.dentry);
-	path_put(&real_path);
-
-	wrap_inode = hyperfs_wrap_real_inode(sb, d_inode(real_dentry));
-	if (!wrap_inode) {
-		dput(real_dentry);
-		err = -ENOMEM;
-		goto out;
-	}
-
-	dentry->d_fsdata = real_dentry;
-	d_add(dentry, wrap_inode);
 
 out:
 	return err < 0 ? ERR_PTR(err) : NULL;
@@ -564,6 +530,11 @@ static int hyperfs_open(struct inode *inode, struct file *file)
 	const char *real_name;
 	struct file *real_file;
 	int err = 0;
+	struct hyperfs_tree *tree = inode->i_private;
+
+	/* If this is a hyperfs-managed file/directory, no need to open a real file */
+	if (tree)
+		return 0;
 
 	/* Special case for directories - we don't need to actually open them */
 	if (S_ISDIR(inode->i_mode)) {
@@ -614,11 +585,60 @@ static int hyperfs_release(struct inode *inode, struct file *file)
 static ssize_t hyperfs_read(struct file *file, char __user *buf, size_t size,
 			    loff_t *offset)
 {
+	struct hyperfs_tree *tree = file->f_inode->i_private;
 	struct file *real_file = file->private_data;
 	ssize_t ret = 0;
+	ssize_t bytes_read = 0;
+	char kbuf[128];
+	size_t chunk_size;
 
-	if (real_file) {
-		ret = real_vfs_read(real_file, buf, size, offset);
+	if (tree) {
+		if (tree->is_dir) {
+			printk(KERN_EMERG "hyperfs: read on a directory");
+			// Directories don't support read
+			return -EISDIR;
+		}
+
+		// Process the read in chunks of at most 128 bytes
+		while (size > 0) {
+			chunk_size = min(size, sizeof(kbuf));
+			
+			ret = hyp_file_op((struct hyperfs_data){
+				.type = HYP_READ,
+				.path = tree->path,
+				.read.buf = kbuf,
+				.read.size = chunk_size,
+				.read.offset = *offset,
+			});
+			
+			if (ret <= 0)
+				break;
+				
+			// Safety check to prevent buffer overflow
+			if (ret > sizeof(kbuf)) {
+				printk(KERN_ERR "hyperfs: hypercall returned more data (%zd) than buffer size (%zu)",
+				      ret, sizeof(kbuf));
+				ret = -EINVAL;
+				break;
+			}
+			
+			if (copy_to_user(buf + bytes_read, kbuf, ret)) {
+				ret = -EFAULT;
+				break;
+			}
+			
+			*offset += ret;
+			bytes_read += ret;
+			size -= ret;
+			
+			// If we got less than requested, we've hit EOF
+			if (ret < chunk_size)
+				break;
+		}
+		
+		return bytes_read > 0 ? bytes_read : ret;
+	} else if (real_file) {
+		ret = vfs_read_ptr(real_file, buf, size, offset);
 	} else {
 		printk(KERN_EMERG "hyperfs: read on a file with no backing file");
 		return -EBADF;
@@ -630,11 +650,50 @@ static ssize_t hyperfs_read(struct file *file, char __user *buf, size_t size,
 static ssize_t hyperfs_write(struct file *file, const char __user *buf,
 			     size_t size, loff_t *offset)
 {
+	struct hyperfs_tree *tree = file->f_inode->i_private;
 	struct file *real_file = file->private_data;
 	ssize_t ret;
+	ssize_t bytes_written = 0;
+	char kbuf[128];
+	size_t chunk_size;
 
-	if (real_file) {
-		ret = real_vfs_write(real_file, buf, size, offset);
+	if (tree) {
+		if (tree->is_dir) {
+			printk(KERN_EMERG "hyperfs: write on a directory");
+			// Directories don't support ioctl
+			return -EISDIR;
+		}
+
+		// Process the write in chunks of at most 128 bytes
+		while (size > 0) {
+			chunk_size = min(size, sizeof(kbuf));
+			
+			if (copy_from_user(kbuf, buf + bytes_written, chunk_size))
+				return bytes_written > 0 ? bytes_written : -EFAULT;
+				
+			ret = hyp_file_op((struct hyperfs_data){
+				.type = HYP_WRITE,
+				.path = tree->path,
+				.write.buf = kbuf,
+				.write.size = chunk_size,
+				.write.offset = *offset,
+			});
+			
+			if (ret <= 0)
+				break;
+				
+			*offset += ret;
+			bytes_written += ret;
+			size -= ret;
+			
+			// If we wrote less than requested, we can't write more
+			if (ret < chunk_size)
+				break;
+		}
+		
+		return bytes_written > 0 ? bytes_written : ret;
+	} else if (real_file) {
+		ret = vfs_write_ptr(real_file, buf, size, offset);
 	} else {
 		printk(KERN_EMERG "hyperfs: write on a file with no backing file");
 		return -EBADF;
@@ -646,14 +705,22 @@ static ssize_t hyperfs_write(struct file *file, const char __user *buf,
 static long hyperfs_ioctl(struct file *file, unsigned int cmd,
 			  unsigned long arg)
 {
+	struct hyperfs_tree *tree = file->f_inode->i_private;
 	struct file *real_file = file->private_data;
 
-	if (real_file) {
-		long ret;
-		if (real_file->f_op && real_file->f_op->unlocked_ioctl)
-			ret = real_file->f_op->unlocked_ioctl(real_file, cmd, arg);
-		else
-			ret = -ENOTTY;
+	if (tree) {
+		if (tree->is_dir) {
+			// Directories don't support ioctl
+			return -EISDIR;
+		}
+		return hyp_file_op((struct hyperfs_data){
+			.type = HYP_IOCTL,
+			.path = tree->path,
+			.ioctl.cmd = cmd,
+			.ioctl.data = (void *)arg,
+		});
+	} else if (real_file) {
+		int ret = vfs_ioctl(real_file, cmd, arg);
 		igloo_ioctl(ret, file, cmd);
 		return ret;
 	} else {
@@ -678,7 +745,7 @@ static struct dentry *hyperfs_get_real_dentry(struct dentry *dentry)
 
 	// Get a reference to the parent dentry before releasing the path
 	real_parent = dget(real_parent_path.dentry);
-
+	
 	// Release the path before taking the inode lock
 	path_put(&real_parent_path);
 
@@ -687,7 +754,7 @@ static struct dentry *hyperfs_get_real_dentry(struct dentry *dentry)
 	ret = lookup_one_len(dentry->d_name.name, real_parent,
 			     dentry->d_name.len);
 	inode_unlock(real_parent->d_inode);
-
+	
 	// Release our reference to the parent
 	dput(real_parent);
 
@@ -783,7 +850,7 @@ static int hyperfs_unlink(struct inode *dir, struct dentry *dentry)
 	return err;
 }
 
-static int hyperfs_symlink(struct mnt_idmap *idmap, struct inode *dir,
+static int hyperfs_symlink(struct mnt_idmap *idmap, struct inode *dir, 
 			struct dentry *dentry, const char *link)
 {
 	struct dentry *real_dentry;
@@ -799,7 +866,7 @@ static int hyperfs_symlink(struct mnt_idmap *idmap, struct inode *dir,
 	return err;
 }
 
-static int hyperfs_mkdir(struct mnt_idmap *idmap, struct inode *dir,
+static int hyperfs_mkdir(struct mnt_idmap *idmap, struct inode *dir, 
 						struct dentry *dentry, umode_t mode)
 {
 	struct dentry *real_dentry;
@@ -834,7 +901,7 @@ static int hyperfs_rmdir(struct inode *dir, struct dentry *dentry)
 	return err;
 }
 
-static int hyperfs_mknod(struct mnt_idmap *idmap, struct inode *dir,
+static int hyperfs_mknod(struct mnt_idmap *idmap, struct inode *dir, 
 			struct dentry *dentry, umode_t mode, dev_t rdev)
 {
 	struct dentry *real_dentry;
@@ -853,11 +920,12 @@ static int hyperfs_mknod(struct mnt_idmap *idmap, struct inode *dir,
 	return err;
 }
 
-static int hyperfs_rename(struct mnt_idmap *idmap, struct inode *old_dir,
+static int hyperfs_rename(struct mnt_idmap *idmap, struct inode *old_dir, 
 			  struct dentry *old, struct inode *new_dir, struct dentry *new,
 			  unsigned int flags)
 {
 	struct dentry *real_old, *real_new;
+	struct renamedata rd;
 	int err;
 
 	real_old = hyperfs_get_real_dentry(old);
@@ -872,15 +940,17 @@ static int hyperfs_rename(struct mnt_idmap *idmap, struct inode *old_dir,
 		goto put_old;
 	}
 
-	/* Use the inode operations directly for rename */
-	if (real_old->d_parent->d_inode->i_op && 
-	    real_old->d_parent->d_inode->i_op->rename) {
-		err = real_old->d_parent->d_inode->i_op->rename(idmap,
-			real_old->d_parent->d_inode, real_old,
-			real_new->d_parent->d_inode, real_new, flags);
-	} else {
-		err = -EPERM;
-	}
+	/* Set up the renamedata structure */
+	rd.old_mnt_idmap = idmap;
+	rd.old_dir = real_old->d_parent->d_inode;
+	rd.old_dentry = real_old;
+	rd.new_mnt_idmap = idmap;
+	rd.new_dir = real_new->d_parent->d_inode;
+	rd.new_dentry = real_new;
+	rd.delegated_inode = NULL;
+	rd.flags = flags;
+
+	err = vfs_rename(&rd);
 
 	dput(real_new);
 put_old:
@@ -934,7 +1004,7 @@ static int hyperfs_getattr(struct mnt_idmap *idmap, const struct path *path,
 		}
 		return err;
 	}
-
+	
 	/* Get attributes from real path */
 	err = vfs_getattr(&real_path, stat, STATX_BASIC_STATS, AT_STATX_SYNC_AS_STAT);
 	path_put(&real_path);
@@ -966,12 +1036,14 @@ static bool hyperfs_real_iter_actor(struct dir_context *ctx, const char *name,
 
 static int hyperfs_iterate(struct file *file, struct dir_context *ctx)
 {
+	struct hyperfs_tree *tree = file->f_inode->i_private;
+	struct hyperfs_tree_dir_entry *entry;
 	struct path real_path;
 	struct file *real_file;
 	struct hyperfs_iterate_data iter_data = {
 		.real_ctx.actor = hyperfs_real_iter_actor,
 		.hyperfs_ctx = ctx,
-		.tree = NULL,
+		.tree = tree,
 	};
 	loff_t i = 2;
 	int err = 0;
@@ -979,7 +1051,22 @@ static int hyperfs_iterate(struct file *file, struct dir_context *ctx)
 	if (!dir_emit_dots(file, ctx))
 		goto out;
 
-	// No virtual entries; list only passthrough dir
+	// Iter fake
+	if (tree) {
+		BUG_ON(!tree->is_dir);
+		hlist_for_each_entry(entry, &tree->dir_entries, node) {
+			if (i >= ctx->pos) {
+				if (!dir_emit(ctx, entry->name,
+					      strlen(entry->name),
+					      entry->tree->inode->i_ino,
+					      entry->tree->is_dir ? DT_DIR :
+								    DT_REG))
+					goto out;
+				ctx->pos++;
+			}
+			i++;
+		}
+	}
 
 	// Get real passthrough path
 	err = hyperfs_real_path(file->f_path.dentry, &real_path);
@@ -1185,7 +1272,7 @@ static struct inode *hyperfs_wrap_real_inode(struct super_block *sb,
 	inode->i_mtime_nsec = real->i_mtime_nsec;
 	inode->i_ctime_sec = real->i_ctime_sec;
 	inode->i_ctime_nsec = real->i_ctime_nsec;
-
+	
 	i_size_write(inode, i_size_read(real));
 	switch (real->i_mode & S_IFMT) {
 	case S_IFDIR:
@@ -1233,7 +1320,6 @@ static int hyperfs_show_options(struct seq_file *f, struct dentry *dentry)
 	struct hyperfs *fs = dentry->d_sb->s_fs_info;
 
 	seq_printf(f, ",passthrough_path=%s", fs->passthrough_path);
-	seq_printf(f, ",fs_name=%s", fs->fs_name ? fs->fs_name : "(null)");
 	return 0;
 }
 
@@ -1243,15 +1329,11 @@ static const struct super_operations hyperfs_super_operations = {
 	.drop_inode = generic_delete_inode,
 };
 
-// Forward declaration for use in super_operations
-static void hyperfs_put_super(struct super_block *sb);
-
 static void hyperfs_d_release(struct dentry *dentry)
 {
 	struct dentry *real = dentry->d_fsdata;
 
-	if (real)
-		dput(real);
+	dput(real);
 }
 
 static int hyperfs_d_revalidate(struct dentry *dentry, unsigned int flags)
@@ -1260,7 +1342,7 @@ static int hyperfs_d_revalidate(struct dentry *dentry, unsigned int flags)
 	int ret = 1;
 
 	if (!real)
-		return 1;
+		return 0;
 
 	if (real->d_flags & DCACHE_OP_REVALIDATE) {
 		ret = real->d_op->d_revalidate(real, flags);
@@ -1318,13 +1400,6 @@ static int hyperfs_parse_options(char *options, struct super_block *sb,
 			if (!fs->passthrough_path)
 				return -ENOMEM;
 			break;
-		case HYPERFS_OPT_FS_NAME:
-			if (fs->fs_name)
-				goto dup_option;
-			fs->fs_name = match_strdup(args);
-			if (!fs->fs_name)
-				return -ENOMEM;
-			break;
 		default:
 			pr_err("hyperfs: unrecognized mount option \"%s\" or missing value\n",
 			       p);
@@ -1334,10 +1409,6 @@ static int hyperfs_parse_options(char *options, struct super_block *sb,
 
 	if (!fs->passthrough_path) {
 		pr_err("hyperfs: missing option \"passthrough_path\"\n");
-		return -EINVAL;
-	}
-	if (!fs->fs_name) {
-		pr_err("hyperfs: missing option \"fs_name\"\n");
 		return -EINVAL;
 	}
 
@@ -1351,7 +1422,6 @@ dup_option:
 static int hyperfs_fill_super(struct super_block *sb, void *data, int silent)
 {
 	struct hyperfs *fs;
-	struct inode *root;
 	int err;
 
 	sb->s_op = &hyperfs_super_operations;
@@ -1409,20 +1479,16 @@ static struct file_system_type hyperfs_fs_type = {
 	.kill_sb = kill_anon_super,
 };
 
-MODULE_SOFTDEP("pre: igloo");
 
 int hyperfs_init(void)
 {
-    pr_info("hyperfs: loading (igloo symbols resolved)\n");
-    // Resolve vfs_read and vfs_write using kallsyms_lookup_name
-    real_vfs_read = (void *)kallsyms_lookup_name("vfs_read");
-    real_vfs_write = (void *)kallsyms_lookup_name("vfs_write");
-    if (!real_vfs_read || !real_vfs_write) {
-        pr_err("hyperfs: could not resolve vfs_read/vfs_write\n");
-        return -EINVAL;
-    }
-    register_filesystem(&hyperfs_fs_type);
-    return 0;
+	vfs_read_ptr = (void *)kallsyms_lookup_name("vfs_read");
+	vfs_write_ptr = (void *)kallsyms_lookup_name("vfs_write");
+	if (!vfs_read_ptr || !vfs_write_ptr) {
+		pr_err("hyperfs: failed to resolve vfs_read or vfs_write\n");
+		return -EINVAL;
+	}
+	return register_filesystem(&hyperfs_fs_type);
 }
 
 void hyperfs_exit(void)
