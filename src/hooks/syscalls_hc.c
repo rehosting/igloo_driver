@@ -47,6 +47,7 @@ DEFINE_SPINLOCK(syscall_hc_lock); // Keep commented out unless hypercall needs e
 /* Function to print syscall information */
 void print_syscall_info(const struct syscall_event *sc, const char *prefix);
 void print_syscall_info(const struct syscall_event *sc, const char *prefix) {
+    int i;
     if (!sc) {
         DBG_PRINTK( "IGLOO: %s NULL syscall structure\n", prefix ? prefix : "");
         return;
@@ -62,7 +63,8 @@ void print_syscall_info(const struct syscall_event *sc, const char *prefix) {
     printk(KERN_INFO "  Regs: %p\n", sc->regs);
     
     printk(KERN_INFO "  Arguments (%u):\n", sc->argc);
-    for (int i = 0; i < sc->argc && i < IGLOO_SYSCALL_MAXARGS; i++) {
+    for (i = 0; i < sc->argc && i < IGLOO_SYSCALL_MAXARGS; i++)
+    {
         printk(KERN_INFO "    arg[%d]: 0x%llx\n", i, sc->args[i]);
     }
     printk(KERN_INFO "IGLOO: ------------------------\n");
@@ -70,6 +72,7 @@ void print_syscall_info(const struct syscall_event *sc, const char *prefix) {
 
 static inline void fill_handler(struct syscall_event *args, int argc, const unsigned long args_ptrs[], const char* syscall_name) {
     struct pt_regs *regs;
+    int i;
     
     // Fill the syscall structure with arguments
     args->skip_syscall = false;
@@ -84,7 +87,7 @@ static inline void fill_handler(struct syscall_event *args, int argc, const unsi
     }
 
     // Copy arguments safely - add proper NULL checks before dereferencing
-    for (int i = 0; i < IGLOO_SYSCALL_MAXARGS; i++) {
+    for (i = 0; i < IGLOO_SYSCALL_MAXARGS; i++){
         if (i < argc && args_ptrs && args_ptrs[i]) {
             // Safely copy argument value - verify valid pointer first
             unsigned long arg_ptr = args_ptrs[i];
@@ -98,7 +101,7 @@ static inline void fill_handler(struct syscall_event *args, int argc, const unsi
             args->args[i] = 0; // Initialize unused args to 0
         }
     }
-    
+
     args->task = current;
     args->retval = 0; // Initialize to 0, will be set by hypercall
     
@@ -265,10 +268,11 @@ static inline bool hook_matches_syscall(struct kernel_syscall_hook *hook, const 
 static inline bool hook_matches_syscall_return(struct kernel_syscall_hook *hook, const char *syscall_name, 
                                  int argc, const unsigned long args[], long retval)
 {
-    if (!hook_matches_syscall(hook, syscall_name, argc, args)) {
+    struct value_filter *f;
+    if (!hook_matches_syscall(hook, syscall_name, argc, args)){
         return false;
     }
-    struct value_filter *f = &hook->hook.retval_filter;
+    f = &hook->hook.retval_filter;
     if (!f->enabled) {
         return true;
     }
@@ -293,6 +297,7 @@ static long process_syscall_hooks(
     long skip_ret_val_local = 0;
     long modified_ret = orig_ret;
     struct kernel_syscall_hook *hook;
+    int i;
     rcu_read_lock();
     fill_handler(&original_info, argc, args, syscall_name);
     // 1. Check the "match all syscalls" list first
@@ -311,7 +316,7 @@ static long process_syscall_hooks(
                 do_hyp(is_entry, &syscall_args_holder);
                 if (is_entry) {
                     bool was_modified = false;
-                    for (int i = 0; i < IGLOO_SYSCALL_MAXARGS && i < argc; i++) {
+                    for (i = 0; i < IGLOO_SYSCALL_MAXARGS && i < argc; i++) {
                         if (syscall_args_holder.args[i] != original_info.args[i]) {
                             DBG_PRINTK("Hypercall modified arg[%d]: old=0x%lx, new=0x%lx\n", i, original_info.args[i], syscall_args_holder.args[i]);
                             was_modified = true;
@@ -354,7 +359,7 @@ static long process_syscall_hooks(
                 do_hyp(is_entry, &syscall_args_holder);
                 if (is_entry) {
                     bool was_modified = false;
-                    for (int i = 0; i < IGLOO_SYSCALL_MAXARGS && i < argc; i++) {
+                    for (i = 0; i < IGLOO_SYSCALL_MAXARGS && i < argc; i++) {
                         if (syscall_args_holder.args[i] != original_info.args[i]) {
                             DBG_PRINTK("Hypercall modified arg[%d]: old=0x%lx, new=0x%lx\n", i, original_info.args[i], syscall_args_holder.args[i]);
                             was_modified = true;
@@ -395,6 +400,8 @@ static long process_syscall_hooks(
 //Entry handler for system calls
 static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, int argc, const unsigned long args[], igloo_syscall_setter_t setter_func)
 {
+    int i;
+    unsigned long safe_args[IGLOO_SYSCALL_MAXARGS] = {0};
     check_portal_interrupt();
     if (!args || !skip_ret_val) {
         return 0;
@@ -402,8 +409,7 @@ static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, 
     if (current->flags & PF_KTHREAD) {
         return 0;
     }
-    unsigned long safe_args[IGLOO_SYSCALL_MAXARGS] = {0};
-    for (int i = 0; i < IGLOO_SYSCALL_MAXARGS && i < argc; i++) {
+    for (i = 0; i < IGLOO_SYSCALL_MAXARGS && i < argc; i++) {
         safe_args[i] = args[i];
     }
     return process_syscall_hooks(true, syscall_name, argc, safe_args, setter_func, skip_ret_val, 0);
@@ -422,9 +428,12 @@ static long syscall_ret_handler(const char *syscall_name, long orig_ret, int arg
 }
 
 int syscalls_hc_init(void) {
+    igloo_syscall_enter_t *enter_hook_ptr;
+    igloo_syscall_return_t *ret_hook_ptr;
     printk(KERN_EMERG "IGLOO: Initializing syscall hypercalls\n");
     // Dynamically look up and set igloo_syscall_enter_hook
-    igloo_syscall_enter_t *enter_hook_ptr = (igloo_syscall_enter_t *)kallsyms_lookup_name("igloo_syscall_enter_hook");
+
+    enter_hook_ptr = (igloo_syscall_enter_t *)kallsyms_lookup_name("igloo_syscall_enter_hook");
     if (enter_hook_ptr) {
         *enter_hook_ptr = syscall_entry_handler;
         printk(KERN_INFO "IGLOO: Set igloo_syscall_enter_hook via kallsyms\n");
@@ -433,7 +442,7 @@ int syscalls_hc_init(void) {
     }
 
     // Dynamically look up and set igloo_syscall_return_hook
-    igloo_syscall_return_t *ret_hook_ptr = (igloo_syscall_return_t *)kallsyms_lookup_name("igloo_syscall_return_hook");
+    ret_hook_ptr = (igloo_syscall_return_t *)kallsyms_lookup_name("igloo_syscall_return_hook");
     if (ret_hook_ptr) {
         *ret_hook_ptr = syscall_ret_handler;
         printk(KERN_INFO "IGLOO: Set igloo_syscall_return_hook via kallsyms\n");
