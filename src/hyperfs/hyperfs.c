@@ -14,13 +14,14 @@
 #include "hyperfs_consts.h"
 #include <linux/kallsyms.h>
 #include "hyperfs.h"
+#include <linux/version.h>
 
 #define HYPERFS_DEBUG 0
 
 // Function pointer declarations for vfs_read and vfs_write
 static ssize_t (*vfs_read_ptr)(struct file *, char __user *, size_t, loff_t *);
 static ssize_t (*vfs_write_ptr)(struct file *, const char __user *, size_t, loff_t *);
-
+static ssize_t (*vfs_ioctl_ptr)(struct file *, unsigned int, unsigned long);
 
 
 struct hyperfs_tree {
@@ -720,7 +721,7 @@ static long hyperfs_ioctl(struct file *file, unsigned int cmd,
 			.ioctl.data = (void *)arg,
 		});
 	} else if (real_file) {
-		int ret = vfs_ioctl(real_file, cmd, arg);
+		int ret = vfs_ioctl_ptr(real_file, cmd, arg);
 		igloo_ioctl(ret, file, cmd);
 		return ret;
 	} else {
@@ -777,8 +778,13 @@ static int hyperfs_instantiate_common(struct inode *dir, struct dentry *dentry,
 	return 0;
 }
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
 static int hyperfs_create(struct mnt_idmap *idmap, struct inode *dir, struct dentry *dentry,
 			  umode_t mode, bool excl)
+#else
+static int hyperfs_create(struct inode *dir, struct dentry *dentry,
+			  umode_t mode, bool excl)
+#endif
 {
 	struct dentry *real_dentry;
 	int err;
@@ -787,8 +793,13 @@ static int hyperfs_create(struct mnt_idmap *idmap, struct inode *dir, struct den
 	if (IS_ERR(real_dentry))
 		return PTR_ERR(real_dentry);
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
 	err = vfs_create(idmap, real_dentry->d_parent->d_inode, real_dentry, mode,
 			 excl);
+#else
+	err = vfs_create(real_dentry->d_parent->d_inode, real_dentry, mode,
+			 excl);
+#endif
 	if (!err)
 		err = hyperfs_instantiate_common(dir, dentry, real_dentry);
 
@@ -800,7 +811,6 @@ static int hyperfs_link(struct dentry *old, struct inode *new_dir,
 	struct dentry *new)
 {
 	struct dentry *real_old, *real_new;
-	struct mnt_idmap *idmap;
 	int err;
 
 	real_old = hyperfs_get_real_dentry(old);
@@ -815,11 +825,15 @@ static int hyperfs_link(struct dentry *old, struct inode *new_dir,
 		goto put_old;
 	}
 
+	/* Use the correct arguments for vfs_link */
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
+	struct mnt_idmap *idmap;
 	/* Get the idmap from current's mount */
 	idmap = mnt_idmap(current->fs->pwd.mnt);
-
-	/* Use the correct arguments for vfs_link */
 	err = vfs_link(real_old, idmap, d_inode(real_new->d_parent), real_new, NULL);
+#else
+	err = vfs_link(real_old, d_inode(real_new->d_parent), real_new, NULL);
+#endif
 
 	if (!err)
 		err = hyperfs_instantiate_common(new_dir, new, real_new);
@@ -834,24 +848,33 @@ out:
 static int hyperfs_unlink(struct inode *dir, struct dentry *dentry)
 {
 	struct dentry *real_dentry;
-	struct mnt_idmap *idmap;
 	int err;
 
 	real_dentry = hyperfs_get_real_dentry(dentry);
 	if (IS_ERR(real_dentry))
 		return PTR_ERR(real_dentry);
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
+	struct mnt_idmap *idmap;
 	/* Get the idmap from current's mount */
 	idmap = mnt_idmap(current->fs->pwd.mnt);
 
 	err = vfs_unlink(idmap, real_dentry->d_parent->d_inode, real_dentry, NULL);
+#else
+	err = vfs_unlink(real_dentry->d_parent->d_inode, real_dentry, NULL);
+#endif
 
 	dput(real_dentry);
 	return err;
 }
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
 static int hyperfs_symlink(struct mnt_idmap *idmap, struct inode *dir, 
 			struct dentry *dentry, const char *link)
+#else
+static int hyperfs_symlink(struct inode *dir, struct dentry *dentry,
+			   const char *link)
+#endif
 {
 	struct dentry *real_dentry;
 	int err;
@@ -859,15 +882,22 @@ static int hyperfs_symlink(struct mnt_idmap *idmap, struct inode *dir,
 	real_dentry = hyperfs_get_real_dentry(dentry);
 	if (IS_ERR(real_dentry))
 		return PTR_ERR(real_dentry);
-
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
 	err = vfs_symlink(idmap, real_dentry->d_parent->d_inode, real_dentry, link);
+#else
+	err = vfs_symlink(real_dentry->d_parent->d_inode, real_dentry, link);
+#endif
 
 	dput(real_dentry);
 	return err;
 }
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
 static int hyperfs_mkdir(struct mnt_idmap *idmap, struct inode *dir, 
 						struct dentry *dentry, umode_t mode)
+#else
+static int hyperfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
+#endif
 {
 	struct dentry *real_dentry;
 	int err;
@@ -876,7 +906,11 @@ static int hyperfs_mkdir(struct mnt_idmap *idmap, struct inode *dir,
 	if (IS_ERR(real_dentry))
 		return PTR_ERR(real_dentry);
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
 	err = vfs_mkdir(idmap, real_dentry->d_parent->d_inode, real_dentry, mode);
+#else
+	err = vfs_mkdir(real_dentry->d_parent->d_inode, real_dentry, mode);
+#endif
 
 	dput(real_dentry);
 	return err;
@@ -885,24 +919,33 @@ static int hyperfs_mkdir(struct mnt_idmap *idmap, struct inode *dir,
 static int hyperfs_rmdir(struct inode *dir, struct dentry *dentry)
 {
 	struct dentry *real_dentry;
-	struct mnt_idmap *idmap;
 	int err;
 
 	real_dentry = hyperfs_get_real_dentry(dentry);
 	if (IS_ERR(real_dentry))
 		return PTR_ERR(real_dentry);
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
+	struct mnt_idmap *idmap;
 	/* Get the idmap from current's mount */
 	idmap = mnt_idmap(current->fs->pwd.mnt);
 
 	err = vfs_rmdir(idmap, real_dentry->d_parent->d_inode, real_dentry);
+#else
+	err = vfs_rmdir(real_dentry->d_parent->d_inode, real_dentry);
+#endif
 
 	dput(real_dentry);
 	return err;
 }
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
 static int hyperfs_mknod(struct mnt_idmap *idmap, struct inode *dir, 
 			struct dentry *dentry, umode_t mode, dev_t rdev)
+#else
+static int hyperfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode,
+			 dev_t rdev)
+#endif
 {
 	struct dentry *real_dentry;
 	int err;
@@ -911,8 +954,13 @@ static int hyperfs_mknod(struct mnt_idmap *idmap, struct inode *dir,
 	if (IS_ERR(real_dentry))
 		return PTR_ERR(real_dentry);
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
 	err = vfs_mknod(idmap, real_dentry->d_parent->d_inode, real_dentry, mode,
 			rdev);
+#else
+	err = vfs_mknod(real_dentry->d_parent->d_inode, real_dentry, mode,
+			rdev);
+#endif
 	if (!err)
 		err = hyperfs_instantiate_common(dir, dentry, real_dentry);
 
@@ -920,12 +968,17 @@ static int hyperfs_mknod(struct mnt_idmap *idmap, struct inode *dir,
 	return err;
 }
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
 static int hyperfs_rename(struct mnt_idmap *idmap, struct inode *old_dir, 
 			  struct dentry *old, struct inode *new_dir, struct dentry *new,
 			  unsigned int flags)
+#else
+static int hyperfs_rename(struct inode *old_dir, struct dentry *old,
+			  struct inode *new_dir, struct dentry *new,
+			  unsigned int flags)
+#endif
 {
 	struct dentry *real_old, *real_new;
-	struct renamedata rd;
 	int err;
 
 	real_old = hyperfs_get_real_dentry(old);
@@ -940,6 +993,8 @@ static int hyperfs_rename(struct mnt_idmap *idmap, struct inode *old_dir,
 		goto put_old;
 	}
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
+	struct renamedata rd;
 	/* Set up the renamedata structure */
 	rd.old_mnt_idmap = idmap;
 	rd.old_dir = real_old->d_parent->d_inode;
@@ -951,6 +1006,10 @@ static int hyperfs_rename(struct mnt_idmap *idmap, struct inode *old_dir,
 	rd.flags = flags;
 
 	err = vfs_rename(&rd);
+#else
+	err = vfs_rename(real_old->d_parent->d_inode, real_old,
+			 real_new->d_parent->d_inode, real_new, NULL, flags);
+#endif
 
 	dput(real_new);
 put_old:
@@ -959,43 +1018,61 @@ out:
 	return err;
 }
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
 static int hyperfs_getattr(struct mnt_idmap *idmap, const struct path *path,
                         struct kstat *stat, u32 request_mask,
                         unsigned int query_flags)
+#else
+static int hyperfs_getattr(struct vfsmount *mnt, struct dentry *dentry,
+			   struct kstat *stat)
+#endif
 {
 	struct path real_path;
 	int err;
-	struct inode *inode = path->dentry->d_inode;
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
+	struct dentry *d = path->dentry;
+#else
+	struct dentry *d = dentry;
+#endif
+	struct inode *inode = d->d_inode;
 	struct hyperfs_tree *tree = inode ? inode->i_private : NULL;
 
 	/* First check if this is a hyperfs-managed directory or file */
 	if (tree) {
 		/* For hyperfs-managed entities, provide basic stats */
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
 		generic_fillattr(idmap, request_mask, inode, stat);
+#else
+		generic_fillattr(inode, stat);
+#endif
 		return 0;
 	}
 
 	/* Try to get real path - may fail if directory doesn't exist in passthrough */
-	err = hyperfs_real_path(path->dentry, &real_path);
+	err = hyperfs_real_path(d, &real_path);
 	if (err < 0){
 		if (err == -ENOENT) {
 			/* Report the full path of the missing entry */
 			char *path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
 			if (path_buf) {
-				char *full_path = dentry_path_raw(path->dentry, path_buf, PATH_MAX);
+				char *full_path = dentry_path_raw(d, path_buf, PATH_MAX);
 				if (!IS_ERR(full_path)) {
 					igloo_enoent_path(full_path);
 				} else {
-					igloo_enoent(path->dentry); /* Fallback */
+					igloo_enoent(d); /* Fallback */
 				}
 				kfree(path_buf);
 			} else {
-				igloo_enoent(path->dentry); /* Fallback */
+				igloo_enoent(d); /* Fallback */
 			}
 
 			if (inode && S_ISDIR(inode->i_mode)){
 				/* For directories that don't exist in passthrough, provide generic attributes */
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
 				generic_fillattr(idmap, request_mask, inode, stat);
+#else
+				generic_fillattr(inode, stat);
+#endif
 				return 0;
 			} else {
 				/* For files that don't exist in passthrough, return error */
@@ -1006,32 +1083,42 @@ static int hyperfs_getattr(struct mnt_idmap *idmap, const struct path *path,
 	}
 	
 	/* Get attributes from real path */
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
 	err = vfs_getattr(&real_path, stat, STATX_BASIC_STATS, AT_STATX_SYNC_AS_STAT);
+#else
+	err = vfs_getattr(&real_path, stat);
+#endif
 	path_put(&real_path);
 	return err;
 }
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
 static bool hyperfs_real_iter_actor(struct dir_context *ctx, const char *name,
                                   int name_len, loff_t offset, u64 ino,
                                   unsigned int d_type)
+#else
+static int hyperfs_real_iter_actor(struct dir_context *ctx, const char *name,
+				   int name_len, loff_t offset, u64 ino,
+				   unsigned int d_type)
+#endif
 {
 	struct hyperfs_iterate_data *iter_data =
 		(struct hyperfs_iterate_data *)ctx;
 
 	// Skip emitting dots, because we did that already
 	if (!strncmp(name, ".", name_len) || !strncmp(name, "..", name_len))
-		return true;
+		return 0;
 
 	// Filter duplicates with hyperfs-managed files
 	if (iter_data->tree &&
 	    hyperfs_dir_lookup(&iter_data->tree->dir_entries, name, name_len))
-		return true;
+		return 0;
 
 	if (!dir_emit(iter_data->hyperfs_ctx, name, name_len, get_next_ino(),
 		      d_type))
-		return false;
+		return 1;
 
-	return true;
+	return 0;
 }
 
 static int hyperfs_iterate(struct file *file, struct dir_context *ctx)
@@ -1108,6 +1195,7 @@ out:
 	return err;
 }
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
 static int hyperfs_read_folio(struct file *file, struct folio *folio)
 {
 	struct hyperfs_tree *tree = file->f_inode->i_private;
@@ -1130,6 +1218,30 @@ static int hyperfs_read_folio(struct file *file, struct folio *folio)
 
 	return 0;
 }
+#else
+static int hyperfs_readpage(struct file *file, struct page *page)
+{
+	struct hyperfs_tree *tree = file->f_inode->i_private;
+	void *data;
+
+	data = kmap(page);
+
+	hyp_file_op((struct hyperfs_data){
+		.type = HYP_READ,
+		.path = tree->path,
+		.read.buf = data,
+		.read.size = PAGE_SIZE,
+		.read.offset = page_offset(page),
+	});
+
+	kunmap(page);
+	flush_dcache_page(page);
+	SetPageUptodate(page);
+	unlock_page(page);
+
+	return 0;
+}
+#endif
 
 static int hyperfs_writepage(struct page *page, struct writeback_control *wbc)
 {
@@ -1213,11 +1325,19 @@ static const struct file_operations hyperfs_dir_operations = {
 	.owner = THIS_MODULE,
 	.read = generic_read_dir,
 	.open = generic_file_open,
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
 	.iterate_shared = hyperfs_iterate,  // Changed from .iterate to .iterate_shared
+#else
+	.iterate = hyperfs_iterate,
+#endif
 };
 
 static const struct address_space_operations hyperfs_aops = {
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
 	.read_folio = hyperfs_read_folio,
+#else
+	.readpage = hyperfs_readpage,
+#endif
 	.writepage = hyperfs_writepage,
 };
 
@@ -1266,13 +1386,19 @@ static struct inode *hyperfs_wrap_real_inode(struct super_block *sb,
 	inode->i_gid = real->i_gid;
 	inode->i_mode = real->i_mode;
 	inode->i_rdev = real->i_rdev;
+
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
 	inode->i_atime_sec = real->i_atime_sec;
 	inode->i_atime_nsec = real->i_atime_nsec;
 	inode->i_mtime_sec = real->i_mtime_sec;
 	inode->i_mtime_nsec = real->i_mtime_nsec;
 	inode->i_ctime_sec = real->i_ctime_sec;
 	inode->i_ctime_nsec = real->i_ctime_nsec;
-	
+#else
+	inode->i_atime = real->i_atime;
+	inode->i_mtime = real->i_mtime;
+	inode->i_ctime = real->i_ctime;
+#endif
 	i_size_write(inode, i_size_read(real));
 	switch (real->i_mode & S_IFMT) {
 	case S_IFDIR:
@@ -1466,8 +1592,13 @@ out:
 	return err;
 }
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
 static struct dentry *hyperfs_mount(struct file_system_type *fs_type, int flags,
 			     const char *dev_name, void *raw_data)
+#else
+struct dentry *hyperfs_mount(struct file_system_type *fs_type, int flags,
+			     const char *dev_name, void *raw_data)
+#endif
 {
 	return mount_nodev(fs_type, flags, raw_data, hyperfs_fill_super);
 }
@@ -1479,12 +1610,12 @@ static struct file_system_type hyperfs_fs_type = {
 	.kill_sb = kill_anon_super,
 };
 
-
 int hyperfs_init(void)
 {
 	vfs_read_ptr = (void *)kallsyms_lookup_name("vfs_read");
 	vfs_write_ptr = (void *)kallsyms_lookup_name("vfs_write");
-	if (!vfs_read_ptr || !vfs_write_ptr) {
+	vfs_ioctl_ptr = (void *)kallsyms_lookup_name("vfs_ioctl");
+	if (!vfs_read_ptr || !vfs_write_ptr || !vfs_ioctl_ptr) {
 		pr_err("hyperfs: failed to resolve vfs_read or vfs_write\n");
 		return -EINVAL;
 	}
