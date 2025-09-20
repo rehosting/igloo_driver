@@ -120,11 +120,12 @@ static inline const char *normalize_syscall_name(const char *name)
 /* Hash a syscall name for lookups - normalizes the name first */
 static inline u32 syscall_name_hash(const char *str)
 {
+    const char *normalized;
     if (!str)
         return 0;
     
     // First normalize the syscall name to handle various prefixes
-    const char *normalized = normalize_syscall_name(str);
+    normalized = normalize_syscall_name(str);
     
     return full_name_hash(NULL, normalized, strlen(normalized));
 }
