@@ -1,22 +1,30 @@
 #include "portal_internal.h"
-#include <linux/fdtable.h>  /* For files_fdtable and fdtable structure */
-#include <linux/path.h>     /* For d_path */
+#include <linux/fdtable.h>
+#include <linux/path.h>
+#include <linux/version.h>
+#include <linux/file.h>      // fput
+#include <linux/mm.h>        // mm / vma list
+#include <linux/fs.h>        // file_inode for older kernels
+#ifndef file_user_inode
+#define file_user_inode(file) file_inode(file)
+#endif
 
 /* Helper function to get VMA name, similar to get_vma_name in task_mmu.c */
 static void portal_get_vma_name(struct vm_area_struct *vma, char *buf, size_t buf_size)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,8,0)
     struct anon_vma_name *anon_name = vma->vm_mm ? anon_vma_name(vma) : NULL;
+#endif
     const char *name = NULL;
 
     if (vma->vm_file) {
-        /*
-         * If user named this anon shared memory via prctl(PR_SET_VMA ...),
-         * use the provided name.
-         */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,8,0)
         if (anon_name) {
             snprintf(buf, buf_size, "[anon_shmem:%s]", anon_name->name);
             return;
-        } else {
+        } else
+#endif
+        {
             char *path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
             if (path_buf) {
                 char *path = d_path(&vma->vm_file->f_path, path_buf, PATH_MAX);
@@ -55,6 +63,7 @@ static void portal_get_vma_name(struct vm_area_struct *vma, char *buf, size_t bu
         return;
     }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0)
     if (vma_is_initial_heap(vma)) {
         strncpy(buf, "[heap]", buf_size - 1);
         buf[buf_size - 1] = '\0';
@@ -66,12 +75,14 @@ static void portal_get_vma_name(struct vm_area_struct *vma, char *buf, size_t bu
         buf[buf_size - 1] = '\0';
         return;
     }
+#endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,8,0)
     if (anon_name) {
         snprintf(buf, buf_size, "[anon:%s]", anon_name->name);
         return;
     }
-
+#endif
     strncpy(buf, "[anonymous]", buf_size - 1);
     buf[buf_size - 1] = '\0';
 }
@@ -81,9 +92,9 @@ void handle_op_osi_proc(portal_region *mem_region)
     struct task_struct *task;
     struct mm_struct *mm;
     struct osi_proc *proc;
-    char *data_buf = PORTAL_DATA(mem_region);
     size_t name_len = 0;
     size_t total_size = sizeof(struct osi_proc);
+    char *data_buf = PORTAL_DATA(mem_region);
 
     task = get_target_task_by_id(mem_region);
     
@@ -232,6 +243,9 @@ void handle_op_osi_mappings(portal_region *mem_region)
     struct osi_result_header *header = (struct osi_result_header *)data_buf;
     char *string_buf;
     size_t string_offset;
+    const struct inode *inode;
+    unsigned int major, minor;
+    dev_t dev;  // moved outside inner block
 
     task = get_target_task_by_id(mem_region);
     
@@ -278,15 +292,45 @@ void handle_op_osi_mappings(portal_region *mem_region)
     igloo_debug_osi("igloo: Starting VMA scan, skipping first %d entries\n", skip_count);
     
     // Iterate through the process memory mappings
+#if defined(mmap_read_lock_killable)
     if (mmap_read_lock_killable(mm)) {
         mem_region->header.size = (sizeof(__le64) * 2);
         mem_region->header.op = (HYPER_RESP_READ_FAIL);
         return;
     }
+    #define IGLOO_MMAP_UNLOCK(mm) mmap_read_unlock(mm)
+#elif defined(down_read_killable)
+    #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)
+        if (down_read_killable(&mm->mmap_lock)) {
+            mem_region->header.size = (sizeof(__le64) * 2);
+            mem_region->header.op = (HYPER_RESP_READ_FAIL);
+            return;
+        }
+        #define IGLOO_MMAP_UNLOCK(mm) up_read(&mm->mmap_lock)
+    #else
+        if (down_read_killable(&mm->mmap_sem)) {
+            mem_region->header.size = (sizeof(__le64) * 2);
+            mem_region->header.op = (HYPER_RESP_READ_FAIL);
+            return;
+        }
+        #define IGLOO_MMAP_UNLOCK(mm) up_read(&mm->mmap_sem)
+    #endif
+#else
+    #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)
+        down_read(&mm->mmap_lock);
+        #define IGLOO_MMAP_UNLOCK(mm) up_read(&mm->mmap_lock)
+    #else
+        down_read(&mm->mmap_sem);
+        #define IGLOO_MMAP_UNLOCK(mm) up_read(&mm->mmap_sem)
+    #endif
+#endif
 
-    // Use VMA iteration API starting from the beginning
+#ifdef VMA_ITERATOR
     VMA_ITERATOR(vmi, mm, 0);
     for_each_vma(vmi, vma) {
+#else
+    for (vma = mm->mmap; vma; vma = vma->vm_next) {
+#endif
         char mapping_name[256] = "";
         size_t name_len;
         char *curr_str;
@@ -296,11 +340,7 @@ void handle_op_osi_mappings(portal_region *mem_region)
             total_count++;
             continue;
         }
-        
-        // Check if we'll exceed our limits with this entry
-        if (count >= max_mappings || 
-            string_offset >= CHUNK_SIZE - 256) {
-            // Store the total count of VMAs we've processed across all calls
+        if (count >= max_mappings || string_offset >= CHUNK_SIZE - 256) {
             mem_region->header.addr = (total_count);
             igloo_debug_osi("igloo: Buffer full, processed %d VMAs total\n", total_count);
             break;
@@ -338,11 +378,11 @@ void handle_op_osi_mappings(portal_region *mem_region)
         mapping->offset = (vma->vm_pgoff << PAGE_SHIFT);
         mapping->flags = (vma->vm_flags);
         if (vma->vm_file){
-            const struct inode *inode = file_user_inode(vma->vm_file);
+            inode = file_user_inode(vma->vm_file);
             mapping->pgoff = (((loff_t)vma->vm_pgoff) << PAGE_SHIFT);
-            dev_t dev = inode->i_sb->s_dev;
-            unsigned int major = MAJOR(dev);
-            unsigned int minor = MINOR(dev);
+            dev = inode->i_sb->s_dev;
+            major = MAJOR(dev);
+            minor = MINOR(dev);
             mapping->dev = (dev);
             mapping->inode = (inode->i_ino);
             igloo_debug_osi("igloo: VMA mapping: %s, file: %s\n", 
@@ -351,7 +391,7 @@ void handle_op_osi_mappings(portal_region *mem_region)
                    mapping_name, (unsigned long long)vma->vm_pgoff << PAGE_SHIFT, (unsigned long long)vma->vm_flags);
             igloo_debug_osi("igloo: VMA mapping: %s, dev: %x:%x (major:minor), raw: %llx, inode: %llx\n",
                    mapping_name, major, minor, (unsigned long long)dev, (unsigned long long)mapping->inode);
-        }else{
+        } else {
             mapping->pgoff = 0;
             mapping->dev = 0;
             mapping->inode = 0;
@@ -368,7 +408,8 @@ void handle_op_osi_mappings(portal_region *mem_region)
         igloo_debug_osi("igloo: All VMAs processed\n");
     }
     
-    mmap_read_unlock(mm);
+    IGLOO_MMAP_UNLOCK(mm);
+    #undef IGLOO_MMAP_UNLOCK
     
     // Update count of mappings we're returning
     header->result_count = (count);
@@ -477,7 +518,14 @@ void handle_op_read_procargs(portal_region *mem_region)
         /* For current process, use copy_from_user */
         igloo_debug_osi("igloo: Using copy_from_user for current process\n");
         /* Check access permissions before copying */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0)
+        #ifndef VERIFY_READ
+        #define VERIFY_READ 0
+        #endif
+        if (!access_ok(VERIFY_READ, (void __user *)arg_start, len)) {
+#else
         if (!access_ok((void __user *)arg_start, len)) {
+#endif
             igloo_debug_osi("igloo: access_ok failed for procargs at %#lx (len %zu)\n", arg_start, len);
             goto fail;
         }
@@ -553,7 +601,14 @@ void handle_op_read_procenv(portal_region *mem_region)
         // For current process, use the standard copy_from_user
         igloo_debug_osi("igloo: Using copy_from_user for current process\n");
         // Check access permissions before copying
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0)
+        #ifndef VERIFY_READ
+        #define VERIFY_READ 0
+        #endif
+        if (!access_ok(VERIFY_READ, (void __user *)env_start, len)) {
+#else
         if (!access_ok((void __user *)env_start, len)) {
+#endif
              igloo_debug_osi("igloo: access_ok failed for procenv at %#lx (len %lu)\n", env_start, len);
              goto fail;
         }
@@ -598,6 +653,7 @@ void handle_op_read_fds(portal_region *mem_region)
     struct osi_fd_entry *fd_entry;
     char *string_buf;
     size_t string_offset;
+    char *path_buf = NULL;   // moved outside loop (C90)
     
     // Get start_fd from the header - this is where we'll start scanning FDs
     start_fd = (mem_region->header.addr);
@@ -676,7 +732,7 @@ void handle_op_read_fds(portal_region *mem_region)
         fd_entry->name_offset = (string_offset);
         
         // Move to temporary string buffer for path
-        char *path_buf = kmalloc(PATH_MAX, GFP_ATOMIC);
+        path_buf = kmalloc(PATH_MAX, GFP_ATOMIC);
         if (path_buf) {
             char *path = d_path(&file->f_path, path_buf, PATH_MAX);
             if (!IS_ERR(path)) {
@@ -705,12 +761,11 @@ void handle_op_read_fds(portal_region *mem_region)
                 }
             }
             kfree(path_buf);
+            path_buf = NULL;
         }
-        
         // Release the file reference
         fput(file);
     }
-    
     spin_unlock(&files->file_lock);
     task_unlock(task);
     
