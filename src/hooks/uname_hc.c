@@ -16,11 +16,12 @@ void igloo_hc_newuname(struct new_utsname *name);
 
 static void make_igloo_utsname(char *buf, struct new_utsname *name){
 	char *token, *str;
+	int i;
 	char *array[6];
 
 	str = kstrdup(buf, GFP_KERNEL);
 
-	int i = 0;
+	i = 0;
 	while ((token = strsep(&str, ",")) != NULL){
 		array[i] = kstrdup(token, GFP_KERNEL);
 
