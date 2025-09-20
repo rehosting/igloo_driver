@@ -38,9 +38,9 @@ int block_mounts_init(void);
 int igloo_open_init(void);
 
 /* Register probes for mmap and munmap */
-static int __init igloo_hc_init(void) {
+int init_module(void) {
+    int ret;
     printk(KERN_EMERG "IGLOO: Initializing\n");
-    int ret = 0;
     report_base_addr();
 
     if ((ret = syscalls_hc_init()) != 0) {
@@ -88,10 +88,7 @@ static int __init igloo_hc_init(void) {
 }
 
 /* Unregister probes */
-static void __exit igloo_hc_exit(void) {
+void cleanup_module(void) {
     // Unreachable, module is built in
     printk(KERN_ERR "TODO\n");
 }
-
-module_init(igloo_hc_init);
-module_exit(igloo_hc_exit);
