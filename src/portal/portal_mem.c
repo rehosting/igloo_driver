@@ -1,6 +1,7 @@
 #include "portal_internal.h"
 #include <linux/uaccess.h>
 #include <linux/mm.h>     /* For access_ok */
+#include <linux/version.h>
 
 /* Helper function to determine if an address is in kernel space */
 bool igloo_is_kernel_addr(unsigned long addr)
@@ -38,9 +39,17 @@ bool igloo_is_kernel_addr(unsigned long addr)
     /* First try checking address_ok which is safer than the access_ok test we were using */
     if (addr >= TASK_SIZE)
         return true;
-        
+
     /* Fallback to the old method if TASK_SIZE isn't defined */
-    return !(access_ok(((void __user *)(uintptr_t)addr), 1));
+    #ifndef VERIFY_READ
+    #define VERIFY_READ 0
+    #endif
+    /* Use correct access_ok arity for kernel version */
+    #if LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0)
+        return !(access_ok(VERIFY_READ, ((void __user *)(uintptr_t)addr), 1));
+    #else
+        return !(access_ok(((void __user *)(uintptr_t)addr), 1));
+    #endif
 #endif
 }
 
@@ -267,6 +276,7 @@ void handle_op_read_ptr_array(portal_region *mem_region)
     unsigned long __user *user_ptr_array = (unsigned long __user *)ptr_array_addr;
     char tmp[128];
     int ret;
+    size_t len;
 
     while (buf_offset < max_buf) {
         // Read pointer from user or kernel
@@ -287,7 +297,7 @@ void handle_op_read_ptr_array(portal_region *mem_region)
             if (ret < 0) break;
             tmp[sizeof(tmp) - 1] = '\0';
         }
-        size_t len = strnlen(tmp, sizeof(tmp));
+        len = strnlen(tmp, sizeof(tmp));
         if (buf_offset + len + 1 > max_buf) {
             break;
         }
