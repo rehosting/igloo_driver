@@ -5,16 +5,22 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include "hypercall.h"
-#include "igloo.h"
 #include <linux/unistd.h>
 #include <linux/socket.h>
 #include <linux/ipv6.h>
 #include <net/inet_sock.h>
+#include "igloo.h"
+#include <linux/kallsyms.h>
+#include <linux/version.h>
 #include "igloo_hypercall_consts.h"
 
+
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
 void igloo_sock_bind(struct socket *sock, struct sockaddr_storage *address);
 void igloo_sock_release(struct socket *sock);
 int sock_hc_init(void);
+#endif
+
 
 DEFINE_MUTEX(bind_mutex);
 DEFINE_MUTEX(release_mutex);
