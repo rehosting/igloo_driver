@@ -7,13 +7,19 @@
 #include <linux/syscalls.h>
 #include <linux/path.h>
 #include <linux/fs.h>
+#include <linux/version.h>
 
 // Helper macro for uprobe debug logs (using the designated uprobe module)
 #define uprobe_debug(fmt, ...) igloo_debug_uprobe(fmt, ##__VA_ARGS__)
 
 // Function prototypes with correct signatures
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0)
 static int portal_uprobe_handler(struct uprobe_consumer *uc, struct pt_regs *regs, __u64 *data);
 static int portal_uprobe_ret_handler(struct uprobe_consumer *uc, unsigned long flags, struct pt_regs *regs, __u64 *data);
+#else
+static int portal_uprobe_handler(struct uprobe_consumer *uc, struct pt_regs *regs);
+static int portal_uprobe_ret_handler(struct uprobe_consumer *uc, unsigned long flags, struct pt_regs *regs);
+#endif
 
 // Maximum number of uprobes we can register
 #define MAX_UPROBES 1024
@@ -72,7 +78,11 @@ static void do_hyp(bool is_enter, uint64_t id, struct pt_regs *regs) {
                 sequence, (unsigned long)&pe);
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0)
 static int portal_uprobe(struct uprobe_consumer *uc, struct pt_regs *regs, __u64 *data, bool is_enter){
+#else
+static int portal_uprobe(struct uprobe_consumer *uc, struct pt_regs *regs, bool is_enter){
+#endif
     struct portal_uprobe *pu = container_of(uc, struct portal_uprobe, consumer);
 
     uprobe_debug("igloo: portal_uprobe: id=%llu, file=%s, offset=%lld, proc=%s, pid=%d\n",
@@ -103,17 +113,25 @@ static int portal_uprobe(struct uprobe_consumer *uc, struct pt_regs *regs, __u64
     return 0;
 }
 
-// Handler function for entry uprobe is hit
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0)
 static int portal_uprobe_handler(struct uprobe_consumer *uc, struct pt_regs *regs, __u64 *data)
 {
     return portal_uprobe(uc, regs, data, true);
 }
-
-// Handler function for return uprobe is hit
 static int portal_uprobe_ret_handler(struct uprobe_consumer *uc, unsigned long flags, struct pt_regs *regs, __u64 *data)
 {
     return portal_uprobe(uc, regs, data, false);
 }
+#else
+static int portal_uprobe_handler(struct uprobe_consumer *uc, struct pt_regs *regs)
+{
+    return portal_uprobe(uc, regs, true);
+}
+static int portal_uprobe_ret_handler(struct uprobe_consumer *uc, unsigned long flags, struct pt_regs *regs)
+{
+    return portal_uprobe(uc, regs, false);
+}
+#endif
 
 // Search for a uprobe by ID
 static struct portal_uprobe *find_uprobe_by_id(unsigned long id)
@@ -208,28 +226,49 @@ void handle_op_register_uprobe(portal_region *mem_region)
     memset(&pu->consumer, 0, sizeof(pu->consumer));
     
     // Set up handlers based on probe type
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0)
     if (reg->type == PORTAL_UPROBE_TYPE_ENTRY) {
-        // Entry-only probe
         pu->consumer.handler = portal_uprobe_handler;
         pu->consumer.ret_handler = NULL;
     } else if (reg->type == PORTAL_UPROBE_TYPE_RETURN) {
-        // Return-only probe
         pu->consumer.handler = NULL;
         pu->consumer.ret_handler = portal_uprobe_ret_handler;
     } else if (reg->type == PORTAL_UPROBE_TYPE_BOTH) {
-        // Both entry and return
         pu->consumer.handler = portal_uprobe_handler;
         pu->consumer.ret_handler = portal_uprobe_ret_handler;
     }
-    
-    // Register the uprobe - this returns a pointer, we need to check for errors
+#else
+    if (reg->type == PORTAL_UPROBE_TYPE_ENTRY) {
+        pu->consumer.handler = portal_uprobe_handler;
+        pu->consumer.ret_handler = NULL;
+    } else if (reg->type == PORTAL_UPROBE_TYPE_RETURN) {
+        pu->consumer.handler = NULL;
+        pu->consumer.ret_handler = portal_uprobe_ret_handler;
+    } else if (reg->type == PORTAL_UPROBE_TYPE_BOTH) {
+        pu->consumer.handler = portal_uprobe_handler;
+        pu->consumer.ret_handler = portal_uprobe_ret_handler;
+    }
+#endif
+
+    // Register the uprobe
     inode = file_path.dentry->d_inode;
-    struct uprobe *uprobe = uprobe_register(inode, reg->offset, 0, &pu->consumer);
-    if (IS_ERR(uprobe)) {
-        ret = PTR_ERR(uprobe);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0)
+    {
+        struct uprobe *uprobe;
+        uprobe = uprobe_register(inode, reg->offset, 0, &pu->consumer);
+        if (IS_ERR(uprobe)) {
+            ret = PTR_ERR(uprobe);
+            uprobe_debug("igloo: Failed to register uprobe: %d\n", ret);
+            goto fail_put_path;
+        }
+    }
+#else
+    ret = uprobe_register(inode, reg->offset, &pu->consumer);
+    if (ret) {
         uprobe_debug("igloo: Failed to register uprobe: %d\n", ret);
         goto fail_put_path;
     }
+#endif
     
     // We don't need to store the uprobe pointer as uprobe_unregister_nosync takes the consumer
     
@@ -276,7 +315,13 @@ void handle_op_unregister_uprobe(portal_region *mem_region)
     // Unregister the uprobe using the function from uprobes.h
     // NOTE: According to uprobes.h, uprobe_unregister_nosync() takes a struct uprobe*
     // Since we didn't store the returned uprobe pointer, we need to access the inode
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0)
+    /* Newer kernels providing no-sync variant */
     uprobe_unregister_nosync(NULL, &pu->consumer);
+#else
+    /* Old kernels (e.g. 4.10) require inode + offset + consumer */
+    uprobe_unregister(pu->path.dentry->d_inode, pu->offset, &pu->consumer);
+#endif
     
     // Remove from hash table
     spin_lock(&uprobe_lock);
