@@ -15,7 +15,6 @@
 #include <linux/binfmts.h>
 #include <linux/ptrace.h>
 #include <linux/syscalls.h>
-#include <linux/sched/signal.h>
 #include <trace/syscall.h>
 #include <asm/syscall.h>
 #include <linux/printk.h>
