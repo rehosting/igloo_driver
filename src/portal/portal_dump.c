@@ -1,5 +1,8 @@
 #include "portal_internal.h"
+#include <linux/version.h>
+#include <linux/sched.h>
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
 static long do_snapshot_and_coredump(void)
 {
     pid_t child_kpid_from_clone;
@@ -60,16 +63,27 @@ static long do_snapshot_and_coredump(void)
     printk(KERN_DEBUG "snapshot_module: (MinimalParent) Exiting, returning %ld.\n", syscall_ret_val);
     return syscall_ret_val;
 }
+#else
+static long do_snapshot_and_coredump(void)
+{
+    printk(KERN_WARNING "snapshot_module: do_snapshot_and_coredump is not supported on this kernel version.\n");
+    return -ENOSYS;
+}
+#endif
 
 // New function to just send SIGABRT to current process
 static long do_self_abort(void)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
     struct kernel_siginfo info;
+#else
+    struct siginfo info;
+#endif
     
     printk(KERN_DEBUG "snapshot_module: Sending SIGABRT to self (PID %d)\n", 
            task_pid_vnr(current));
            
-    memset(&info, 0, sizeof(struct kernel_siginfo));
+    memset(&info, 0, sizeof(info));
     info.si_signo = SIGABRT;
     info.si_code = SI_KERNEL;
     
@@ -87,7 +101,11 @@ static long do_self_abort(void)
 // New function to send a custom signal to current process
 static long do_self_signal(int signal)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
     struct kernel_siginfo info;
+#else
+    struct siginfo info;
+#endif
     
     if (signal <= 0 || signal >= _NSIG) {
         printk(KERN_WARNING "snapshot_module: Invalid signal number: %d\n", signal);
@@ -97,7 +115,7 @@ static long do_self_signal(int signal)
     printk(KERN_DEBUG "snapshot_module: Sending signal %d to self (PID %d)\n", 
            signal, task_pid_vnr(current));
            
-    memset(&info, 0, sizeof(struct kernel_siginfo));
+    memset(&info, 0, sizeof(info));
     info.si_signo = signal;
     info.si_code = SI_KERNEL;
     
