@@ -1,4 +1,5 @@
 #include "portal_internal.h"
+#include <linux/version.h>
 
 void handle_op_read_file(portal_region *mem_region)
 {
@@ -31,8 +32,11 @@ void handle_op_read_file(portal_region *mem_region)
     } else {
         igloo_pr_debug("igloo: Successfully opened file '%s', attempting to read %zu bytes at offset %llu\n", 
                        path, maxlen, (unsigned long long)pos);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
         n = kernel_read(f, PORTAL_DATA(mem_region), maxlen, &pos);
-        
+#else
+        n = kernel_read(f, pos, PORTAL_DATA(mem_region), maxlen);
+#endif
         if (n < 0) {
             igloo_pr_debug("igloo: kernel_read failed for '%s', error=%zd\n", path, n);
         } else if (n == 0) {
@@ -88,7 +92,11 @@ void handle_op_write_file(portal_region *mem_region)
     } else {
         igloo_pr_debug("igloo: Successfully opened file '%s' for write, attempting to write %zu bytes at offset %llu\n", 
                        path, maxlen, (unsigned long long)pos);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
         n = kernel_write(f, data_ptr, maxlen, &pos);
+#else
+        n = kernel_write(f, data_ptr, maxlen, pos);
+#endif
         if (n < 0) {
             igloo_pr_debug("igloo: kernel_write failed for '%s', error=%zd\n", path, n);
         } else {
