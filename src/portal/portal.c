@@ -80,9 +80,9 @@ void check_portal_interrupt(void){
 
 int igloo_portal(unsigned long num, unsigned long arg1, unsigned long arg2)
 {
-    igloo_pr_debug("IGLOO: igloo_portal entry num=%lu arg1=%lx arg2=%lx\n", num, arg1, arg2);
     unsigned long ret, page;
     portal_region *region;
+    igloo_pr_debug("IGLOO: igloo_portal entry num=%lu arg1=%lx arg2=%lx\n", num, arg1, arg2);
     
     if (num != IGLOO_HYPER_PORTAL_INTERRUPT){
         check_portal_interrupt();
