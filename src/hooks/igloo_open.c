@@ -5,6 +5,7 @@
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
+#include <linux/file.h>
 #include "hypercall.h"
 #include "igloo.h"
 #include <linux/binfmts.h>
@@ -18,17 +19,6 @@
 #define KERNEL_VERSION(a,b,c) (((a) << 16) + ((b) << 8) + (c))
 #endif
 
-#if defined(LINUX_VERSION_CODE) && defined(KERNEL_VERSION) && LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0)
-#define fget(fd) fget_light(fd, NULL)
-#define fput(file) fput_light(file, 0)
-static inline ssize_t strscpy(char *dest, const char *src, size_t count)
-{
-	strncpy(dest, src, count);
-	if (count)
-		dest[count - 1] = '\0';
-	return strlen(dest);
-}
-#endif
 
 static char *resolve_dfd_to_path(int dfd, char *buf, int buflen) {
 	struct file *file;
@@ -60,13 +50,15 @@ void igloo_hc_open(int dfd, struct filename *tmp, int fd)
 	// Handle AT_FDCWD or resolve dfd to a path prefix
 	if (dfd == AT_FDCWD) {
 		// Using getname's result directly avoids unnecessary copy_from_user
-		strscpy(resolved_path, tmp->name, PATH_MAX);
+		ssize_t _unused __attribute__((unused));
+		_unused = strscpy(resolved_path, tmp->name, PATH_MAX);
 	} else {
 		// Resolve the dfd to its absolute path
 		char *path = resolve_dfd_to_path(dfd, resolved_path, PATH_MAX);
 		if (IS_ERR(path)) {
 			// XXX: rare failure, shows up with cgroups
-			strscpy(resolved_path, "/path_resolve_error", PATH_MAX);
+			ssize_t _unused __attribute__((unused));
+			_unused = strscpy(resolved_path, "/path_resolve_error", PATH_MAX);
 		}
 
 		// Concatenate the resolved path with the provided filename
