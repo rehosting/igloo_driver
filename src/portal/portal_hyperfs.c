@@ -6,6 +6,7 @@
 #include "portal_tramp.h"
 #include <linux/slab.h>
 #include <linux/export.h>
+struct file_operations *hyperfs_lookup_file(const char *fs, const char *file);
 
 #define HYPERFS_HASH_BITS 10
 #define HYPERFS_HASH_SIZE (1 << HYPERFS_HASH_BITS)
