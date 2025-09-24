@@ -35,29 +35,6 @@ jobs:
           registry: ${{secrets.REHOSTING_ARC_REGISTRY}}
           username: ${{ secrets.REHOSTING_ARC_REGISTRY_USER }}
           password: ${{ secrets.REHOSTING_ARC_REGISTRY_PASSWORD }}
-      
-      # Build this first, build.sh will use it later
-      - name: Build kernel_builder docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/igloo_driver_builder:${{ github.ref_name }}
-            ${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/igloo_driver_builder:latest
-          build-args: |
-            REGISTRY=${{ secrets.REHOSTING_ARC_REGISTRY }}/proxy
-          cache-from: |
-            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/igloo_driver_builder:cache,mode=max
-            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/igloo_driver_builder:cache-PR-${{github.event.number}},mode=max
-          cache-to: |
-            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/igloo_driver_builder:cache,mode=max
-            type=registry,ref=${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/igloo_driver_builder:cache-PR-${{ github.event.number }}
-          outputs: type=docker
-
-      - name: Tag kernel_builder docker image
-        run: |
-          docker tag ${{secrets.REHOSTING_ARC_REGISTRY}}/rehosting/igloo_driver_builder igloo_driver_builder
 
       - name: Download kernel-devel-all from release if not present
         if: always()
@@ -66,14 +43,11 @@ jobs:
             mkdir -p local_packages
             curl -L -o local_packages/kernel-devel-all.tar.gz "https://github.com/rehosting/linux_builder/releases/latest/download/kernel-devel-all.tar.gz"
           fi
-      - name: Install pigz
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pigz
 
       - name: Extract and build all modules
         run: |
-          ./build.sh --versions "6.13"
+          ./build.sh --versions "4.10 6.13" \
+            --image ${{secrets.REHOSTING_ARC_REGISTRY}}/proxy/rehosting/embedded-toolchains:latest
 
       - name: Upload all built modules and symbols (always)
         uses: actions/upload-artifact@v4

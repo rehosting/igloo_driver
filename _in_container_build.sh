@@ -164,3 +164,12 @@ for TARGET in $TARGETS; do
     echo "IGLOO module for $TARGET built successfully"
 done
 done
+
+# End of build loop
+echo "Completed module build for all versions and targets"
+echo "All builds completed successfully."
+
+# Create the archive in the output directory
+echo "Creating igloo_driver.tar.gz archive in output directory..."
+tar --use-compress-program=pigz -cf "/app/igloo_driver.tar.gz" -C "${OUTPUT_BASE}" kernels
+echo "Archive created at /app/igloo_driver.tar.gz"
