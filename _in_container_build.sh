@@ -62,10 +62,15 @@ for TARGET in $TARGETS; do
     # Use extracted kernel-devel directory structure
     TARGET_BUILD_DIR="${KERNEL_DEVEL_BASE}/${TARGET}.${VERSION}"
 
-    # If you have a .config but missing other artifacts
+    # Check for .config file in kernel-devel
     if [ ! -f "${TARGET_BUILD_DIR}/.config" ]; then
         echo "Kernel config not found at ${TARGET_BUILD_DIR}/.config! Please ensure the kernel source and config are available."
-        exit 1
+        if [ "$(echo $VERSIONS | wc -w)" -eq 1 ]; then
+            echo "Since only one version is being built, exiting."
+            exit 1
+        fi
+        echo "Assuming this is fine in multi-version builds, skipping."
+        continue
     fi
 
     if [ ! -d "${TARGET_BUILD_DIR}/include/generated" ]; then
@@ -80,6 +85,7 @@ for TARGET in $TARGETS; do
     fi
 
     echo "Building IGLOO module for $TARGET with kernel at ${TARGET_BUILD_DIR}"
+    
     
     # Debug: Check if crtsavres.o exists in the expected location
     if [[ "$TARGET" == powerpc* ]]; then
