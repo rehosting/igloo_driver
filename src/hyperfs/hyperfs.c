@@ -1107,18 +1107,17 @@ static int hyperfs_real_iter_actor(struct dir_context *ctx, const char *name,
 
 	// Skip emitting dots, because we did that already
 	if (!strncmp(name, ".", name_len) || !strncmp(name, "..", name_len))
-		return 0;
+		return 1;
 
 	// Filter duplicates with hyperfs-managed files
 	if (iter_data->tree &&
 	    hyperfs_dir_lookup(&iter_data->tree->dir_entries, name, name_len))
-		return 0;
+		return 1;
 
 	if (!dir_emit(iter_data->hyperfs_ctx, name, name_len, get_next_ino(),
 		      d_type))
-		return 1;
-
-	return 0;
+		return 0;
+	return 1;
 }
 
 static int hyperfs_iterate(struct file *file, struct dir_context *ctx)
