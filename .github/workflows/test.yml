@@ -41,6 +41,10 @@ jobs:
             mkdir -p local_packages
             curl -L -o local_packages/kernel-devel-all.tar.gz "https://github.com/rehosting/linux_builder/releases/latest/download/kernel-devel-all.tar.gz"
           fi
+      - name: Install pigz
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pigz
 
       - name: Extract and build all modules
         run: |

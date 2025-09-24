@@ -37,12 +37,15 @@ jobs:
           password: ${{ secrets.REHOSTING_ARC_REGISTRY_PASSWORD }}
 
       - name: Download kernel-devel-all from release if not present
-        if: always()
         run: |
           if [ ! -f local_packages/kernel-devel-all.tar.gz ]; then
             mkdir -p local_packages
             curl -L -o local_packages/kernel-devel-all.tar.gz "https://github.com/rehosting/linux_builder/releases/latest/download/kernel-devel-all.tar.gz"
           fi
+      - name: Install pigz
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pigz
 
       - name: Extract and build all modules
         run: |
