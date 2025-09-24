@@ -4,6 +4,16 @@
 #if defined(__mips__)
 #include <asm/syscall.h>
 
+static inline bool local_mips_syscall_is_indirect(struct task_struct *task,
+					    struct pt_regs *regs)
+{
+	/* O32 ABI syscall() - Either 64-bit with O32 or 32-bit */
+	return (IS_ENABLED(CONFIG_32BIT) ||
+		test_tsk_thread_flag(task, TIF_32BIT_REGS)) &&
+		(regs->regs[2] == __NR_syscall);
+}
+
+
 static inline void mips_set_syscall_arg(unsigned long arg,
 	struct task_struct *task, struct pt_regs *regs, unsigned int n)
 {
@@ -44,7 +54,7 @@ static inline void syscall_set_argument(struct task_struct *task,
                      int i, unsigned long arg)
 {
 	/* O32 ABI syscall() */
-	if (mips_syscall_is_indirect(task, regs))
+	if (local_mips_syscall_is_indirect(task, regs))
 		i++;
     
     mips_set_syscall_arg(arg, task, regs, i);
