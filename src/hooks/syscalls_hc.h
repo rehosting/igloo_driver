@@ -67,7 +67,7 @@ struct syscall_event {
     struct task_struct *task;          /* Task pointer */
     struct pt_regs *regs;              /* Pointer to current registers */
     char syscall_name[SYSCALL_NAME_MAX_LEN]; /* Name of syscall (embedded in structure) */
-} __packed __aligned(8);               /* Ensure 8-byte alignment */
+};
 
 /* Structure to track registered syscall hooks */
 struct kernel_syscall_hook {
