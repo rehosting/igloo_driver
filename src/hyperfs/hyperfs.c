@@ -653,7 +653,7 @@ static ssize_t hyperfs_write(struct file *file, const char __user *buf,
 {
 	struct hyperfs_tree *tree = file->f_inode->i_private;
 	struct file *real_file = file->private_data;
-	ssize_t ret;
+	ssize_t ret = 0;
 	ssize_t bytes_written = 0;
 	char kbuf[128];
 	size_t chunk_size;
