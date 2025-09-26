@@ -1400,6 +1400,10 @@ static struct inode *hyperfs_wrap_real_inode(struct super_block *sb,
 #endif
 	i_size_write(inode, i_size_read(real));
 	switch (real->i_mode & S_IFMT) {
+	case S_IFREG:
+		inode->i_op = &empty_iops;
+		inode->i_fop = &hyperfs_file_operations;
+		break;
 	case S_IFDIR:
 		inode->i_op = &hyperfs_inode_operations;
 		inode->i_fop = &hyperfs_dir_operations;
@@ -1408,9 +1412,14 @@ static struct inode *hyperfs_wrap_real_inode(struct super_block *sb,
 		inode->i_op = &hyperfs_inode_operations;
 		inode->i_fop = &empty_fops;
 		break;
+	case S_IFCHR:
+	case S_IFBLK:
+	case S_IFIFO:
+	case S_IFSOCK:
+		init_special_inode(inode, inode->i_mode, inode->i_rdev);
+		break;
 	default:
-		inode->i_op = &empty_iops;
-		inode->i_fop = &hyperfs_file_operations;
+		BUG();
 	}
 	spin_unlock(&inode->i_lock);
 
