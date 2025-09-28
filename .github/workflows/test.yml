@@ -49,4 +49,5 @@ jobs:
       - name: Extract and build all modules
         run: |
           ./build.sh --versions "4.10 6.13" \
-            --image ${{secrets.REHOSTING_ARC_REGISTRY}}/proxy/rehosting/embedded-toolchains:latest
+            --image ${{secrets.REHOSTING_ARC_REGISTRY}}/proxy/rehosting/embedded-toolchains:latest \
+            --release
