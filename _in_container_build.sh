@@ -12,6 +12,7 @@ OUTPUT_BASE="$5"        # Output directory for built modules and symbols
 # Function to get cross-compiler prefix
 get_cc() {
     local arch=$1
+    local version=$2
     local abi=""
 
     # Clear CFLAGS and KCFLAGS if they are set
@@ -34,6 +35,10 @@ get_cc() {
         echo "/opt/cross/loongarch64-linux-gcc-cross/bin/loongarch64-unknown-linux-gnu-"
     elif [[ $arch == *"powerpc"* ]]; then
         echo "/opt/cross/powerpc64-linux-musl-cross/bin/powerpc64-linux-musl-"
+    elif [ "$arch" = "x86_64" ] && [ "$version" = "4.10" ]; then
+        # riscv64 linux-musl seems to run out of memory on linking so we switched
+        # to the glibc version
+        echo "/opt/cross/x86_64-legacy/bin/x86_64-linux-musl-"
     elif [[ $arch == "riscv64" ]]; then
         # riscv64 linux-musl seems to run out of memory on linking so we switched
         # to the glibc version
@@ -104,7 +109,7 @@ for TARGET in $TARGETS; do
     # For PowerPC, create symlinks to make crtsavres.o available where the linker expects it
     if [[ "$TARGET" == powerpc* ]]; then
         # Create symlinks in multiple possible locations where the linker might look
-        CROSS_COMPILER_PREFIX="$(get_cc $TARGET)"
+        CROSS_COMPILER_PREFIX="$(get_cc $TARGET $VERSION)"
         CROSS_COMPILER_DIR=$(dirname "${CROSS_COMPILER_PREFIX}gcc")
         CROSS_LIB_BASE="${CROSS_COMPILER_DIR}/../lib/gcc/powerpc64-linux-musl"
         
@@ -135,14 +140,14 @@ for TARGET in $TARGETS; do
         make -C "${MODULE_DIR}" \
             KDIR="${TARGET_BUILD_DIR}" \
             ARCH="${short_arch}" \
-            CROSS_COMPILE="$(get_cc $TARGET)" \
+            CROSS_COMPILE="$(get_cc $TARGET $VERSION)" \
             EXTRA_LDFLAGS="-L${TARGET_BUILD_DIR}/arch/powerpc/lib" \
             all
     else
         make -C "${MODULE_DIR}" \
             KDIR="${TARGET_BUILD_DIR}" \
             ARCH="${short_arch}" \
-            CROSS_COMPILE="$(get_cc $TARGET)" \
+            CROSS_COMPILE="$(get_cc $TARGET $VERSION)" \
             all
     fi
 
@@ -155,7 +160,7 @@ for TARGET in $TARGETS; do
     make -C "${MODULE_DIR}" \
         KDIR="${TARGET_BUILD_DIR}" \
         ARCH="${short_arch}" \
-        CROSS_COMPILE="$(get_cc $TARGET)" \
+        CROSS_COMPILE="$(get_cc $TARGET $VERSION)" \
         clean
 
     # Generate symbols from the built kernel module using dwarf2json
@@ -170,7 +175,7 @@ for TARGET in $TARGETS; do
     # Try cross-toolchain strip first, then objcopy --strip-debug, then local strip.
     if [ "${RELEASE:-0}" = "1" ] && [ -f "${OUTPUT_DIR}/igloo.ko.${TARGET}" ]; then
         echo "Release mode: stripping ${OUTPUT_DIR}/igloo.ko.${TARGET}"
-        CROSS_PREFIX="$(get_cc $TARGET)"
+        CROSS_PREFIX="$(get_cc $TARGET $VERSION)"
         STRIP_BIN="${CROSS_PREFIX}strip"
         OBJCOPY_BIN="${CROSS_PREFIX}objcopy"
 
