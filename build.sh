@@ -5,7 +5,7 @@ set -x
 
 help() {
     cat >&2 <<EOF
-USAGE ./build.sh [--help] [--versions VERSIONS] [--targets TARGETS] [--linux-builder LINUX_BUILDER_PATH] [--kernel-devel-path KERNEL_DEVEL_PATH] [--image IMAGE]
+USAGE ./build.sh [--help] [--versions VERSIONS] [--targets TARGETS] [--linux-builder LINUX_BUILDER_PATH] [--kernel-devel-path KERNEL_DEVEL_PATH] [--image IMAGE] [--release]
 
     --versions VERSIONS
         Build modules for the specified kernel versions. By default, version 4.10 is used.
@@ -18,24 +18,27 @@ USAGE ./build.sh [--help] [--versions VERSIONS] [--targets TARGETS] [--linux-bui
         Path to extracted kernel-devel directory for the target/version. If not provided, will look for local_packages/kernel-devel-all.tar.gz and extract as needed.
     --image IMAGE
         Specify the Docker image to use for building. Default: rehosting/embedded-toolchains:latest
+    --release
+        Enable release mode: strip modules after build to reduce size.
 
 EXAMPLES
     ./build.sh --versions "4.10 6.7" --targets "armel mipseb mipsel mips64eb"
     ./build.sh --versions 4.10 --kernel-devel-path /tmp/kernel-devel-x86_64-6.13
     ./build.sh --targets armel
     ./build.sh --image myrepo/myimage:latest
-    ./build.sh
+    ./build.sh --release
 EOF
 }
 
 # Default options
-VERSIONS="4.10"
+VERSIONS="4.10 6.13"
 TARGETS="armel arm64 mipseb mipsel mips64eb mips64el powerpc powerpcle powerpc64 powerpc64le loongarch64 riscv64 x86_64"
 INTERACTIVE=
 LINUX_BUILDER_PATH="${HOME}/github/linux_builder"
 KERNEL_DEVEL_PATH=""
 
 DOCKER_IMAGE=rehosting/embedded-toolchains:latest
+RELEASE=0
 
 # Parse command-line arguments
 while [[ $# -gt 0 ]]; do
@@ -61,6 +64,9 @@ while [[ $# -gt 0 ]]; do
             shift; shift;;
         --interactive)
             INTERACTIVE="-it"
+            shift;;
+        --release)
+            RELEASE=1
             shift;;
         *)
             help
@@ -91,6 +97,7 @@ mkdir -p "$BUILD_OUTPUT_DIR"
 
 # Run the container with proper environment variables and mounts
 docker run ${INTERACTIVE} --rm \
+    -e RELEASE="${RELEASE}" \
     -v $KERNEL_DEVEL_MOUNT_DIR:/kernel-devel:ro \
     -v $PWD:/app \
     -v $BUILD_OUTPUT_DIR:/output \
