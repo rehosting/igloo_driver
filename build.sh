@@ -81,7 +81,25 @@ if [ -z "$KERNEL_DEVEL_PATH" ]; then
     PKG=local_packages/kernel-devel-all.tar.gz
     if [ -f "$PKG" ]; then
         mkdir -p cache/kernel-devel-extract
-        pigz -dc "$PKG" | tar -xf - -C cache/kernel-devel-extract
+
+        # Compute package hash and compare with cached hash to skip extraction if unchanged
+        HASHFILE="cache/kernel-devel-extract/.kernel_devel_pkg_hash"
+        PKG_HASH="$(md5sum "$PKG" | awk '{print $1}')"
+        OLD_HASH=""
+        if [ -f "$HASHFILE" ]; then
+            OLD_HASH="$(cat "$HASHFILE")" || OLD_HASH=""
+        fi
+
+        if [ "$PKG_HASH" = "$OLD_HASH" ] && [ -n "$(ls -A cache/kernel-devel-extract 2>/dev/null)" ]; then
+            echo "Using cached kernel-devel-extract (hash unchanged)"
+        else
+            echo "Extracting kernel-devel package (hash changed or no cache)"
+            rm -rf cache/kernel-devel-extract/*
+            pigz -dc "$PKG" | tar -xf - -C cache/kernel-devel-extract
+            # Update hash atomically
+            printf '%s' "$PKG_HASH" > "${HASHFILE}.tmp" && mv "${HASHFILE}.tmp" "$HASHFILE"
+        fi
+
         KERNEL_DEVEL_MOUNT_DIR="$(pwd)/cache/kernel-devel-extract"
     else
         echo "Error: --kernel-devel-path not provided and $PKG not found."
