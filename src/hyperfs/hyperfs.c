@@ -1092,32 +1092,42 @@ static int hyperfs_getattr(struct vfsmount *mnt, struct dentry *dentry,
 	return err;
 }
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
-static bool hyperfs_real_iter_actor(struct dir_context *ctx, const char *name,
-                                  int name_len, loff_t offset, u64 ino,
-                                  unsigned int d_type)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+#define ITER_RET_TYPE bool
+#define ITER_CONTINUE true
+#define ITER_STOP false
 #else
-static int hyperfs_real_iter_actor(struct dir_context *ctx, const char *name,
-				   int name_len, loff_t offset, u64 ino,
-				   unsigned int d_type)
+#define ITER_RET_TYPE int
+#define ITER_CONTINUE 0
+#define ITER_STOP 1
 #endif
+
+
+static ITER_RET_TYPE hyperfs_real_iter_actor(struct dir_context *ctx,
+					     const char *name,
+					     int name_len,
+					     loff_t offset,
+					     u64 ino,
+					     unsigned int d_type)
 {
 	struct hyperfs_iterate_data *iter_data =
 		(struct hyperfs_iterate_data *)ctx;
 
 	// Skip emitting dots, because we did that already
 	if (!strncmp(name, ".", name_len) || !strncmp(name, "..", name_len))
-		return 1;
+		return ITER_CONTINUE;
 
 	// Filter duplicates with hyperfs-managed files
 	if (iter_data->tree &&
 	    hyperfs_dir_lookup(&iter_data->tree->dir_entries, name, name_len))
-		return 1;
+		return ITER_CONTINUE;
 
+	// Emit entry, stop if user buffer is full
 	if (!dir_emit(iter_data->hyperfs_ctx, name, name_len, get_next_ino(),
 		      d_type))
-		return 0;
-	return 1;
+		return ITER_STOP;
+
+	return ITER_CONTINUE;
 }
 
 static int hyperfs_iterate(struct file *file, struct dir_context *ctx)
