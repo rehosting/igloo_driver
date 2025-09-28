@@ -166,6 +166,29 @@ for TARGET in $TARGETS; do
         echo "Warning: igloo.ko.${TARGET} or dwarf2json not found, skipping symbol generation for $TARGET."
     fi
 
+    # If release mode is enabled, attempt to strip the module to reduce size.
+    # Try cross-toolchain strip first, then objcopy --strip-debug, then local strip.
+    if [ "${RELEASE:-0}" = "1" ] && [ -f "${OUTPUT_DIR}/igloo.ko.${TARGET}" ]; then
+        echo "Release mode: stripping ${OUTPUT_DIR}/igloo.ko.${TARGET}"
+        CROSS_PREFIX="$(get_cc $TARGET)"
+        STRIP_BIN="${CROSS_PREFIX}strip"
+        OBJCOPY_BIN="${CROSS_PREFIX}objcopy"
+
+        if command -v "${STRIP_BIN}" >/dev/null 2>&1; then
+            "${STRIP_BIN}" --strip-unneeded "${OUTPUT_DIR}/igloo.ko.${TARGET}" || true
+        elif command -v "${OBJCOPY_BIN}" >/dev/null 2>&1; then
+            "${OBJCOPY_BIN}" --strip-debug "${OUTPUT_DIR}/igloo.ko.${TARGET}" || true
+        else
+            # Fallback to host strip if available
+            if command -v strip >/dev/null 2>&1; then
+                strip --strip-unneeded "${OUTPUT_DIR}/igloo.ko.${TARGET}" || true
+            else
+                echo "Warning: no strip/objcopy available to strip module; skipping."
+            fi
+        fi
+    fi
+
+
     chmod -R o+rw "${OUTPUT_DIR}"
     echo "IGLOO module for $TARGET built successfully"
 done
