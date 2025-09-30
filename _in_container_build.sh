@@ -33,11 +33,11 @@ get_cc() {
 
     if [[ $arch == *"loongarch"* ]]; then
         echo "/opt/cross/loongarch64-linux-gcc-cross/bin/loongarch64-unknown-linux-gnu-"
-    elif [[ $arch == *"powerpc"* ]]; then
+    elif [[ $arch == *"powerpc"* ]] && [ "$version" = "4.10" ]; then
+        echo "powerpc64-linux-gnu-"
+    elif [[ $arch == *"powerpc"* ]] && [ "$version" != "4.10" ]; then
         echo "/opt/cross/powerpc64-linux-musl-cross/bin/powerpc64-linux-musl-"
     elif [ "$arch" = "x86_64" ] && [ "$version" = "4.10" ]; then
-        # riscv64 linux-musl seems to run out of memory on linking so we switched
-        # to the glibc version
         echo "/opt/cross/x86_64-legacy/bin/x86_64-linux-musl-"
     elif [[ $arch == "riscv64" ]]; then
         # riscv64 linux-musl seems to run out of memory on linking so we switched
@@ -135,6 +135,12 @@ for TARGET in $TARGETS; do
         # Create in current working directory as well
         mkdir -p "arch/powerpc/lib" 2>/dev/null || true  
         ln -sf "${TARGET_BUILD_DIR}/arch/powerpc/lib/crtsavres.o" "arch/powerpc/lib/crtsavres.o" 2>/dev/null || true
+
+        if [[ "$VERSION" == 4.* ]]; then
+            export PPC_KCFLAGS="-mabi=elfv1 -mcall-aixdesc"
+        else
+            export PPC_KCFLAGS=""
+        fi
         
         # Build with additional library search path
         make -C "${MODULE_DIR}" \
@@ -142,6 +148,7 @@ for TARGET in $TARGETS; do
             ARCH="${short_arch}" \
             CROSS_COMPILE="$(get_cc $TARGET $VERSION)" \
             EXTRA_LDFLAGS="-L${TARGET_BUILD_DIR}/arch/powerpc/lib" \
+            KCFLAGS="${PPC_KCFLAGS}" \
             all
     else
         make -C "${MODULE_DIR}" \
