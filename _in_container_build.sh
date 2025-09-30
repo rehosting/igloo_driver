@@ -136,10 +136,10 @@ for TARGET in $TARGETS; do
         mkdir -p "arch/powerpc/lib" 2>/dev/null || true  
         ln -sf "${TARGET_BUILD_DIR}/arch/powerpc/lib/crtsavres.o" "arch/powerpc/lib/crtsavres.o" 2>/dev/null || true
 
-        if [[ "$VERSION" == 4.* ]]; then
-            export PPC_KCFLAGS="-mabi=elfv1 -mcall-aixdesc"
+        if [[ "$VERSION" == 4.* ]] && [[  "$TARGET" == "powerpc64"*  ]]; then
+            PPC_KCFLAGS="-mabi=elfv1 -mcall-aixdesc"
         else
-            export PPC_KCFLAGS=""
+            PPC_KCFLAGS=""
         fi
         
         # Build with additional library search path
