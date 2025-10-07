@@ -1480,43 +1480,9 @@ static void hyperfs_d_release(struct dentry *dentry)
 	dput(real);
 }
 
-static int hyperfs_d_revalidate(struct dentry *dentry, unsigned int flags)
-{
-	struct dentry *real = dentry->d_fsdata;
-	int ret = 1;
-
-	if (!real)
-		return 0;
-
-	if (real->d_flags & DCACHE_OP_REVALIDATE) {
-		ret = real->d_op->d_revalidate(real, flags);
-		if (ret < 0)
-			return ret;
-		if (!ret) {
-			if (!(flags & LOOKUP_RCU))
-				d_invalidate(real);
-			return -ESTALE;
-		}
-	}
-
-	return 1;
-}
-
-static int hyperfs_d_weak_revalidate(struct dentry *dentry, unsigned int flags)
-{
-	struct dentry *real = dentry->d_fsdata;
-	int ret = 1;
-
-	if (real && (real->d_flags & DCACHE_OP_WEAK_REVALIDATE))
-		ret = real->d_op->d_weak_revalidate(real, flags);
-
-	return ret;
-}
-
 static const struct dentry_operations hyperfs_dentry_operations = {
 	.d_release = hyperfs_d_release,
-	.d_revalidate = hyperfs_d_revalidate,
-	.d_weak_revalidate = hyperfs_d_weak_revalidate,
+	.d_delete = always_delete_dentry,
 };
 
 static int hyperfs_parse_options(char *options, struct super_block *sb,
