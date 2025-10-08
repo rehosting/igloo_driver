@@ -19,7 +19,16 @@ bool igloo_is_kernel_addr(unsigned long addr)
     return (addr >= PAGE_OFFSET);
     
 #elif defined(CONFIG_RISCV)
-    return (addr >= KERNEL_LINK_ADDR);
+    /* RISC-V kernel virtual address space check */
+    #if defined(CONFIG_64BIT)
+        /* For RISC-V 64-bit, kernel addresses are in the upper half */
+        /* Check if address is in kernel virtual address space */
+        /* RISC-V uses canonical addresses where kernel space starts high */
+        return (addr >= KERNEL_LINK_ADDR) || (addr >= PAGE_OFFSET);
+    #else
+        /* RISC-V 32-bit */
+        return (addr >= PAGE_OFFSET);
+    #endif
     
 #elif defined(CONFIG_PPC)
     return is_kernel_addr(addr);
