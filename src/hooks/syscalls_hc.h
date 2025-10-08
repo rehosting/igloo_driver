@@ -81,7 +81,7 @@ struct kernel_syscall_hook {
 
 /* Global variables - defined in syscalls_hc.c */
 extern struct hlist_head syscall_hook_table[1024];
-extern spinlock_t syscall_hook_lock;
+extern struct mutex syscall_hook_lock;
 
 
 /* Unregister a syscall hook using its pointer */
