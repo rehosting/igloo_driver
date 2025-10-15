@@ -16,6 +16,7 @@ igloo-objs += igloo_hc.o hooks/syscalls_hc.o hooks/ioctl_hc.o \
         hooks/sock_hc.o hooks/uname_hc.o hooks/block_mounts.o \
 		hooks/igloo_open.o \
 		hyperfs/hyperfs.o \
+		netdevs/igloonet.o \
 		$(PORTAL_OBJS)
 
 KDIR ?= /lib/modules/$(shell uname -r)/build

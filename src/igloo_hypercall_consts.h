@@ -50,5 +50,4 @@ enum igloo_hypercall_constants {
     IGLOO_SYSCALL           = 0x6408400B,
     IGLOO_MODULE_BASE       = 0x6408400C,
     IGLOO_INIT_MODULE       = 0x6408400D,
-
 };

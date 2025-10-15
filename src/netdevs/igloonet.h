@@ -1,0 +1,1 @@
+struct net_device* igloonet_init_one(const char *devname);
