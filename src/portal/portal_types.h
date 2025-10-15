@@ -22,6 +22,8 @@ enum HYPER_OP {
     HYPER_OP_READ_PROCENV,
     HYPER_OP_READ_FDS,        // Get multiple file descriptors with names
 
+    HYPER_OP_OSI_PROC_PTREGS, // Get ptregs for a process
+
     // file operations
     HYPER_OP_READ_FILE,
     HYPER_OP_WRITE_FILE,
