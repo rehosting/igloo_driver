@@ -12,6 +12,7 @@
 #include <linux/sched.h>
 #include <linux/dcache.h>
 #include <linux/mm_types.h>
+#include <linux/ptrace.h> // for struct pt_regs
 
 /* Compat helper for file inode access (changed ~5.15) */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)
@@ -34,6 +35,7 @@ static inline void *portal_anon_vma_name(struct vm_area_struct *vma)
 }
 #endif
 
+/* Helper function to get VMA name, similar to get_vma_name in task_mmu.c */
 static void portal_get_vma_name(struct vm_area_struct *vma, char *buf, size_t buf_size)
 {
     struct mm_struct *mm = vma->vm_mm;
@@ -873,4 +875,39 @@ void handle_op_read_time(portal_region *mem_region)
 {
     mem_region->header.size = ktime_get_ns();
     mem_region->header.op = HYPER_RESP_READ_NUM;
+}
+
+void handle_op_osi_proc_ptregs(portal_region *mem_region)
+{
+    struct task_struct *task = current;
+    struct pt_regs *regs = NULL;
+
+    igloo_debug_osi("igloo: Handling HYPER_OP_OSI_PROC_PTREGS (pid=%d)\n", task ? task->pid : -1);
+
+    if (!task) {
+        igloo_debug_osi("igloo: No task found for ptregs\n");
+        mem_region->header.size = 0;
+        mem_region->header.op = HYPER_RESP_READ_FAIL;
+        return;
+    }
+
+#if defined(current_pt_regs)
+    regs = current_pt_regs();
+#elif defined(task_pt_regs)
+    regs = task_pt_regs(task);
+#elif defined(ARCH_HAS_GET_CURRENT_REGS)
+    regs = get_current_regs();
+#else
+    regs = NULL;
+#endif
+    if (!regs) {
+        igloo_debug_osi("igloo: Could not get ptregs pointer for current task\n");
+        mem_region->header.size = 0;
+        mem_region->header.op = HYPER_RESP_READ_FAIL;
+        return;
+    }
+    mem_region->header.size = (uint64_t)(uintptr_t)regs;
+    mem_region->header.op = HYPER_RESP_READ_NUM;
+    igloo_debug_osi("igloo: ptregs pointer returned for current task: %p\n", regs);
+    return;
 }
