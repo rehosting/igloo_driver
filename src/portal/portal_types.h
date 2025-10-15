@@ -99,7 +99,7 @@ struct osi_result_header {
 
 /* Define the FFI execution structure */
 struct portal_ffi_call {
-    void *func_ptr;          /* Pointer to the function to call */
+    unsigned long func_ptr;          /* Pointer to the function to call */
     unsigned long num_args;  /* Number of arguments (up to 8) */
     unsigned long args[8];   /* Array of arguments as unsigned long */
     unsigned long result;    /* Return value of the function call */
