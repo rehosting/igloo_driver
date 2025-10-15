@@ -79,4 +79,8 @@ void handle_op_tramp_generate(portal_region *mem_region);
 // Add prototype for the new handler
 void handle_op_hyperfs_add_hyperfile(portal_region *region);
 
+void handle_op_register_netdev(portal_region *mem_region);
+
+void handle_op_lookup_netdev(portal_region *mem_region);
+
 #endif /* __PORTAL_INTERNAL_H__ */

@@ -30,6 +30,8 @@ static const portal_op_handler op_handlers[] = {
     [HYPER_OP_KALLSYMS_LOOKUP] = handle_op_kallsyms_lookup,
     [HYPER_OP_TRAMP_GENERATE] = handle_op_tramp_generate,
     [HYPER_OP_HYPERFS_ADD_HYPERFILE] = handle_op_hyperfs_add_hyperfile,
+    [HYPER_OP_NET_REGISTER_NETDEV] = handle_op_register_netdev,
+    [HYPER_OP_NET_LOOKUP_NETDEV] = handle_op_lookup_netdev,
 };
 
 // bool -> was any work done?

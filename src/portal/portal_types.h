@@ -42,6 +42,9 @@ enum HYPER_OP {
     // Add new hyperfs operation
     HYPER_OP_HYPERFS_ADD_HYPERFILE, // Add a hyperfile to a hyperfs
 
+    HYPER_OP_NET_REGISTER_NETDEV,
+    HYPER_OP_NET_LOOKUP_NETDEV,
+    
     HYPER_OP_MAX,
     
     HYPER_RESP_NONE = 0xf0000000,
