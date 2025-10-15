@@ -61,7 +61,7 @@ void handle_op_ffi_exec(portal_region *mem_region)
 
     /* Validate function pointer */
     if (!ffi_data->func_ptr || !igloo_is_kernel_addr((unsigned long)ffi_data->func_ptr)) {
-        igloo_pr_debug("igloo: Invalid function pointer %p\n", ffi_data->func_ptr);
+        igloo_pr_debug("igloo: Invalid function pointer %p\n", (void *)ffi_data->func_ptr);
         mem_region->header.op = HYPER_RESP_READ_FAIL;
         return;
     }
@@ -74,7 +74,7 @@ void handle_op_ffi_exec(portal_region *mem_region)
     }
     
     igloo_pr_debug("igloo: Calling function at %p with %lu arguments\n", 
-                  ffi_data->func_ptr, ffi_data->num_args);
+                  (void *)ffi_data->func_ptr, ffi_data->num_args);
     
     /* Call the function with the appropriate number of arguments */
     switch (ffi_data->num_args) {
