@@ -10,6 +10,7 @@
     X(osi_mappings, OSI_MAPPINGS) \
     X(osi_proc_mem, OSI_PROC_MEM) \
     X(osi_proc_exe, OSI_PROC_EXE) \
+    X(osi_proc_ptregs, OSI_PROC_PTREGS) \
     X(read_procargs, READ_PROCARGS) \
     X(read_procenv, READ_PROCENV) \
     X(read_fds, READ_FDS) \
