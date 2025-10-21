@@ -27,6 +27,10 @@
 #include "portal_types.h"
 
 bool igloo_is_kernel_addr(unsigned long addr);
+int igloo_write_memory(struct task_struct *task, unsigned long addr, const void *buf, size_t size);
+int igloo_read_memory(struct task_struct *task, unsigned long addr, void *buf, size_t size);
+int igloo_read_user_memory(struct task_struct *task, unsigned long addr, void *buf, size_t size);
+int igloo_read_user_string(struct task_struct *task, unsigned long addr, void *buf, size_t size);
 
 // Always print debug messages with highest priority
 #define igloo_pr_debug(fmt, ...) igloo_debug_portal(fmt, ##__VA_ARGS__)

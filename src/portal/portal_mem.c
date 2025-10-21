@@ -82,196 +82,302 @@ struct task_struct *get_target_task_by_id(portal_region* mem_region)
     return task;
 }
 
+// Helper for safe access_remote_vm with mmap_sem for old kernels
+static ssize_t igloo_access_remote_vm(struct task_struct *task, struct mm_struct *mm, unsigned long addr, void *buf, size_t len, int flags)
+{
+    ssize_t ret;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,10,0)
+    if (!down_read_trylock(&mm->mmap_lock)) {
+        igloo_pr_debug("igloo: Failed to trylock mmap_lock for portal_access_remote_vm\n");
+        return -EAGAIN;
+    }
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,6,0)
+    ret = access_remote_vm(task, mm, addr, buf, len, flags);
+#else
+    ret = access_remote_vm(mm, addr, buf, len, flags);
+#endif
+    up_read(&mm->mmap_lock);
+#else
+    if (!down_read_trylock(&mm->mmap_sem)) {
+        igloo_pr_debug("igloo: Failed to trylock mmap_sem for portal_access_remote_vm\n");
+        return -EAGAIN;
+    }
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,6,0)
+    ret = access_remote_vm(task, mm, addr, buf, len, flags);
+#else
+    ret = access_remote_vm(mm, addr, buf, len, flags);
+#endif
+    up_read(&mm->mmap_sem);
+#endif
+
+    return ret;
+}
+
+
+static unsigned long igloo_copy_from_user_task(void *to, const void __user *from, unsigned long n, struct task_struct *task)
+{
+    struct mm_struct *mm = task->mm;
+
+    if (!mm)
+        return n; // Kernel thread, all bytes fail
+
+    if (mm == current->mm) {
+        return copy_from_user(to, from, n);
+    } else {
+        ssize_t ret;
+
+        // We need to get our own reference to the mm_struct
+        mm = get_task_mm(task);
+        if (!mm)
+            return n; // All bytes fail
+
+        ret = igloo_access_remote_vm(task, mm, (unsigned long)from, to, n, 0);
+        mmput(mm);
+
+        if (ret < 0)
+            return n; // All bytes failed
+
+        return n - ret; // Return uncopied bytes
+    }
+}
+
+static unsigned long igloo_copy_to_user_task(void __user *to, const void *from, unsigned long n, struct task_struct *task)
+{
+    struct mm_struct *mm = task->mm;
+
+    if (!mm)
+        return n; // Kernel thread, all bytes fail
+
+    if (mm == current->mm) {
+        return copy_to_user(to, from, n);
+    } else {
+        ssize_t ret;
+
+        // We need to get our own reference to the mm_struct
+        mm = get_task_mm(task);
+        if (!mm)
+            return n;
+
+        ret = igloo_access_remote_vm(task, mm, (unsigned long)to, (void *)from, n, FOLL_WRITE);
+        mmput(mm);
+
+        if (ret < 0)
+            return n;
+
+        return n - ret;
+    }
+}
+
+static int igloo_read_kernel_memory(unsigned long addr, void *buf, size_t size, bool is_string)
+{
+    ssize_t copied;
+    unsigned long flags;
+
+    if (!virt_addr_valid((void *)addr)) return -EFAULT;
+
+    local_irq_save(flags);
+    pagefault_disable();
+    if (is_string) {
+        copied = strnlen((const char *)addr, size);
+        memcpy(buf, (const char *)addr, copied);
+        if (copied < size)
+            ((char *)buf)[copied] = '\0';
+    } else {
+        memcpy(buf, (void *)addr, size);
+        copied = size;
+    }
+    pagefault_enable();
+    local_irq_restore(flags);
+
+    return size - copied; // 0 on success
+}
+
+static int __igloo_read_user_memory(struct task_struct *task, unsigned long addr, void *buf, size_t size, bool is_string)
+{
+    if (!task) return -ESRCH;
+
+    // For current process, verify the area is accessible before trying to copy.
+    // For other processes, access_remote_vm will do the checks.
+    if (task->mm == current->mm) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0)
+        if (!access_ok(VERIFY_READ, (const void __user *)addr, size))
+            return -EFAULT;
+#else
+        if (!access_ok((const void __user *)addr, size))
+            return -EFAULT;
+#endif
+    }
+
+    if (is_string) {
+        ssize_t copied;
+        // Read byte-by-byte for strings to find null terminator safely.
+        for (copied = 0; copied < size; copied++) {
+            if (igloo_copy_from_user_task((char *)buf + copied, (const void __user *)(addr + copied), 1, task) != 0) {
+                return size - copied; // Partial read
+            }
+            if (((char *)buf)[copied] == '\0') {
+                break;
+            }
+        }
+        return 0; // Returns 0 on success, `copied` has the length.
+    } else {
+        return igloo_copy_from_user_task(buf, (const void __user *)addr, size, task);
+    }
+}
+
+int igloo_read_user_memory(struct task_struct *task, unsigned long addr, void *buf, size_t size)
+{
+    return __igloo_read_user_memory(task, addr, buf, size, false);
+}
+
+int igloo_read_user_string(struct task_struct *task, unsigned long addr, void *buf, size_t size)
+{
+    return __igloo_read_user_memory(task, addr, buf, size, true);
+}
+
+static int __igloo_read_memory(struct task_struct *task, unsigned long addr, void *buf, size_t size, bool is_string)
+{
+    if (igloo_is_kernel_addr(addr)) {
+        return igloo_read_kernel_memory(addr, buf, size, is_string);
+    }
+
+    if (is_string) {
+        return igloo_read_user_string(task, addr, buf, size);
+    } else {
+        return igloo_read_user_memory(task, addr, buf, size);
+    }
+}
+
+int igloo_read_memory(struct task_struct *task, unsigned long addr, void *buf, size_t size)
+{
+    return __igloo_read_memory(task, addr, buf, size, false);
+}
+
+static int igloo_read_string(struct task_struct *task, unsigned long addr, void *buf, size_t size)
+{
+    return __igloo_read_memory(task, addr, buf, size, true);
+}
+
+int igloo_write_memory(struct task_struct *task, unsigned long addr, const void *buf, size_t size)
+{
+    if (size > CHUNK_SIZE) size = CHUNK_SIZE;
+
+    if (igloo_is_kernel_addr(addr)) {
+        unsigned long flags;
+        if (!virt_addr_valid((void *)addr)) return -EFAULT;
+        local_irq_save(flags);
+        pagefault_disable();
+        memcpy((void *)addr, buf, size);
+        pagefault_enable();
+        local_irq_restore(flags);
+        return 0;
+    }
+
+    if (!task) return -ESRCH;
+
+    if (task->mm == current->mm) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0)
+        if (!access_ok(VERIFY_WRITE, (void __user *)addr, size))
+            return -EFAULT;
+#else
+        if (!access_ok((void __user *)addr, size))
+            return -EFAULT;
+#endif
+    }
+
+    return igloo_copy_to_user_task((void __user *)addr, buf, size, task);
+}
+
 void handle_op_read(portal_region *mem_region)
 {
     int resp;
-    unsigned long addr = mem_region->header.addr;
-    size_t size = mem_region->header.size;
-    bool is_kernel_address = igloo_is_kernel_addr(addr);
+    size_t original_size = mem_region->header.size;
+    size_t size_to_read = original_size;
+    struct task_struct *task;
     
     igloo_pr_debug("igloo: Handling HYPER_OP_READ: addr=%#llx, size=%#llx\n",
-        (unsigned long long)addr, (unsigned long long)size);
+        (unsigned long long)mem_region->header.addr, (unsigned long long)original_size);
     
-    if (is_kernel_address) {
-        // Handle kernel memory - directly copy with memcpy
-        igloo_pr_debug("igloo: Reading from kernel address %#lx, size %zu\n", addr, size);
-        if (size > CHUNK_SIZE) {
-            igloo_pr_debug("igloo: Requested size too large, truncating to %zu\n", (size_t)CHUNK_SIZE);
-            size = CHUNK_SIZE;
-        }
-        
-        // Only access memory we think is valid
-        if (virt_addr_valid((void *)addr)) {
-            // Use memcpy with safety precautions
-            unsigned long flags;
-            local_irq_save(flags);
-            pagefault_disable();
-            memcpy(PORTAL_DATA(mem_region), (void *)addr, size);
-            pagefault_enable();
-            local_irq_restore(flags);
-            
-            mem_region->header.op = HYPER_RESP_READ_OK;
-            mem_region->header.size = size;
-        } else {
-            igloo_pr_debug("igloo: Invalid kernel address %#lx\n", addr);
-            mem_region->header.op = HYPER_RESP_READ_FAIL;
-        }
+    if (size_to_read > CHUNK_SIZE) {
+        size_to_read = CHUNK_SIZE;
+    }
+
+    task = get_target_task_by_id(mem_region);
+    resp = igloo_read_memory(task, mem_region->header.addr, PORTAL_DATA(mem_region), size_to_read);
+
+    if (resp == 0) {
+        mem_region->header.op = HYPER_RESP_READ_OK;
+        mem_region->header.size = size_to_read;
+    } else if (resp > 0 && resp < original_size) {
+        igloo_pr_debug(
+            "igloo: read partially failed for addr %#llx, size %zu, resp %d\n",
+            (unsigned long long)mem_region->header.addr, original_size, resp);
+        mem_region->header.op = HYPER_RESP_READ_PARTIAL;
+        mem_region->header.size = (size_to_read - resp);
     } else {
-        // Handle user memory - use copy_from_user
-        resp = copy_from_user(
-            (void*)PORTAL_DATA(mem_region),
-            (const void __user *)(uintptr_t)addr,
-            size);
-        if (resp == 0) {
-            mem_region->header.op = HYPER_RESP_READ_OK;
-        } else if (resp > 0) {
-            igloo_pr_debug(
-                "igloo: copy_from_user partially failed for addr %#lx, size %zu, resp %d\n",
-                addr, size, resp);
-            mem_region->header.op = HYPER_RESP_READ_PARTIAL;
-            mem_region->header.size = (size - resp);
-        } else {
-            igloo_pr_debug(
-                "igloo: copy_from_user failed for addr %#lx, size %zu, resp %d\n",
-                addr, size, resp);
-            mem_region->header.op = HYPER_RESP_READ_FAIL;
-        }
+        igloo_pr_debug(
+            "igloo: read failed for addr %#llx, size %zu, resp %d\n",
+            (unsigned long long)mem_region->header.addr, original_size, resp);
+        mem_region->header.op = HYPER_RESP_READ_FAIL;
+        mem_region->header.size = 0;
     }
 }
 
 void handle_op_write(portal_region *mem_region)
 {
     int resp;
-    unsigned long addr = mem_region->header.addr;
-    size_t size = mem_region->header.size;
+    struct task_struct *task;
     
     igloo_pr_debug("igloo: Handling HYPER_OP_WRITE: addr=%#llx, size=%#llx\n",
-        (unsigned long long)addr, (unsigned long long)size);
+        (unsigned long long)mem_region->header.addr, (unsigned long long)mem_region->header.size);
     
-    if (igloo_is_kernel_addr(addr)) {
-        // Handle kernel memory writes - use memcpy, but with caution
-        igloo_pr_debug("igloo: Writing to kernel address %#lx, size %zu\n", addr, size);
+    task = get_target_task_by_id(mem_region);
+    resp = igloo_write_memory(task, mem_region->header.addr, PORTAL_DATA(mem_region), mem_region->header.size);
         
-        if (size > CHUNK_SIZE) {
-            igloo_pr_debug("igloo: Requested size too large, truncating to %zu\n", (size_t)CHUNK_SIZE);
-            size = CHUNK_SIZE;
-        }
-        
-        // Only write to memory we think is valid and writable
-        if (virt_addr_valid((void *)addr)) {
-            // Use memcpy with safety precautions
-            unsigned long flags;
-            local_irq_save(flags);
-            pagefault_disable();
-            memcpy((void *)addr, PORTAL_DATA(mem_region), size);
-            pagefault_enable();
-            local_irq_restore(flags);
-            
-            igloo_pr_debug("igloo: Successfully wrote to kernel address %#lx\n", addr);
-            mem_region->header.op = HYPER_RESP_WRITE_OK;
-        } else {
-            igloo_pr_debug("igloo: Invalid kernel address %#lx\n", addr);
-            mem_region->header.op = HYPER_RESP_WRITE_FAIL;
-        }
+    if (resp == 0) {
+        igloo_pr_debug("igloo: Successfully wrote to address %#llx\n", (unsigned long long)mem_region->header.addr);
+        mem_region->header.op = HYPER_RESP_WRITE_OK;
     } else {
-        // Handle user memory writes - use copy_to_user
-        resp = copy_to_user(
-            (void __user *)(uintptr_t)addr,
-            PORTAL_DATA(mem_region),
-            size);
-        
-        if (resp == 0) {
-            igloo_pr_debug("igloo: Successfully wrote to user address %#lx\n", addr);
-            mem_region->header.op = HYPER_RESP_WRITE_OK;
-        } else {
-            igloo_pr_debug(
-                "igloo: copy_to_user failed for addr %#lx, size %zu, resp %d\n",
-                addr, size, resp);
-            mem_region->header.op = HYPER_RESP_WRITE_FAIL;
-        }
+        igloo_pr_debug(
+            "igloo: write failed for addr %#llx, size %llu, resp %d\n",
+            (unsigned long long)mem_region->header.addr, (unsigned long long)mem_region->header.size, resp);
+        mem_region->header.op = HYPER_RESP_WRITE_FAIL;
     }
 }
 
 void handle_op_read_str(portal_region *mem_region)
 {
-    unsigned long addr = (mem_region->header.addr);
-    unsigned long max_size = (mem_region->header.size);
-    ssize_t copied = 0;
-    char *buf = PORTAL_DATA(mem_region);
+    int resp;
+    size_t max_size = mem_region->header.size;
+    struct task_struct *task;
 
-    if (max_size == 0 || max_size > CHUNK_SIZE - 1){
+    igloo_pr_debug("igloo: Handling HYPER_OP_READ_STR: addr=%#llx, max_size=%llu\n",
+                   (unsigned long long)mem_region->header.addr, (unsigned long long)max_size);
+
+    if (max_size == 0 || max_size > CHUNK_SIZE - 1) {
         max_size = CHUNK_SIZE - 1;
     }
-    igloo_pr_debug("igloo: Handling HYPER_OP_READ_STR: addr=%#lx, max_size=%lu\n", addr, max_size);
 
-    if (igloo_is_kernel_addr(addr)) {
-        // Handle kernel string - use strlcpy with safety checks
-        igloo_pr_debug("igloo: Reading string from kernel address %#lx\n", addr);
-        
-        if (!virt_addr_valid((void *)addr)) {
-            igloo_pr_debug("igloo: Invalid kernel address %#lx\n", addr);
-            mem_region->header.op = HYPER_RESP_READ_FAIL;
-            mem_region->header.size = 0;
-            return;
-        }
-        
-        // For kernel addresses, we'll use pagefault_disable/enable for safety
-        {
-            unsigned long flags;
-            local_irq_save(flags);
-            pagefault_disable();
-            // Try reading the first byte to check for access
-            buf[0] = *((const char *)addr);
-            pagefault_enable();
-            local_irq_restore(flags);
-        }
-        
-        // Safely copy the kernel string with pagefault protection
-        {
-            unsigned long flags;
-            local_irq_save(flags);
-            pagefault_disable();
-            
-            // First calculate the string length (up to max_size)
-            copied = strnlen((const char *)addr, max_size);
-            
-            if (copied == max_size) {
-                // String is longer than or equal to max_size
-                memcpy(buf, (const char *)addr, max_size - 1);
-                buf[max_size - 1] = '\0';
-                copied = max_size - 1;
-            } else {
-                // String fits in buffer
-                memcpy(buf, (const char *)addr, copied + 1); // Include null terminator
-            }
-            
-            pagefault_enable();
-            local_irq_restore(flags);
-        }
-        
-        igloo_pr_debug("igloo: Read kernel string (len=%zd)\n", copied);
-        mem_region->header.size = (copied);
-        mem_region->header.op = (HYPER_RESP_READ_OK);
-    } else {
-        // Handle user string - use strncpy_from_user
-        copied = strncpy_from_user(buf, (const char __user *)addr, max_size);
-        if (copied < 0) {
-            igloo_pr_debug("igloo: strncpy_from_user failed for addr %#lx, max_size %lu, ret %zd\n",
-                          addr, max_size, copied);
-            mem_region->header.op = (HYPER_RESP_READ_FAIL);
-            mem_region->header.size = 0;
+    task = get_target_task_by_id(mem_region);
+    resp = igloo_read_string(task, mem_region->header.addr, PORTAL_DATA(mem_region), max_size);
+
+    if (resp == 0) {
+        mem_region->header.op = HYPER_RESP_READ_OK;
+        // Calculate the actual length of the string read.
+        mem_region->header.size = strnlen(PORTAL_DATA(mem_region), max_size);
+        igloo_pr_debug("igloo: Read string (len=%llu)\n", (unsigned long long)mem_region->header.size);
+        // Ensure null termination if buffer has space
+        if (mem_region->header.size < CHUNK_SIZE) {
+            PORTAL_DATA(mem_region)[mem_region->header.size] = '\0';
         } else {
-            mem_region->header.size = (copied);
-            mem_region->header.op = (HYPER_RESP_READ_OK);
-            igloo_pr_debug("igloo: Read user string (len=%zd)\n", copied);
-            
-            // Ensure proper null termination
-            if (copied < CHUNK_SIZE) {
-                buf[copied] = '\0';
-            } else {
-                buf[CHUNK_SIZE - 1] = '\0';
-            }
+            PORTAL_DATA(mem_region)[CHUNK_SIZE - 1] = '\0';
         }
+    } else {
+        igloo_pr_debug("igloo: read_str failed for addr %#llx, ret %d\n",
+                      (unsigned long long)mem_region->header.addr, resp);
+        mem_region->header.op = HYPER_RESP_READ_FAIL;
+        mem_region->header.size = 0;
     }
 }
 
@@ -286,9 +392,9 @@ void handle_op_read_ptr_array(portal_region *mem_region)
     char *buf = PORTAL_DATA(mem_region);
     void __user *user_ptr_array = (void __user *)ptr_array_addr;
     char tmp[128];
-    int ret;
     size_t user_ptr_size, len;
     bool is_32bit = false;
+    struct task_struct *task = get_target_task_by_id(mem_region);
 
     /* Check if we're dealing with a 32-bit process on 64-bit kernel
      * using architecture-specific flags for 32-bit processes.
@@ -319,18 +425,17 @@ void handle_op_read_ptr_array(portal_region *mem_region)
     while (buf_offset < max_buf) {
         // Read pointer from user or kernel
         if (igloo_is_kernel_addr((unsigned long)user_ptr_array)) {
-            user_ptr = *(unsigned long *)user_ptr_array;
+            if (igloo_read_kernel_memory((unsigned long)user_ptr_array, &user_ptr, sizeof(user_ptr), false) != 0) break;
         } else {
             // For user addresses, handle 32-bit vs 64-bit
             if (is_32bit) {
                 u32 ptr32;
-                if (copy_from_user(&ptr32, user_ptr_array, sizeof(u32))) {
+                if (igloo_read_user_memory(task, (unsigned long)user_ptr_array, &ptr32, sizeof(u32)) != 0) {
                     break;
                 }
                 user_ptr = (unsigned long)ptr32;
             } else {
-                if (copy_from_user(&user_ptr, user_ptr_array,
-                                   sizeof(unsigned long))) {
+                if (igloo_read_user_memory(task, (unsigned long)user_ptr_array, &user_ptr, sizeof(unsigned long)) != 0) {
                     break;
                 }
             }
@@ -341,12 +446,9 @@ void handle_op_read_ptr_array(portal_region *mem_region)
 
         // Read string from pointer
         if (igloo_is_kernel_addr(user_ptr)) {
-            strncpy(tmp, (const char *)user_ptr, sizeof(tmp) - 1);
-            tmp[sizeof(tmp) - 1] = '\0';
+            if (igloo_read_kernel_memory(user_ptr, tmp, sizeof(tmp), true) != 0) break;
         } else {
-            ret = strncpy_from_user(tmp, (const char __user *)user_ptr, sizeof(tmp) - 1);
-            if (ret < 0) break;
-            tmp[sizeof(tmp) - 1] = '\0';
+            if (igloo_read_user_string(task, user_ptr, tmp, sizeof(tmp)) != 0) break;
         }
         len = strnlen(tmp, sizeof(tmp));
         if (buf_offset + len + 1 > max_buf) {
