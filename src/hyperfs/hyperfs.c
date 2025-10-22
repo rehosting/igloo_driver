@@ -47,6 +47,7 @@ struct hyperfs_iterate_data {
 	struct dir_context real_ctx;
 	struct dir_context *hyperfs_ctx;
 	struct hyperfs_tree *tree;
+	loff_t *i;
 };
 
 enum {
@@ -1112,6 +1113,7 @@ static ITER_RET_TYPE hyperfs_real_iter_actor(struct dir_context *ctx,
 {
 	struct hyperfs_iterate_data *iter_data =
 		(struct hyperfs_iterate_data *)ctx;
+	loff_t *i = iter_data->i;
 
 	// Skip emitting dots, because we did that already
 	if (!strncmp(name, ".", name_len) || !strncmp(name, "..", name_len))
@@ -1122,10 +1124,13 @@ static ITER_RET_TYPE hyperfs_real_iter_actor(struct dir_context *ctx,
 	    hyperfs_dir_lookup(&iter_data->tree->dir_entries, name, name_len))
 		return ITER_CONTINUE;
 
-	// Emit entry, stop if user buffer is full
-	if (!dir_emit(iter_data->hyperfs_ctx, name, name_len, get_next_ino(),
-		      d_type))
-		return ITER_STOP;
+	if (iter_data->hyperfs_ctx->pos == *i) {
+		// Emit entry, stop if user buffer is full
+		if (!dir_emit(iter_data->hyperfs_ctx, name, name_len, get_next_ino(), d_type))
+			return ITER_STOP;
+		iter_data->hyperfs_ctx->pos++;
+	}
+	(*i)++;
 
 	return ITER_CONTINUE;
 }
@@ -1136,12 +1141,13 @@ static int hyperfs_iterate(struct file *file, struct dir_context *ctx)
 	struct hyperfs_tree_dir_entry *entry;
 	struct path real_path;
 	struct file *real_file;
+	loff_t i = 2;
 	struct hyperfs_iterate_data iter_data = {
 		.real_ctx.actor = hyperfs_real_iter_actor,
 		.hyperfs_ctx = ctx,
 		.tree = tree,
+		.i = &i,
 	};
-	loff_t i = 2;
 	int err = 0;
 
 	if (!dir_emit_dots(file, ctx))
@@ -1186,17 +1192,8 @@ static int hyperfs_iterate(struct file *file, struct dir_context *ctx)
 		goto out_real_path;
 	}
 
-	err = vfs_llseek(real_file, ctx->pos - i, SEEK_SET);
-	if (err < 0)
-		goto out_real_file;
-
 	err = iterate_dir(real_file, &iter_data.real_ctx);
-	if (err < 0)
-		goto out_real_file;
 
-	ctx->pos = i + iter_data.real_ctx.pos;
-
-out_real_file:
 	fput(real_file);
 out_real_path:
 	path_put(&real_path);
