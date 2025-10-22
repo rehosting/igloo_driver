@@ -3,6 +3,8 @@ name: Build and Release igloo_driver modules
 on:
   push:
     branches: [main]
+    tags:
+      - 'dev_*'
   workflow_dispatch:
 
 jobs:
@@ -60,14 +62,18 @@ jobs:
           path: igloo_driver.tar.gz
 
       - name: Get next version
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: |
+          github.event_name == 'push' &&
+          (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/dev_'))
         uses: reecetech/version-increment@2023.10.1
         id: version
         with:
           use_api: true
 
       - name: Create release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: |
+          github.event_name == 'push' &&
+          (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/dev_'))
         uses: softprops/action-gh-release@v2.0.8
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
