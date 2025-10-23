@@ -119,6 +119,7 @@ struct osi_proc {
     uint64_t gid;
     uint64_t euid;
     uint64_t egid;
+    uint64_t start_time;
 };
 
 // File descriptor entry structure for handle_op_read_fds
