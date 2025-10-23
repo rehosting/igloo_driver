@@ -135,7 +135,7 @@ void handle_op_osi_proc(portal_region *mem_region)
     } else {
         proc->pgd = 0;
     }
-    
+    proc->start_time = (task->start_time);
     proc->pid = (task->pid);
     proc->ppid = (task->real_parent ? task->real_parent->pid : 0);
     proc->uid = (task->cred->uid.val);
