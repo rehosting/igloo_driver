@@ -21,6 +21,7 @@ enum HYPER_OP {
     HYPER_OP_READ_PROCARGS,
     HYPER_OP_READ_PROCENV,
     HYPER_OP_READ_FDS,        // Get multiple file descriptors with names
+    HYPER_OP_READ_TIME,
 
     // file operations
     HYPER_OP_READ_FILE,

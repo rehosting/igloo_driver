@@ -49,6 +49,7 @@ void handle_op_write(portal_region *mem_region);
 // Forward declaration for new handler
 void handle_op_read_ptr_array(portal_region *mem_region);
 void handle_op_read_fds(portal_region *mem_region);
+void handle_op_read_time(portal_region *mem_region);
 void handle_op_read_procargs(portal_region *mem_region);
 void handle_op_read_str(portal_region *mem_region);
 void handle_op_read_file(portal_region *mem_region);

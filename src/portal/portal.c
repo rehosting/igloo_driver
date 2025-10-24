@@ -21,6 +21,7 @@ static const portal_op_handler op_handlers[] = {
     [HYPER_OP_READ_PROCARGS]   = handle_op_read_procargs,
     [HYPER_OP_READ_PROCENV]    = handle_op_read_procenv,
     [HYPER_OP_READ_FDS]        = handle_op_read_fds,
+    [HYPER_OP_READ_TIME]        = handle_op_read_time,
     [HYPER_OP_READ_FILE]       = handle_op_read_file,
     [HYPER_OP_WRITE_FILE]      = handle_op_write_file,
     [HYPER_OP_REGISTER_UPROBE] = handle_op_register_uprobe,

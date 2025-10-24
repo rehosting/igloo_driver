@@ -5,6 +5,7 @@
 #include <linux/file.h>      // fput
 #include <linux/mm.h>        // mm / vma list
 #include <linux/fs.h>        // file_inode for older kernels
+#include <linux/ktime.h> // Add this include for ktime_get_ns
 #ifndef file_user_inode
 #define file_user_inode(file) file_inode(file)
 #endif
@@ -782,4 +783,10 @@ void handle_op_read_fds(portal_region *mem_region)
     
     igloo_debug_osi("igloo: Returned %d file descriptors (total: %d), buffer used: %zu bytes\n", 
                   count, total_count, string_offset);
+}
+
+void handle_op_read_time(portal_region *mem_region)
+{
+    mem_region->header.size = ktime_get_ns();
+    mem_region->header.op = HYPER_RESP_READ_NUM;
 }
