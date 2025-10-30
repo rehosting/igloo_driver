@@ -1,50 +1,12 @@
+#include "portal_op_list.h"
+
 enum HYPER_OP {
     HYPER_OP_NONE = 0,
-
-    // memory operations
-    HYPER_OP_READ,
-    HYPER_OP_WRITE,
-    HYPER_OP_READ_STR,
-    HYPER_OP_READ_PTR_ARRAY,  // Read array of pointers to null-terminated strings
-    
-    // dump operation
-    HYPER_OP_DUMP,
-
-    // exec
-    HYPER_OP_EXEC,
-
-    // Add OSI operation codes
-    HYPER_OP_OSI_PROC,        // Get detailed process information
-    HYPER_OP_OSI_PROC_HANDLES, // Get process handles
-    HYPER_OP_OSI_MAPPINGS,    // Get memory mappings
-    HYPER_OP_OSI_PROC_MEM,    // Get process memory info
-    HYPER_OP_READ_PROCARGS,
-    HYPER_OP_READ_PROCENV,
-    HYPER_OP_READ_FDS,        // Get multiple file descriptors with names
-    HYPER_OP_READ_TIME,
-
-    // file operations
-    HYPER_OP_READ_FILE,
-    HYPER_OP_WRITE_FILE,
-    
-    // Uprobe operations
-    HYPER_OP_REGISTER_UPROBE,
-    HYPER_OP_UNREGISTER_UPROBE,
-    
-    // Syscall operations
-    HYPER_OP_REGISTER_SYSCALL_HOOK,
-    HYPER_OP_UNREGISTER_SYSCALL_HOOK,
-    
-    // FFI operations
-    HYPER_OP_FFI_EXEC,        // Execute kernel function via FFI
-    HYPER_OP_KALLSYMS_LOOKUP, // Lookup symbol address by name
-    HYPER_OP_TRAMP_GENERATE,  // Generate trampoline and return id + address
-
-    // Add new hyperfs operation
-    HYPER_OP_HYPERFS_ADD_HYPERFILE, // Add a hyperfile to a hyperfs
-
+#define X(lower, upper) HYPER_OP_##upper,
+    PORTAL_OP_LIST
+#undef X
     HYPER_OP_MAX,
-    
+
     HYPER_RESP_NONE = 0xf0000000,
     HYPER_RESP_READ_OK,
     HYPER_RESP_READ_FAIL,

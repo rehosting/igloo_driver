@@ -1,0 +1,24 @@
+#define PORTAL_OP_LIST \
+    X(read, READ) \
+    X(write, WRITE) \
+    X(read_str, READ_STR) \
+    X(read_ptr_array, READ_PTR_ARRAY) \
+    X(dump, DUMP) \
+    X(exec, EXEC) \
+    X(osi_proc, OSI_PROC) \
+    X(osi_proc_handles, OSI_PROC_HANDLES) \
+    X(osi_mappings, OSI_MAPPINGS) \
+    X(osi_proc_mem, OSI_PROC_MEM) \
+    X(read_procargs, READ_PROCARGS) \
+    X(read_procenv, READ_PROCENV) \
+    X(read_fds, READ_FDS) \
+    X(read_time, READ_TIME) \
+    X(read_file, READ_FILE) \
+    X(write_file, WRITE_FILE) \
+    X(register_uprobe, REGISTER_UPROBE) \
+    X(unregister_uprobe, UNREGISTER_UPROBE) \
+    X(register_syscall_hook, REGISTER_SYSCALL_HOOK) \
+    X(ffi_exec, FFI_EXEC) \
+    X(kallsyms_lookup, KALLSYMS_LOOKUP) \
+    X(tramp_generate, TRAMP_GENERATE) \
+    X(hyperfs_add_hyperfile, HYPERFS_ADD_HYPERFILE)

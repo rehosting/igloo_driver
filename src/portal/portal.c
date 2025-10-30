@@ -3,34 +3,16 @@
 #include "portal_internal.h"
 #include <linux/wait.h>
 #include <linux/sched.h>
+#include "portal_op_list.h"
 
 uint64_t portal_interrupt = 0;
 
 // Operation handler table
 static const portal_op_handler op_handlers[] = {
-    [HYPER_OP_READ]            = handle_op_read,
-    [HYPER_OP_WRITE]           = handle_op_write,
-    [HYPER_OP_READ_STR]        = handle_op_read_str,
-    [HYPER_OP_READ_PTR_ARRAY]   = handle_op_read_ptr_array,
-    [HYPER_OP_DUMP]            = handle_op_dump,
-    [HYPER_OP_EXEC]            = handle_op_exec,
-    [HYPER_OP_OSI_PROC]        = handle_op_osi_proc,
-    [HYPER_OP_OSI_PROC_HANDLES]= handle_op_osi_proc_handles,
-    [HYPER_OP_OSI_MAPPINGS]    = handle_op_osi_mappings,
-    [HYPER_OP_OSI_PROC_MEM]    = handle_op_osi_proc_mem,
-    [HYPER_OP_READ_PROCARGS]   = handle_op_read_procargs,
-    [HYPER_OP_READ_PROCENV]    = handle_op_read_procenv,
-    [HYPER_OP_READ_FDS]        = handle_op_read_fds,
-    [HYPER_OP_READ_TIME]        = handle_op_read_time,
-    [HYPER_OP_READ_FILE]       = handle_op_read_file,
-    [HYPER_OP_WRITE_FILE]      = handle_op_write_file,
-    [HYPER_OP_REGISTER_UPROBE] = handle_op_register_uprobe,
-    [HYPER_OP_UNREGISTER_UPROBE] = handle_op_unregister_uprobe,
-    [HYPER_OP_REGISTER_SYSCALL_HOOK] = handle_op_register_syscall_hook,
-    [HYPER_OP_FFI_EXEC] = handle_op_ffi_exec,
-    [HYPER_OP_KALLSYMS_LOOKUP] = handle_op_kallsyms_lookup,
-    [HYPER_OP_TRAMP_GENERATE] = handle_op_tramp_generate,
-    [HYPER_OP_HYPERFS_ADD_HYPERFILE] = handle_op_hyperfs_add_hyperfile,
+    [HYPER_OP_NONE] = NULL,
+#define X(lower, upper) [HYPER_OP_##upper] = handle_op_##lower,
+    PORTAL_OP_LIST
+#undef X
 };
 
 // bool -> was any work done?
