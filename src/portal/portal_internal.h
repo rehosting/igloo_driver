@@ -25,6 +25,7 @@
 #include "igloo_hypercall_consts.h"
 #include "portal.h"
 #include "portal_types.h"
+#include "portal_op_list.h"
 
 bool igloo_is_kernel_addr(unsigned long addr);
 
@@ -43,41 +44,9 @@ typedef void (*portal_op_handler)(portal_region *mem_region);
 // Helper function to get task based on pid from mem_region
 struct task_struct *get_target_task_by_id(portal_region *mem_region);
 
-// Memory operation handlers
-void handle_op_read(portal_region *mem_region);
-void handle_op_write(portal_region *mem_region);
-// Forward declaration for new handler
-void handle_op_read_ptr_array(portal_region *mem_region);
-void handle_op_read_fds(portal_region *mem_region);
-void handle_op_read_time(portal_region *mem_region);
-void handle_op_read_procargs(portal_region *mem_region);
-void handle_op_read_str(portal_region *mem_region);
-void handle_op_read_file(portal_region *mem_region);
-void handle_op_write_file(portal_region *mem_region);
-void handle_op_read_procenv(portal_region *mem_region);
-void handle_op_dump(portal_region *mem_region);
-void handle_op_exec(portal_region *mem_region);
-
-// OSI operation handlers
-void handle_op_osi_proc(portal_region *mem_region);
-void handle_op_osi_proc_handles(portal_region *mem_region);
-void handle_op_osi_mappings(portal_region *mem_region);
-void handle_op_osi_proc_mem(portal_region *mem_region);
-
-// Uprobe operation handlers
-void handle_op_register_uprobe(portal_region *mem_region);
-void handle_op_unregister_uprobe(portal_region *mem_region);
-
-// Syscall hook operation handlers
-void handle_op_register_syscall_hook(portal_region *mem_region);
-
-// FFI operation handler
-void handle_op_ffi_exec(portal_region *mem_region);
-void handle_op_kallsyms_lookup(portal_region *mem_region);
-
-void handle_op_tramp_generate(portal_region *mem_region);
-
-// Add prototype for the new handler
-void handle_op_hyperfs_add_hyperfile(portal_region *region);
+// Generate handler prototypes
+#define X(lower, upper) void handle_op_##lower(portal_region *mem_region);
+PORTAL_OP_LIST
+#undef X
 
 #endif /* __PORTAL_INTERNAL_H__ */
