@@ -9,7 +9,7 @@
 extern struct hlist_head syscall_hook_table[1024];
 extern struct hlist_head syscall_name_table[1024];
 extern struct hlist_head syscall_all_hooks;
-extern spinlock_t syscall_hook_lock;
+extern struct mutex syscall_hook_lock;
 
 // Using normalize_syscall_name and syscall_name_hash from syscalls_hc.h
 
@@ -48,7 +48,7 @@ void handle_op_register_syscall_hook(portal_region *mem_region)
     }
     
     // Add to the main hook table indexed by pointer address
-    spin_lock(&syscall_hook_lock);
+    mutex_lock(&syscall_hook_lock);
     hash_add_rcu(syscall_hook_table, &kernel_hook->hlist, (unsigned long)kernel_hook);
     
     // Also add to name-based hash table for faster lookups
@@ -61,7 +61,7 @@ void handle_op_register_syscall_hook(portal_region *mem_region)
         hash_add_rcu(syscall_name_table, &kernel_hook->name_hlist, name_hash);
     }
     
-    spin_unlock(&syscall_hook_lock);
+    mutex_unlock(&syscall_hook_lock);
     
     // Return the hook's memory address in the size field
     mem_region->header.size = (unsigned long)kernel_hook;

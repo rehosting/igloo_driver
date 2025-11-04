@@ -24,7 +24,7 @@
 struct hlist_head syscall_hook_table[1024];                /* Main table indexed by hook pointer */
 struct hlist_head syscall_name_table[1024];                /* Table indexed by syscall name hash */
 struct hlist_head syscall_all_hooks;                       /* Special list for "match all syscalls" hooks */
-DEFINE_SPINLOCK(syscall_hook_lock);
+DEFINE_MUTEX(syscall_hook_lock);
 
 /* Export symbols for use by other modules */
 EXPORT_SYMBOL(syscall_hook_table);
@@ -298,11 +298,11 @@ static long process_syscall_hooks(
     long modified_ret = orig_ret;
     struct kernel_syscall_hook *hook;
     int i;
-    rcu_read_lock();
+    mutex_lock(&syscall_hook_lock);
     fill_handler(&original_info, argc, args, syscall_name);
     // 1. Check the "match all syscalls" list first
     if (!hlist_empty(&syscall_all_hooks)) {
-        hlist_for_each_entry_rcu(hook, &syscall_all_hooks, name_hlist) {
+        hlist_for_each_entry(hook, &syscall_all_hooks, name_hlist) {
             bool matches = false;
             if (is_entry) {
                 matches = hook->hook.on_enter && hook_matches_syscall(hook, syscall_name, argc, args);
@@ -345,7 +345,7 @@ static long process_syscall_hooks(
     // 2. Check hooks specific to this syscall name
     if (syscall_name) {
         u32 name_hash = syscall_name_hash(syscall_name);
-        hash_for_each_possible_rcu(syscall_name_table, hook, name_hlist, name_hash) {
+        hash_for_each_possible(syscall_name_table, hook, name_hlist, name_hash) {
             bool matches = false;
             if (is_entry) {
                 matches = hook->hook.on_enter && hook_matches_syscall(hook, syscall_name, argc, args);
@@ -385,7 +385,7 @@ static long process_syscall_hooks(
             }
         }
     }
-    rcu_read_unlock();
+    mutex_unlock(&syscall_hook_lock);
     if (is_entry) {
         if (skip_syscall) {
             *skip_ret_val = skip_ret_val_local;
@@ -461,21 +461,20 @@ int unregister_syscall_hook(struct kernel_syscall_hook *hook_ptr)
     if (!hook_ptr)
         return -EINVAL;
     
-    spin_lock(&syscall_hook_lock);
+    mutex_lock(&syscall_hook_lock);
     
     // Remove from main hash table
     hash_del(&hook_ptr->hlist);
     
     // Remove from name-based hash table if it was added
     if (hook_ptr->hook.on_all) {
-        hlist_del_rcu(&hook_ptr->name_hlist);
+        hlist_del(&hook_ptr->name_hlist);
     } else if (hook_ptr->hook.name[0] != '\0') {
-        hlist_del_rcu(&hook_ptr->name_hlist);
+        hlist_del(&hook_ptr->name_hlist);
     }
+    kfree(hook_ptr);
     
-    spin_unlock(&syscall_hook_lock);
+    mutex_unlock(&syscall_hook_lock);
     
-    // Free the hook after RCU grace period
-    kfree_rcu(hook_ptr, rcu);
     return 0;
 }
