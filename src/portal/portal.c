@@ -4,6 +4,7 @@
 #include <linux/wait.h>
 #include <linux/sched.h>
 #include "portal_op_list.h"
+#include "ehypercall.h"
 
 uint64_t portal_interrupt = 0;
 
@@ -87,7 +88,7 @@ int igloo_portal(unsigned long num, unsigned long arg1, unsigned long arg2)
 
     for (;;) {
         // Make the hypercall to get the next operation from the hypervisor
-        ret = igloo_hypercall3(num, arg1, arg2, (unsigned long) region);
+        ret = igloo_hypercall4(num, arg1, arg2, (unsigned long) region, region->header.op);
         // if no responses -> break
         if (!handle_post_memregion(region)) {
             break;
