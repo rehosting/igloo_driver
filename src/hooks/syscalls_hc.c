@@ -298,8 +298,8 @@ static long process_syscall_hooks(
     long modified_ret = orig_ret;
     struct kernel_syscall_hook *hook;
     int i;
+    bool info_initialized = false;
     rcu_read_lock();
-    fill_handler(&original_info, argc, args, syscall_name);
     // 1. Check the "match all syscalls" list first
     if (!hlist_empty(&syscall_all_hooks)) {
         hlist_for_each_entry_rcu(hook, &syscall_all_hooks, name_hlist) {
@@ -310,6 +310,10 @@ static long process_syscall_hooks(
                 matches = hook->hook.on_return && hook_matches_syscall_return(hook, syscall_name, argc, args, modified_ret);
             }
             if (matches) {
+                if (unlikely(!info_initialized)) {
+                    fill_handler(&original_info, argc, args, syscall_name);
+                    info_initialized = true;
+                }
                 memcpy(&syscall_args_holder, &original_info, sizeof(struct syscall_event));
                 syscall_args_holder.hook = &hook->hook;
                 if (!is_entry) syscall_args_holder.retval = modified_ret;
@@ -353,6 +357,10 @@ static long process_syscall_hooks(
                 matches = hook->hook.on_return && hook_matches_syscall_return(hook, syscall_name, argc, args, modified_ret);
             }
             if (matches) {
+                if (unlikely(!info_initialized)) {
+                    fill_handler(&original_info, argc, args, syscall_name);
+                    info_initialized = true;
+                }
                 memcpy(&syscall_args_holder, &original_info, sizeof(struct syscall_event));
                 syscall_args_holder.hook = &hook->hook;
                 if (!is_entry) syscall_args_holder.retval = modified_ret;
