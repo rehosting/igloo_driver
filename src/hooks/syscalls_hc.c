@@ -19,6 +19,8 @@
 #include "portal/portal.h"
 #include "igloo_hypercall_consts.h"
 #include <linux/kallsyms.h>
+#include <linux/list.h>
+#include <linux/workqueue.h>
 
 /* Global hash tables for organizing hooks */
 struct hlist_head syscall_hook_table[1024];                /* Main table indexed by hook pointer */
@@ -52,7 +54,7 @@ void print_syscall_info(const struct syscall_event *sc, const char *prefix) {
         DBG_PRINTK( "IGLOO: %s NULL syscall structure\n", prefix ? prefix : "");
         return;
     }
-    
+
     printk(KERN_INFO "IGLOO: %s Syscall Info --------\n", prefix ? prefix : "");
     printk(KERN_INFO "  Hook Ptr: %p\n", sc->hook);
     printk(KERN_INFO "  Syscall Name: %s\n", sc->syscall_name);
@@ -61,7 +63,7 @@ void print_syscall_info(const struct syscall_event *sc, const char *prefix) {
     printk(KERN_INFO "  Skip: %d\n", sc->skip_syscall);
     printk(KERN_INFO "  Task: %p\n", sc->task);
     printk(KERN_INFO "  Regs: %p\n", sc->regs);
-    
+
     printk(KERN_INFO "  Arguments (%u):\n", sc->argc);
     for (i = 0; i < sc->argc && i < IGLOO_SYSCALL_MAXARGS; i++)
     {
@@ -73,11 +75,11 @@ void print_syscall_info(const struct syscall_event *sc, const char *prefix) {
 static inline void fill_handler(struct syscall_event *args, int argc, const unsigned long args_ptrs[], const char* syscall_name) {
     struct pt_regs *regs;
     int i;
-    
+
     // Fill the syscall structure with arguments
     args->skip_syscall = false;
     args->argc = argc;
-    
+
     // Copy syscall name into the structure (with bounds checking)
     if (syscall_name) {
         strncpy(args->syscall_name, syscall_name, SYSCALL_NAME_MAX_LEN - 1);
@@ -104,10 +106,10 @@ static inline void fill_handler(struct syscall_event *args, int argc, const unsi
 
     args->task = current;
     args->retval = 0; // Initialize to 0, will be set by hypercall
-    
+
     regs = task_pt_regs(current);
     args->regs = regs;
-    
+
     if (regs != NULL) {
         // Use safe way to get instruction pointer that works across architectures
         args->pc = instruction_pointer(regs);
@@ -130,37 +132,37 @@ static inline bool value_matches_filter(long value, const struct value_filter *f
     switch (filter->type) {
         case SYSCALLS_HC_FILTER_EXACT:
             return value == filter->value;
-            
+
         case SYSCALLS_HC_FILTER_GREATER:
             return value > filter->value;
-            
+
         case SYSCALLS_HC_FILTER_GREATER_EQUAL:
             return value >= filter->value;
-            
+
         case SYSCALLS_HC_FILTER_LESS:
             return value < filter->value;
-            
+
         case SYSCALLS_HC_FILTER_LESS_EQUAL:
             return value <= filter->value;
-            
+
         case SYSCALLS_HC_FILTER_NOT_EQUAL:
             return value != filter->value;
-            
+
         case SYSCALLS_HC_FILTER_RANGE:
             return value >= filter->min_value && value <= filter->max_value;
-            
+
         case SYSCALLS_HC_FILTER_SUCCESS:
             return value >= 0;
-            
+
         case SYSCALLS_HC_FILTER_ERROR:
             return value < 0;
-            
+
         case SYSCALLS_HC_FILTER_BITMASK_SET:
             return (value & filter->bitmask) == filter->bitmask;
-            
+
         case SYSCALLS_HC_FILTER_BITMASK_CLEAR:
             return (value & filter->bitmask) == 0;
-            
+
         default:
             // Unknown filter type, assume no match
             return false;
@@ -168,7 +170,7 @@ static inline bool value_matches_filter(long value, const struct value_filter *f
 }
 
 // Change hook_matches_syscall and hook_matches_syscall_return to take struct kernel_syscall_hook *
-static inline bool hook_matches_syscall(struct kernel_syscall_hook *hook, const char *syscall_name, 
+static inline bool hook_matches_syscall(struct kernel_syscall_hook *hook, const char *syscall_name,
                          int argc, const unsigned long args[])
 {
     if (!hook->hook.enabled){
@@ -265,7 +267,7 @@ static inline bool hook_matches_syscall(struct kernel_syscall_hook *hook, const 
     return true;
 }
 
-static inline bool hook_matches_syscall_return(struct kernel_syscall_hook *hook, const char *syscall_name, 
+static inline bool hook_matches_syscall_return(struct kernel_syscall_hook *hook, const char *syscall_name,
                                  int argc, const unsigned long args[], long retval)
 {
     struct value_filter *f;
@@ -463,27 +465,80 @@ int syscalls_hc_init(void) {
     return 0;
 }
 
-/* Unregister a syscall hook */
+/* Deferred unregistration so we can invoke from inside a syscall callback */
+struct deferred_unregister {
+    struct kernel_syscall_hook *hook;
+    struct list_head list;
+};
+static LIST_HEAD(deferred_unregister_list);
+static DEFINE_SPINLOCK(deferred_unregister_lock);
+
+static void process_deferred_unregisters(struct work_struct *work)
+{
+    struct deferred_unregister *deferred, *tmp;
+    LIST_HEAD(local_list);
+
+    // Move all pending unregistrations to local list
+    spin_lock(&deferred_unregister_lock);
+    list_splice_init(&deferred_unregister_list, &local_list);
+    spin_unlock(&deferred_unregister_lock);
+
+    // Process unregistrations outside of spinlock
+    list_for_each_entry_safe(deferred, tmp, &local_list, list) {
+        DBG_PRINTK("IGLOO: Processing deferred unregistration for hook %p\n",
+               deferred->hook);
+
+        // Actually unregister the hook
+        unregister_syscall_hook(deferred->hook);
+
+        // Clean up the deferred entry
+        list_del(&deferred->list);
+        kfree(deferred);
+    }
+}
+
+static DECLARE_WORK(deferred_unregister_work, process_deferred_unregisters);
+
+static int do_unregister_syscall_hook(struct kernel_syscall_hook *hook_ptr)
+{
+    if (!hook_ptr) {
+        return -EINVAL;
+    }
+
+    spin_lock(&syscall_hook_lock);
+
+    hash_del(&hook_ptr->hlist);
+    hlist_del_rcu(&hook_ptr->name_hlist);
+
+    spin_unlock(&syscall_hook_lock);
+
+    kfree_rcu(hook_ptr, rcu);
+
+    DBG_PRINTK("IGLOO: Unregistered syscall hook %p\n", hook_ptr);
+    return 0;
+}
+
+// Modified unregister function
 int unregister_syscall_hook(struct kernel_syscall_hook *hook_ptr)
 {
-    if (!hook_ptr)
-        return -EINVAL;
-    
-    spin_lock(&syscall_hook_lock);
-    
-    // Remove from main hash table
-    hash_del(&hook_ptr->hlist);
-    
-    // Remove from name-based hash table if it was added
-    if (hook_ptr->hook.on_all) {
-        hlist_del_rcu(&hook_ptr->name_hlist);
-    } else if (hook_ptr->hook.name[0] != '\0') {
-        hlist_del_rcu(&hook_ptr->name_hlist);
+    struct deferred_unregister *deferred;
+
+    // Check if we're in syscall processing context
+    if (in_interrupt() || rcu_read_lock_held()) {
+        // Defer the unregistration
+        deferred = kmalloc(sizeof(*deferred), GFP_ATOMIC);
+        if (!deferred) return -ENOMEM;
+
+        deferred->hook = hook_ptr;
+        spin_lock(&deferred_unregister_lock);
+        list_add_tail(&deferred->list, &deferred_unregister_list);
+        spin_unlock(&deferred_unregister_lock);
+
+        // Schedule work to process deferred unregistrations
+        schedule_work(&deferred_unregister_work);
+        return 0;
     }
-    
-    spin_unlock(&syscall_hook_lock);
-    
-    // Free the hook after RCU grace period
-    kfree_rcu(hook_ptr, rcu);
-    return 0;
+
+    // Safe to unregister immediately
+    return do_unregister_syscall_hook(hook_ptr);
 }
