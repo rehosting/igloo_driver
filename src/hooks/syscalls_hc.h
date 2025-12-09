@@ -41,18 +41,18 @@ struct syscall_hook {
     bool on_return;                                 /* Hook on syscall return */
     bool on_all;                                    /* Hook on all syscalls */
     char name[SYSCALL_NAME_MAX_LEN];                /* Name of syscall to hook */
-    
+
     /* PID filtering */
     bool pid_filter_enabled;                        /* Enable PID filtering */
     pid_t filter_pid;                               /* Process ID to filter on */
-    
+
     /* Process filtering */
     bool comm_filter_enabled;                       /* Enable process name filtering */
     char comm_filter[TASK_COMM_LEN];               /* Process name to match */
-    
+
     /* Argument filtering with complex comparisons */
     struct value_filter arg_filters[IGLOO_SYSCALL_MAXARGS]; /* Argument filters */
-    
+
     /* Return value filtering with complex comparisons */
     struct value_filter retval_filter;              /* Return value filter */
 };
@@ -84,9 +84,6 @@ extern struct hlist_head syscall_hook_table[1024];
 extern spinlock_t syscall_hook_lock;
 
 
-/* Unregister a syscall hook using its pointer */
-int unregister_syscall_hook(struct kernel_syscall_hook *hook_ptr);
-
 int syscalls_hc_init(void);
 
 /* Normalize syscall names by removing common prefixes like 'sys_', '_sys_', 'compat_sys_' */
@@ -94,26 +91,26 @@ static inline const char *normalize_syscall_name(const char *name)
 {
     if (!name)
         return NULL;
-        
+
     /* Skip leading underscores (e.g. _sys_) */
     while (*name == '_')
         name++;
-        
+
     /* Check for 'sys_' prefix */
     if (strncmp(name, "sys_", 4) == 0)
         return name + 4;
-        
+
     /* Check for 'compat_sys_' prefix */
     if (strncmp(name, "compat_sys_", 11) == 0)
         return name + 11;
-    
+
     /* Check for other arch-specific prefixes */
     if (strncmp(name, "arm64_sys_", 10) == 0)
         return name + 10;
-    
+
     if (strncmp(name, "riscv_sys_", 10) == 0)
         return name + 10;
-        
+
     return name;
 }
 
@@ -123,10 +120,10 @@ static inline u32 syscall_name_hash(const char *str)
     const char *normalized;
     if (!str)
         return 0;
-    
+
     // First normalize the syscall name to handle various prefixes
     normalized = normalize_syscall_name(str);
-    
+
     return full_name_hash(NULL, normalized, strlen(normalized));
 }
 
