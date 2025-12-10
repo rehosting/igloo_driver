@@ -139,7 +139,10 @@ void handle_op_unregister_syscall_hook(portal_region *mem_region)
     if (in_interrupt() || rcu_read_lock_held()) {
         // Defer the unregistration
         deferred = kmalloc(sizeof(*deferred), GFP_ATOMIC);
-        if (!deferred) return; // Might want to print an error, but surely something else will fall over
+        if (!deferred) {
+            mem_region->header.op = HYPER_RESP_READ_FAIL;
+            return;
+        }
 
         deferred->hook = hook_ptr;
         spin_lock(&deferred_unregister_lock);
@@ -148,9 +151,13 @@ void handle_op_unregister_syscall_hook(portal_region *mem_region)
 
         // Schedule work to process deferred unregistrations
         schedule_work(&deferred_unregister_work);
+        mem_region->header.op = HYPER_RESP_READ_NUM;
+        mem_region->header.size = (unsigned long)0;
         return;
     }
 
     // Safe to unregister immediately
     do_unregister_syscall_hook(hook_ptr);
+    mem_region->header.op = HYPER_RESP_READ_NUM;
+    mem_region->header.size = (unsigned long)0;
 }
