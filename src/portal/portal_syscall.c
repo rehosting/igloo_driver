@@ -20,12 +20,12 @@ void handle_op_register_syscall_hook(portal_region *mem_region)
 {
     struct syscall_hook *hook;
     struct kernel_syscall_hook *kernel_hook;
-    
+
     igloo_pr_debug("igloo: Handling HYPER_OP_REGISTER_SYSCALL_HOOK\n");
-    
+
     // Map the data buffer to our hook structure
     hook = (struct syscall_hook *)PORTAL_DATA(mem_region);
-    
+
     // Allocate a new kernel hook structure
     kernel_hook = kzalloc(sizeof(*kernel_hook), GFP_KERNEL);
     if (!kernel_hook) {
@@ -33,7 +33,7 @@ void handle_op_register_syscall_hook(portal_region *mem_region)
         mem_region->header.op = HYPER_RESP_READ_FAIL;
         return;
     }
-    
+
     // Copy the hook configuration
     memcpy(&kernel_hook->hook, hook, sizeof(struct syscall_hook));
     kernel_hook->in_use = true;
@@ -46,11 +46,11 @@ void handle_op_register_syscall_hook(portal_region *mem_region)
     } else {
         kernel_hook->normalized_name[0] = '\0';
     }
-    
+
     // Add to the main hook table indexed by pointer address
     spin_lock(&syscall_hook_lock);
     hash_add_rcu(syscall_hook_table, &kernel_hook->hlist, (unsigned long)kernel_hook);
-    
+
     // Also add to name-based hash table for faster lookups
     if (kernel_hook->hook.on_all) {
         // Special case for hooks that want all syscalls
@@ -60,10 +60,104 @@ void handle_op_register_syscall_hook(portal_region *mem_region)
         u32 name_hash = syscall_name_hash(kernel_hook->hook.name);
         hash_add_rcu(syscall_name_table, &kernel_hook->name_hlist, name_hash);
     }
-    
+
     spin_unlock(&syscall_hook_lock);
-    
+
     // Return the hook's memory address in the size field
     mem_region->header.size = (unsigned long)kernel_hook;
     mem_region->header.op = HYPER_RESP_READ_NUM;
+}
+
+/* Deferred unregistration so we can invoke from inside a syscall callback */
+struct deferred_unregister {
+    struct kernel_syscall_hook *hook;
+    struct list_head list;
+};
+static LIST_HEAD(deferred_unregister_list);
+static DEFINE_SPINLOCK(deferred_unregister_lock);
+
+static int do_unregister_syscall_hook(struct kernel_syscall_hook *hook_ptr)
+{
+    if (!hook_ptr) {
+        return -EINVAL;
+    }
+
+    spin_lock(&syscall_hook_lock);
+
+    hash_del(&hook_ptr->hlist);
+    hlist_del_rcu(&hook_ptr->name_hlist);
+
+    spin_unlock(&syscall_hook_lock);
+
+    kfree_rcu(hook_ptr, rcu);
+
+    igloo_pr_debug("igloo: Unregistered syscall hook %p\n", hook_ptr);
+    return 0;
+}
+
+static void process_deferred_unregisters(struct work_struct *work)
+{
+    struct deferred_unregister *deferred, *tmp;
+    LIST_HEAD(local_list);
+
+    // Move all pending unregistrations to local list
+    spin_lock(&deferred_unregister_lock);
+    list_splice_init(&deferred_unregister_list, &local_list);
+    spin_unlock(&deferred_unregister_lock);
+
+    // Process unregistrations outside of spinlock
+    list_for_each_entry_safe(deferred, tmp, &local_list, list) {
+        igloo_pr_debug("IGLOO: Processing deferred unregistration for hook %p\n",
+               deferred->hook);
+
+        // Actually unregister the hook
+        do_unregister_syscall_hook(deferred->hook);
+
+        // Clean up the deferred entry
+        list_del(&deferred->list);
+        kfree(deferred);
+    }
+}
+
+static DECLARE_WORK(deferred_unregister_work, process_deferred_unregisters);
+
+
+void handle_op_unregister_syscall_hook(portal_region *mem_region)
+{
+    struct deferred_unregister *deferred;
+    struct kernel_syscall_hook *hook_ptr;
+
+    igloo_pr_debug("igloo: Handling HYPER_OP_UNREGISTER_SYSCALL_HOOK\n");
+
+    // Map the data buffer to our hook structure
+    hook_ptr = (struct kernel_syscall_hook *)PORTAL_DATA(mem_region);
+
+    //First, disable hook
+    WRITE_ONCE(hook_ptr->hook.enabled, false);
+
+    // Check if we're in syscall processing context
+    if (in_interrupt() || rcu_read_lock_held()) {
+        // Defer the unregistration
+        deferred = kmalloc(sizeof(*deferred), GFP_ATOMIC);
+        if (!deferred) {
+            mem_region->header.op = HYPER_RESP_READ_FAIL;
+            return;
+        }
+
+        deferred->hook = hook_ptr;
+        spin_lock(&deferred_unregister_lock);
+        list_add_tail(&deferred->list, &deferred_unregister_list);
+        spin_unlock(&deferred_unregister_lock);
+
+        // Schedule work to process deferred unregistrations
+        schedule_work(&deferred_unregister_work);
+        mem_region->header.op = HYPER_RESP_READ_NUM;
+        mem_region->header.size = (unsigned long)0;
+        return;
+    }
+
+    // Safe to unregister immediately
+    do_unregister_syscall_hook(hook_ptr);
+    mem_region->header.op = HYPER_RESP_READ_NUM;
+    mem_region->header.size = (unsigned long)0;
 }

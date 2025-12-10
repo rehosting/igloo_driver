@@ -300,8 +300,8 @@ static long process_syscall_hooks(
     long modified_ret = orig_ret;
     struct kernel_syscall_hook *hook;
     int i;
-    bool info_initialized = false;
     rcu_read_lock();
+    fill_handler(&original_info, argc, args, syscall_name);
     // 1. Check the "match all syscalls" list first
     if (!hlist_empty(&syscall_all_hooks)) {
         hlist_for_each_entry_rcu(hook, &syscall_all_hooks, name_hlist) {
@@ -312,10 +312,6 @@ static long process_syscall_hooks(
                 matches = hook->hook.on_return && hook_matches_syscall_return(hook, syscall_name, argc, args, modified_ret);
             }
             if (matches) {
-                if (unlikely(!info_initialized)) {
-                    fill_handler(&original_info, argc, args, syscall_name);
-                    info_initialized = true;
-                }
                 memcpy(&syscall_args_holder, &original_info, sizeof(struct syscall_event));
                 syscall_args_holder.hook = &hook->hook;
                 if (!is_entry) syscall_args_holder.retval = modified_ret;
@@ -359,10 +355,6 @@ static long process_syscall_hooks(
                 matches = hook->hook.on_return && hook_matches_syscall_return(hook, syscall_name, argc, args, modified_ret);
             }
             if (matches) {
-                if (unlikely(!info_initialized)) {
-                    fill_handler(&original_info, argc, args, syscall_name);
-                    info_initialized = true;
-                }
                 memcpy(&syscall_args_holder, &original_info, sizeof(struct syscall_event));
                 syscall_args_holder.hook = &hook->hook;
                 if (!is_entry) syscall_args_holder.retval = modified_ret;
@@ -463,82 +455,4 @@ int syscalls_hc_init(void) {
     /* Initialize the hash table */
     hash_init(syscall_hook_table);
     return 0;
-}
-
-/* Deferred unregistration so we can invoke from inside a syscall callback */
-struct deferred_unregister {
-    struct kernel_syscall_hook *hook;
-    struct list_head list;
-};
-static LIST_HEAD(deferred_unregister_list);
-static DEFINE_SPINLOCK(deferred_unregister_lock);
-
-static void process_deferred_unregisters(struct work_struct *work)
-{
-    struct deferred_unregister *deferred, *tmp;
-    LIST_HEAD(local_list);
-
-    // Move all pending unregistrations to local list
-    spin_lock(&deferred_unregister_lock);
-    list_splice_init(&deferred_unregister_list, &local_list);
-    spin_unlock(&deferred_unregister_lock);
-
-    // Process unregistrations outside of spinlock
-    list_for_each_entry_safe(deferred, tmp, &local_list, list) {
-        DBG_PRINTK("IGLOO: Processing deferred unregistration for hook %p\n",
-               deferred->hook);
-
-        // Actually unregister the hook
-        unregister_syscall_hook(deferred->hook);
-
-        // Clean up the deferred entry
-        list_del(&deferred->list);
-        kfree(deferred);
-    }
-}
-
-static DECLARE_WORK(deferred_unregister_work, process_deferred_unregisters);
-
-static int do_unregister_syscall_hook(struct kernel_syscall_hook *hook_ptr)
-{
-    if (!hook_ptr) {
-        return -EINVAL;
-    }
-
-    spin_lock(&syscall_hook_lock);
-
-    hash_del(&hook_ptr->hlist);
-    hlist_del_rcu(&hook_ptr->name_hlist);
-
-    spin_unlock(&syscall_hook_lock);
-
-    kfree_rcu(hook_ptr, rcu);
-
-    DBG_PRINTK("IGLOO: Unregistered syscall hook %p\n", hook_ptr);
-    return 0;
-}
-
-// Modified unregister function
-int unregister_syscall_hook(struct kernel_syscall_hook *hook_ptr)
-{
-    struct deferred_unregister *deferred;
-
-    // Check if we're in syscall processing context
-    if (in_interrupt() || rcu_read_lock_held()) {
-        // Defer the unregistration
-        deferred = kmalloc(sizeof(*deferred), GFP_ATOMIC);
-        if (!deferred) return -ENOMEM;
-
-        deferred->hook = hook_ptr;
-        spin_lock(&deferred_unregister_lock);
-        list_add_tail(&deferred->list, &deferred_unregister_list);
-        spin_unlock(&deferred_unregister_lock);
-
-        // Schedule work to process deferred unregistrations
-        schedule_work(&deferred_unregister_work);
-        return 0;
-    }
-
-    // Safe to unregister immediately
-    return do_unregister_syscall_hook(hook_ptr);
 }
