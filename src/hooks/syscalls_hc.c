@@ -187,13 +187,13 @@ static inline bool hook_matches_syscall(struct kernel_syscall_hook *hook, const 
     } else if (hook->hook.name[0] != '\0') {
         return false;
     }
-    if (hook->hook.comm_filter_enabled) {
-        if (strncmp(current->comm, hook->hook.comm_filter, TASK_COMM_LEN) != 0){
+    if (hook->hook.pid_filter_enabled) {
+        if (task_pid_nr(current) != hook->hook.filter_pid){
             return false;
         }
     }
-    if (hook->hook.pid_filter_enabled) {
-        if (task_pid_nr(current) != hook->hook.filter_pid){
+    if (hook->hook.comm_filter_enabled) {
+        if (strncmp(current->comm, hook->hook.comm_filter, TASK_COMM_LEN) != 0){
             return false;
         }
     }
