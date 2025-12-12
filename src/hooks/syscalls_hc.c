@@ -165,7 +165,21 @@ static inline bool value_matches_filter(long value, const struct value_filter *f
 
         case SYSCALLS_HC_FILTER_BITMASK_CLEAR:
             return (value & filter->bitmask) == 0;
-
+        case SYSCALLS_HC_FILTER_STR_EXACT:
+            if (!value || !filter->pattern) return false;
+            return check_str_exact(value, filter->pattern, filter->pattern_len);
+            
+        case SYSCALLS_HC_FILTER_STR_STARTSWITH:
+            if (!value || !filter->pattern) return false;
+            return check_str_startswith(value, filter->pattern, filter->pattern_len);
+            
+        case SYSCALLS_HC_FILTER_STR_ENDSWITH:
+            if (!value || !filter->pattern) return false;
+            return check_str_endswith(value, filter->pattern, filter->pattern_len);
+            
+        case SYSCALLS_HC_FILTER_STR_CONTAINS:
+            if (!value || !filter->pattern) return false;
+            return check_str_contains(value, filter->pattern, filter->pattern_len);
         default:
             // Unknown filter type, assume no match
             return false;
@@ -570,6 +584,7 @@ static DECLARE_WORK(deferred_unregister_work, process_deferred_unregisters);
 
 static int do_unregister_syscall_hook(struct kernel_syscall_hook *hook_ptr)
 {
+    int i;
     if (!hook_ptr) {
         return -EINVAL;
     }
@@ -580,6 +595,15 @@ static int do_unregister_syscall_hook(struct kernel_syscall_hook *hook_ptr)
     hlist_del_rcu(&hook_ptr->name_hlist);
 
     spin_unlock(&syscall_hook_lock);
+
+    for (i = 0; i < IGLOO_SYSCALL_MAXARGS; i++) {
+        if (hook_ptr->hook.arg_filters[i].pattern) {
+            kfree(hook_ptr->hook.arg_filters[i].pattern);
+        }
+    }
+    if (hook_ptr->hook.retval_filter.pattern) {
+        kfree(hook_ptr->hook.retval_filter.pattern);
+    }
 
     kfree_rcu(hook_ptr, rcu);
     atomic_dec(&global_syscall_hook_count);

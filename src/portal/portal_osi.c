@@ -37,6 +37,8 @@ static inline void *portal_anon_vma_name(struct vm_area_struct *vma)
 static void portal_get_vma_name(struct vm_area_struct *vma, char *buf, size_t buf_size)
 {
     struct mm_struct *mm = vma->vm_mm;
+    const char *arch_name, *name;
+    char *path_buf, *path;
 
     // Only declare anon_name on kernels that support it (5.17+)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
@@ -57,9 +59,9 @@ static void portal_get_vma_name(struct vm_area_struct *vma, char *buf, size_t bu
 #endif
 
         // Standard file path (Compiles on all versions)
-        char *path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
+        path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
         if (path_buf) {
-            char *path = d_path(&vma->vm_file->f_path, path_buf, PATH_MAX);
+            path = d_path(&vma->vm_file->f_path, path_buf, PATH_MAX);
             if (!IS_ERR(path)) {
                 strncpy(buf, path, buf_size - 1);
             } else {
@@ -73,7 +75,7 @@ static void portal_get_vma_name(struct vm_area_struct *vma, char *buf, size_t bu
 
     // 2. Specific VMA Operations
     if (vma->vm_ops && vma->vm_ops->name) {
-        const char *name = vma->vm_ops->name(vma);
+        name = vma->vm_ops->name(vma);
         if (name) {
             strncpy(buf, name, buf_size - 1);
             buf[buf_size - 1] = '\0';
@@ -82,7 +84,7 @@ static void portal_get_vma_name(struct vm_area_struct *vma, char *buf, size_t bu
     }
 
     // 3. Architecture specific
-    const char *arch_name = arch_vma_name(vma);
+    arch_name = arch_vma_name(vma);
     if (arch_name) {
         strncpy(buf, arch_name, buf_size - 1);
         buf[buf_size - 1] = '\0';
