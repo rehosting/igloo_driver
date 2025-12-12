@@ -584,6 +584,7 @@ static DECLARE_WORK(deferred_unregister_work, process_deferred_unregisters);
 
 static int do_unregister_syscall_hook(struct kernel_syscall_hook *hook_ptr)
 {
+    int i;
     if (!hook_ptr) {
         return -EINVAL;
     }
