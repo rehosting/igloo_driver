@@ -22,6 +22,10 @@ enum value_filter_type {
     SYSCALLS_HC_FILTER_ERROR,            /* < 0 (error, for return values) */
     SYSCALLS_HC_FILTER_BITMASK_SET,      /* All specified bits are set */
     SYSCALLS_HC_FILTER_BITMASK_CLEAR,    /* All specified bits are clear */
+    SYSCALLS_HC_FILTER_STR_EXACT,        /* Exact string match */
+    SYSCALLS_HC_FILTER_STR_CONTAINS,     /* String contains substring */
+    SYSCALLS_HC_FILTER_STR_STARTSWITH,   /* String starts with prefix */
+    SYSCALLS_HC_FILTER_STR_ENDSWITH,     /* String ends with suffix */
 };
 
 /* Value filter structure for complex comparisons */
@@ -32,6 +36,8 @@ struct value_filter {
     long min_value;                  /* Minimum value for range filter */
     long max_value;                  /* Maximum value for range filter */
     unsigned long bitmask;           /* Bitmask for bit operations */
+    char *pattern;                   /* String value for string comparisons */
+    u32 pattern_len;                 /* Length of string pattern */
 };
 
 /* Syscall hook structure */
@@ -88,6 +94,58 @@ extern spinlock_t syscall_hook_lock;
 int unregister_syscall_hook(struct kernel_syscall_hook *hook_ptr);
 
 int syscalls_hc_init(void);
+
+/* Helper for chunked comparison to avoid large stack buffers */
+#define CMP_CHUNK_SIZE 64
+
+static inline bool check_str_startswith(long user_ptr, const char *pattern, u32 len) {
+    char buf[CMP_CHUNK_SIZE];
+    u32 offset = 0;
+    long ret;
+    
+    while (offset < len) {
+        int chunk = (len - offset > CMP_CHUNK_SIZE) ? CMP_CHUNK_SIZE : (len - offset);
+        ret = strncpy_from_user(buf, (const char __user *)(user_ptr + offset), chunk);
+        if (ret < chunk) return false; // EFAULT or hit null too early
+        if (memcmp(buf, pattern + offset, chunk) != 0) return false;
+        offset += chunk;
+    }
+    return true;
+}
+
+static inline bool check_str_exact(long user_ptr, const char *pattern, u32 len) {
+    char buf[1];
+    // Check prefix match
+    if (!check_str_startswith(user_ptr, pattern, len)) return false;
+    // Verify null termination at len
+    if (strncpy_from_user(buf, (const char __user *)(user_ptr + len), 1) != 1) return false;
+    return buf[0] == '\0';
+}
+
+static inline bool check_str_endswith(long user_ptr, const char *pattern, u32 pat_len) {
+    long str_len = strnlen_user((const char __user *)user_ptr, 32768); // Soft limit 32KB
+    if (str_len <= 0 || str_len - 1 < pat_len) return false;
+    return check_str_startswith(user_ptr + (str_len - 1 - pat_len), pattern, pat_len);
+}
+
+static inline bool check_str_contains(long user_ptr, const char *pattern, u32 pat_len) {
+    // Naive scanning implementation
+    char buf[CMP_CHUNK_SIZE];
+    long str_len = strnlen_user((const char __user *)user_ptr, 32768);
+    long i;
+    
+    if (str_len <= 0 || str_len - 1 < pat_len) return false;
+    
+    // Optimization: find first char then check prefix
+    for (i = 0; i <= str_len - 1 - pat_len; i++) {
+        long ret = strncpy_from_user(buf, (const char __user *)(user_ptr + i), 1);
+        if (ret != 1) return false;
+        if (buf[0] == pattern[0]) {
+            if (check_str_startswith(user_ptr + i, pattern, pat_len)) return true;
+        }
+    }
+    return false;
+}
 
 /* Normalize syscall names by removing common prefixes like 'sys_', '_sys_', 'compat_sys_' */
 static inline const char *normalize_syscall_name(const char *name)
