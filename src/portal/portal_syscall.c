@@ -10,6 +10,7 @@ extern struct hlist_head syscall_hook_table[1024];
 extern struct hlist_head syscall_name_table[1024];
 extern struct hlist_head syscall_all_hooks;
 extern spinlock_t syscall_hook_lock;
+extern atomic_t global_syscall_hook_count;
 
 // Using normalize_syscall_name and syscall_name_hash from syscalls_hc.h
 
@@ -62,6 +63,7 @@ void handle_op_register_syscall_hook(portal_region *mem_region)
     }
     
     spin_unlock(&syscall_hook_lock);
+    atomic_inc(&global_syscall_hook_count);
     
     // Return the hook's memory address in the size field
     mem_region->header.size = (unsigned long)kernel_hook;

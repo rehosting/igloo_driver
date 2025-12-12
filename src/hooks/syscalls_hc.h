@@ -130,4 +130,13 @@ static inline u32 syscall_name_hash(const char *str)
     return full_name_hash(NULL, normalized, strlen(normalized));
 }
 
+/* Hash a syscall name for lookups - normalizes the name first */
+static inline u32 syscall_normalized_name_hash(const char *str)
+{
+    if (!str)
+        return 0;
+    
+    return full_name_hash(NULL, str, strlen(str));
+}
+
 #endif /* _SYSCALLS_HC_H */
