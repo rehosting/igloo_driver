@@ -94,6 +94,15 @@ static void unregister_syscall_deferred(struct work_struct *work)
     // 3. Decrement global count
     atomic_dec(&global_syscall_hook_count);
 
+    for (i = 0; i < IGLOO_SYSCALL_MAXARGS; i++) {
+        if (hook_ptr->hook.arg_filters[i].pattern) {
+            kfree(hook_ptr->hook.arg_filters[i].pattern);
+        }
+    }
+    if (hook_ptr->hook.retval_filter.pattern) {
+        kfree(hook_ptr->hook.retval_filter.pattern);
+    }
+
     // 4. Free memory safely using RCU
     kfree_rcu(hook_ptr, rcu);
 

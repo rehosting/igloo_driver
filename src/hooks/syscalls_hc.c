@@ -165,7 +165,21 @@ static inline bool value_matches_filter(long value, const struct value_filter *f
 
         case SYSCALLS_HC_FILTER_BITMASK_CLEAR:
             return (value & filter->bitmask) == 0;
-
+        case SYSCALLS_HC_FILTER_STR_EXACT:
+            if (!value || !filter->pattern) return false;
+            return check_str_exact(value, filter->pattern, filter->pattern_len);
+            
+        case SYSCALLS_HC_FILTER_STR_STARTSWITH:
+            if (!value || !filter->pattern) return false;
+            return check_str_startswith(value, filter->pattern, filter->pattern_len);
+            
+        case SYSCALLS_HC_FILTER_STR_ENDSWITH:
+            if (!value || !filter->pattern) return false;
+            return check_str_endswith(value, filter->pattern, filter->pattern_len);
+            
+        case SYSCALLS_HC_FILTER_STR_CONTAINS:
+            if (!value || !filter->pattern) return false;
+            return check_str_contains(value, filter->pattern, filter->pattern_len);
         default:
             // Unknown filter type, assume no match
             return false;
