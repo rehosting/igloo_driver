@@ -6,44 +6,74 @@
 #include <linux/mm.h>        // mm / vma list
 #include <linux/fs.h>        // file_inode for older kernels
 #include <linux/ktime.h> // Add this include for ktime_get_ns
-#ifndef file_user_inode
-#define file_user_inode(file) file_inode(file)
+#include <linux/version.h>
+#include <linux/mm.h>
+#include <linux/fs.h>
+#include <linux/sched.h>
+#include <linux/dcache.h>
+#include <linux/mm_types.h>
+
+/* Compat helper for file inode access (changed ~5.15) */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)
+static inline struct inode *file_user_inode(struct file *file)
+{
+    return file_inode(file);
+}
 #endif
 
-/* Helper function to get VMA name, similar to get_vma_name in task_mmu.c */
+/* Compat helper for anon names (introduced 5.17) */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
+static inline struct anon_vma_name *portal_anon_vma_name(struct vm_area_struct *vma)
+{
+    return anon_vma_name(vma);
+}
+#else
+static inline void *portal_anon_vma_name(struct vm_area_struct *vma)
+{
+    return NULL;
+}
+#endif
+
 static void portal_get_vma_name(struct vm_area_struct *vma, char *buf, size_t buf_size)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,8,0)
-    struct anon_vma_name *anon_name = vma->vm_mm ? anon_vma_name(vma) : NULL;
-#endif
-    const char *name = NULL;
+    struct mm_struct *mm = vma->vm_mm;
 
+    // Only declare anon_name on kernels that support it (5.17+)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
+    struct anon_vma_name *anon_name = mm ? portal_anon_vma_name(vma) : NULL;
+#endif
+
+    // Default to empty string
+    buf[0] = '\0';
+
+    // 1. File-backed mappings
     if (vma->vm_file) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,8,0)
+        // This block is only compiled on newer kernels
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
         if (anon_name) {
             snprintf(buf, buf_size, "[anon_shmem:%s]", anon_name->name);
             return;
-        } else
-#endif
-        {
-            char *path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
-            if (path_buf) {
-                char *path = d_path(&vma->vm_file->f_path, path_buf, PATH_MAX);
-                if (!IS_ERR(path)) {
-                    strncpy(buf, path, buf_size - 1);
-                    buf[buf_size - 1] = '\0';
-                } else {
-                    strncpy(buf, "[unknown file]", buf_size - 1);
-                    buf[buf_size - 1] = '\0';
-                }
-                kfree(path_buf);
-            }
-            return;
         }
+#endif
+
+        // Standard file path (Compiles on all versions)
+        char *path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
+        if (path_buf) {
+            char *path = d_path(&vma->vm_file->f_path, path_buf, PATH_MAX);
+            if (!IS_ERR(path)) {
+                strncpy(buf, path, buf_size - 1);
+            } else {
+                strncpy(buf, "[unknown file]", buf_size - 1);
+            }
+            buf[buf_size - 1] = '\0';
+            kfree(path_buf);
+        }
+        return;
     }
 
+    // 2. Specific VMA Operations
     if (vma->vm_ops && vma->vm_ops->name) {
-        name = vma->vm_ops->name(vma);
+        const char *name = vma->vm_ops->name(vma);
         if (name) {
             strncpy(buf, name, buf_size - 1);
             buf[buf_size - 1] = '\0';
@@ -51,41 +81,44 @@ static void portal_get_vma_name(struct vm_area_struct *vma, char *buf, size_t bu
         }
     }
 
-    name = arch_vma_name(vma);
-    if (name) {
-        strncpy(buf, name, buf_size - 1);
+    // 3. Architecture specific
+    const char *arch_name = arch_vma_name(vma);
+    if (arch_name) {
+        strncpy(buf, arch_name, buf_size - 1);
         buf[buf_size - 1] = '\0';
         return;
     }
 
-    if (!vma->vm_mm) {
+    // 4. Special Mappings
+    if (!mm) {
         strncpy(buf, "[vdso]", buf_size - 1);
         buf[buf_size - 1] = '\0';
         return;
     }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0)
-    if (vma_is_initial_heap(vma)) {
+    // HEAP Check (Universal 4.10+ logic)
+    if (vma->vm_start <= mm->brk && 
+        vma->vm_end >= mm->start_brk) {
         strncpy(buf, "[heap]", buf_size - 1);
         buf[buf_size - 1] = '\0';
         return;
     }
 
-    if (vma_is_initial_stack(vma)) {
+    // STACK Check (Universal 4.10+ logic)
+    if (vma->vm_start <= mm->start_stack && 
+        vma->vm_end >= mm->start_stack) {
         strncpy(buf, "[stack]", buf_size - 1);
         buf[buf_size - 1] = '\0';
         return;
     }
-#endif
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,8,0)
+    // 5. Named Anonymous (Only compiled on newer kernels)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
     if (anon_name) {
         snprintf(buf, buf_size, "[anon:%s]", anon_name->name);
         return;
     }
 #endif
-    strncpy(buf, "[anonymous]", buf_size - 1);
-    buf[buf_size - 1] = '\0';
 }
 
 void handle_op_osi_proc(portal_region *mem_region)
