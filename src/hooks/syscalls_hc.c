@@ -22,6 +22,9 @@
 #include <linux/list.h>
 #include <linux/workqueue.h>
 
+/* [ADD] Global counter to allow early exit if no hooks exist */
+atomic_t global_syscall_hook_count = ATOMIC_INIT(0);
+
 /* Global hash tables for organizing hooks */
 struct hlist_head syscall_hook_table[1024];                /* Main table indexed by hook pointer */
 struct hlist_head syscall_name_table[1024];                /* Table indexed by syscall name hash */
@@ -180,8 +183,7 @@ static inline bool hook_matches_syscall(struct kernel_syscall_hook *hook, const 
         return true;
     }
     if (syscall_name && hook->hook.name[0] != '\0') {
-        const char *normalized_syscall = normalize_syscall_name(syscall_name);
-        if (strcmp(hook->normalized_name, normalized_syscall) != 0) {
+        if (strcmp(hook->normalized_name, syscall_name) != 0) {
             return false;
         }
     } else if (hook->hook.name[0] != '\0') {
@@ -318,26 +320,29 @@ static long process_syscall_hooks(
     int capacity = IGLOO_STACK_BATCH_SIZE;
     bool template_initialized = false;
     bool using_heap = false;
-    char *scname;
-    int i;
-    
     long modified_ret = orig_ret;
     long skip_ret_val_local = 0;
     bool skip_syscall = false;
+    const char *normsc;
+    u32 name_hash;
+    int i;
+
+    if (atomic_read(&global_syscall_hook_count) == 0) {
+        return is_entry ? 0 : orig_ret;
+    }
+    normsc = normalize_syscall_name(syscall_name);
+    name_hash = syscall_normalized_name_hash(normsc);
     rcu_read_lock();
     // 1. Check the "match all syscalls" list first
     if (!hlist_empty(&syscall_all_hooks)) {
         hlist_for_each_entry_rcu(hook, &syscall_all_hooks, name_hlist) {
-            bool matches = false;
-            if (is_entry){
-                matches = (hook->hook.on_enter && hook_matches_syscall(hook, syscall_name, argc, args));
-            } else {
-                matches = (hook->hook.on_return && hook_matches_syscall_return(hook, syscall_name, argc, args, modified_ret));
-            }
+             bool matches = is_entry ? 
+                (hook->hook.on_enter && hook_matches_syscall(hook, normsc, argc, args)) :
+                (hook->hook.on_return && hook_matches_syscall_return(hook, normsc, argc, args, modified_ret));
             if (matches) {
                 if (match_count < IGLOO_STACK_BATCH_SIZE) {
                      if (unlikely(!template_initialized)) {
-                        fill_handler(&template_event, argc, args, syscall_name);
+                        fill_handler(&template_event, argc, args, normsc);
                         template_initialized = true;
                     }
                     capture_syscall_event(&batch[match_count], hook, &template_event, is_entry, modified_ret);
@@ -348,18 +353,15 @@ static long process_syscall_hooks(
     }
 
     // Check named list
-    if (syscall_name) {
-        u32 name_hash = syscall_name_hash(syscall_name);
+    if (normsc) {
         hash_for_each_possible_rcu(syscall_name_table, hook, name_hlist, name_hash) {
-            if (is_entry){
-                matches = (hook->hook.on_enter && hook_matches_syscall(hook, syscall_name, argc, args));
-            } else {
-                matches = (hook->hook.on_return && hook_matches_syscall_return(hook, syscall_name, argc, args, modified_ret));
-            }
+            bool matches = is_entry ? 
+                        (hook->hook.on_enter && hook_matches_syscall(hook, normsc, argc, args)) :
+                        (hook->hook.on_return && hook_matches_syscall_return(hook, normsc, argc, args, modified_ret));
             if (matches) {
                 if (match_count < IGLOO_STACK_BATCH_SIZE) {
                      if (unlikely(!template_initialized)) {
-                        fill_handler(&template_event, argc, args, syscall_name);
+                        fill_handler(&template_event, argc, args, normsc);
                         template_initialized = true;
                     }
                     capture_syscall_event(&batch[match_count], hook, &template_event, is_entry, modified_ret);
@@ -408,11 +410,10 @@ static long process_syscall_hooks(
             
             // Re-scan named list
             if (syscall_name) {
-                u32 name_hash = syscall_name_hash(syscall_name);
                 hash_for_each_possible_rcu(syscall_name_table, hook, name_hlist, name_hash) {
                     bool matches = is_entry ? 
-                        (hook->hook.on_enter && hook_matches_syscall(hook, syscall_name, argc, args)) :
-                        (hook->hook.on_return && hook_matches_syscall_return(hook, syscall_name, argc, args, modified_ret));
+                        (hook->hook.on_enter && hook_matches_syscall(hook, normsc, argc, args)) :
+                        (hook->hook.on_return && hook_matches_syscall_return(hook, normsc, argc, args, modified_ret));
                     
                     if (matches && match_count < capacity) {
                         capture_syscall_event(&batch[match_count], hook, &template_event, is_entry, modified_ret);
@@ -581,6 +582,7 @@ static int do_unregister_syscall_hook(struct kernel_syscall_hook *hook_ptr)
     spin_unlock(&syscall_hook_lock);
 
     kfree_rcu(hook_ptr, rcu);
+    atomic_dec(&global_syscall_hook_count);
 
     DBG_PRINTK("IGLOO: Unregistered syscall hook %p\n", hook_ptr);
     return 0;
