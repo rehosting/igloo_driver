@@ -4,6 +4,7 @@
 #include <linux/types.h>
 #include <linux/spinlock.h>
 #include <linux/hashtable.h>
+#include <linux/uaccess.h>
 
 #include "igloo_syscall_macros.h"
 
