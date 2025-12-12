@@ -118,3 +118,49 @@ struct portal_hyperfs_add_hyperfile_args {
     uint64_t file_name_offset; // Offset to file name string in data buffer
     uint64_t fops_ptr;         // Pointer to struct file_operations
 };
+
+
+#define PROCFS_MAX_PATH 256
+
+// Universal proc ops struct
+struct igloo_proc_ops {
+	int     (*open)(struct inode *, struct file *);
+	ssize_t (*read)(struct file *, char __user *, size_t, loff_t *);
+	ssize_t (*read_iter)(struct kiocb *, struct iov_iter *);
+	ssize_t (*write)(struct file *, const char __user *, size_t, loff_t *);
+	loff_t  (*lseek)(struct file *, loff_t, int);
+	int     (*release)(struct inode *, struct file *);
+	unsigned int (*poll)(struct file *, struct poll_table_struct *);
+	long     (*ioctl)(struct file *, unsigned int, unsigned long);
+#ifdef CONFIG_COMPAT
+	long     (*compat_ioctl)(struct file *, unsigned int, unsigned long);
+#endif
+	int      (*mmap)(struct file *, struct vm_area_struct *);
+	unsigned long (*get_unmapped_area)(struct file *,
+					   unsigned long,
+					   unsigned long,
+					   unsigned long,
+					   unsigned long);
+};
+
+struct portal_procfs_create_req {
+    char path[PROCFS_MAX_PATH];
+    struct igloo_proc_ops fops;
+    int parent_id;
+    uint8_t replace;
+};
+
+struct portal_procfs_entry {
+    struct list_head list;
+    int id;
+    struct proc_dir_entry *entry;
+    char *name;
+    struct proc_dir_entry *parent;
+};
+
+struct portal_procfs_dir {
+    struct list_head list;
+    struct proc_dir_entry *entry;
+    char *path;
+    int id;
+};
