@@ -58,14 +58,14 @@ struct syscall_hook {
 };
 
 struct syscall_event {
-    struct syscall_hook *hook;         /* Hook pointer that triggered this event */
-    u32 argc;                          /* Number of arguments */
     uint64_t args[IGLOO_SYSCALL_MAXARGS]; /* Syscall arguments */
     uint64_t pc;                       /* Program counter */
-    long retval;                       /* Return value */
-    bool skip_syscall;                 /* Flag to skip syscall execution */
+    struct syscall_hook *hook;         /* Hook pointer that triggered this event */
     struct task_struct *task;          /* Task pointer */
     struct pt_regs *regs;              /* Pointer to current registers */
+    long retval;                       /* Return value */
+    u32 argc;                          /* Number of arguments */
+    bool skip_syscall;                 /* Flag to skip syscall execution */
     char syscall_name[SYSCALL_NAME_MAX_LEN]; /* Name of syscall (embedded in structure) */
 };
 
