@@ -360,3 +360,23 @@ void handle_op_read_ptr_array(portal_region *mem_region)
     mem_region->header.size = buf_offset;
     mem_region->header.op = HYPER_RESP_READ_OK;
 }
+
+void handle_op_copy_buf_guest(portal_region *mem_region)
+{
+    region_header *req = &mem_region->header;
+    void * data = PORTAL_DATA(mem_region);
+    void * buf;
+    int copy_size = min(req->size, sizeof(mem_region->raw));
+    igloo_pr_debug("igloo: Handling COPY_BUF_GUEST for size %lu\n", req->size);
+
+    buf = kzalloc(req->size, GFP_KERNEL);
+    if (!buf) {
+        igloo_pr_debug("igloo: kzalloc failed for size %lu\n", req->size);
+        mem_region->header.op = HYPER_RESP_READ_FAIL;
+        return;
+    }
+    memcpy(buf, data, copy_size);
+
+    mem_region->header.size = (unsigned long)buf;
+    mem_region->header.op = HYPER_RESP_READ_NUM;
+}
