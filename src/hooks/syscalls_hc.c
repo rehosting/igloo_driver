@@ -285,6 +285,21 @@ static inline bool hook_matches_syscall_return(struct kernel_syscall_hook *hook,
 }
 
 // Unified syscall hook processing function
+// Stack buffer size for the common case (fast path)
+#define IGLOO_STACK_BATCH_SIZE 4
+
+// Helper to fill event data
+static inline void capture_syscall_event(struct syscall_event *dest, 
+                                         struct kernel_syscall_hook *hook,
+                                         struct syscall_event *template,
+                                         bool is_entry,
+                                         long retval) 
+{
+    memcpy(dest, template, sizeof(struct syscall_event));
+    dest->hook = &hook->hook;
+    if (!is_entry) dest->retval = retval;
+}
+
 static long process_syscall_hooks(
     bool is_entry,
     const char *syscall_name,
@@ -294,108 +309,161 @@ static long process_syscall_hooks(
     long *skip_ret_val, // Only used for entry
     long orig_ret // Only used for return
 ) {
-    struct syscall_event syscall_args_holder, original_info;
-    bool skip_syscall = false;
-    long skip_ret_val_local = 0;
-    long modified_ret = orig_ret;
+    struct syscall_event stack_batch[IGLOO_STACK_BATCH_SIZE];
+    struct syscall_event *batch = stack_batch;
+    struct syscall_event template_event;
+    
     struct kernel_syscall_hook *hook;
+    int match_count = 0;
+    int capacity = IGLOO_STACK_BATCH_SIZE;
+    bool template_initialized = false;
+    bool using_heap = false;
+    char *scname;
     int i;
-    bool info_initialized = false;
+    
+    long modified_ret = orig_ret;
+    long skip_ret_val_local = 0;
+    bool skip_syscall = false;
     rcu_read_lock();
     // 1. Check the "match all syscalls" list first
     if (!hlist_empty(&syscall_all_hooks)) {
         hlist_for_each_entry_rcu(hook, &syscall_all_hooks, name_hlist) {
             bool matches = false;
-            if (is_entry) {
-                matches = hook->hook.on_enter && hook_matches_syscall(hook, syscall_name, argc, args);
+            if (is_entry){
+                matches = (hook->hook.on_enter && hook_matches_syscall(hook, syscall_name, argc, args));
             } else {
-                matches = hook->hook.on_return && hook_matches_syscall_return(hook, syscall_name, argc, args, modified_ret);
+                matches = (hook->hook.on_return && hook_matches_syscall_return(hook, syscall_name, argc, args, modified_ret));
             }
             if (matches) {
-                if (unlikely(!info_initialized)) {
-                    fill_handler(&original_info, argc, args, syscall_name);
-                    info_initialized = true;
+                if (match_count < IGLOO_STACK_BATCH_SIZE) {
+                     if (unlikely(!template_initialized)) {
+                        fill_handler(&template_event, argc, args, syscall_name);
+                        template_initialized = true;
+                    }
+                    capture_syscall_event(&batch[match_count], hook, &template_event, is_entry, modified_ret);
                 }
-                memcpy(&syscall_args_holder, &original_info, sizeof(struct syscall_event));
-                syscall_args_holder.hook = &hook->hook;
-                if (!is_entry) syscall_args_holder.retval = modified_ret;
-                do_hyp(is_entry, &syscall_args_holder);
-                if (is_entry) {
-                    bool was_modified = false;
-                    for (i = 0; i < IGLOO_SYSCALL_MAXARGS && i < argc; i++) {
-                        if (syscall_args_holder.args[i] != original_info.args[i]) {
-                            DBG_PRINTK("Hypercall modified arg[%d]: old=0x%lx, new=0x%lx\n", i, original_info.args[i], syscall_args_holder.args[i]);
-                            was_modified = true;
-                            break;
-                        }
-                    }
-                    if (was_modified && setter_func && args) {
-                        setter_func(args, (const __le64 *)&syscall_args_holder.args[0]);
-                    }
-                    if (syscall_args_holder.skip_syscall) {
-                        skip_syscall = true;
-                        skip_ret_val_local = syscall_args_holder.retval;
-                        DBG_PRINTK("IGLOO: Hook %p requested to skip syscall %s with return value %lx\n", hook, syscall_name, skip_ret_val_local);
-                        break;
-                    }
-                } else {
-                    long new_ret = syscall_args_holder.retval;
-                    if (new_ret != modified_ret) {
-                        DBG_PRINTK("Hypercall modified return value: old=%ld, new=%ld\n", modified_ret, new_ret);
-                        modified_ret = new_ret;
-                    }
-                }
+                match_count++;
             }
         }
     }
-    // 2. Check hooks specific to this syscall name
+
+    // Check named list
     if (syscall_name) {
         u32 name_hash = syscall_name_hash(syscall_name);
         hash_for_each_possible_rcu(syscall_name_table, hook, name_hlist, name_hash) {
-            bool matches = false;
-            if (is_entry) {
-                matches = hook->hook.on_enter && hook_matches_syscall(hook, syscall_name, argc, args);
+            if (is_entry){
+                matches = (hook->hook.on_enter && hook_matches_syscall(hook, syscall_name, argc, args));
             } else {
-                matches = hook->hook.on_return && hook_matches_syscall_return(hook, syscall_name, argc, args, modified_ret);
+                matches = (hook->hook.on_return && hook_matches_syscall_return(hook, syscall_name, argc, args, modified_ret));
             }
             if (matches) {
-                if (unlikely(!info_initialized)) {
-                    fill_handler(&original_info, argc, args, syscall_name);
-                    info_initialized = true;
+                if (match_count < IGLOO_STACK_BATCH_SIZE) {
+                     if (unlikely(!template_initialized)) {
+                        fill_handler(&template_event, argc, args, syscall_name);
+                        template_initialized = true;
+                    }
+                    capture_syscall_event(&batch[match_count], hook, &template_event, is_entry, modified_ret);
                 }
-                memcpy(&syscall_args_holder, &original_info, sizeof(struct syscall_event));
-                syscall_args_holder.hook = &hook->hook;
-                if (!is_entry) syscall_args_holder.retval = modified_ret;
-                do_hyp(is_entry, &syscall_args_holder);
-                if (is_entry) {
-                    bool was_modified = false;
-                    for (i = 0; i < IGLOO_SYSCALL_MAXARGS && i < argc; i++) {
-                        if (syscall_args_holder.args[i] != original_info.args[i]) {
-                            DBG_PRINTK("Hypercall modified arg[%d]: old=0x%lx, new=0x%lx\n", i, original_info.args[i], syscall_args_holder.args[i]);
-                            was_modified = true;
-                            break;
-                        }
-                    }
-                    if (was_modified && setter_func && args) {
-                        setter_func(args, (const __le64 *)&syscall_args_holder.args[0]);
-                    }
-                    if (syscall_args_holder.skip_syscall) {
-                        skip_syscall = true;
-                        skip_ret_val_local = syscall_args_holder.retval;
-                        DBG_PRINTK("IGLOO: Hook %p requested to skip syscall %s with return value %lx\n", hook, syscall_name, skip_ret_val_local);
-                        break;
-                    }
-                } else {
-                    long new_ret = syscall_args_holder.retval;
-                    if (new_ret != modified_ret) {
-                        DBG_PRINTK("Hypercall modified return value: old=%ld, new=%ld\n", modified_ret, new_ret);
-                        modified_ret = new_ret;
-                    }
-                }
+                match_count++;
             }
         }
     }
     rcu_read_unlock();
+
+    // 3. Overflow Handling (Heap Allocation)
+    // If we found more hooks than fit on the stack, we need to allocate and re-scan.
+    if (unlikely(match_count > IGLOO_STACK_BATCH_SIZE)) {
+        int total_matches = match_count;
+        
+        // Allocate exact size needed
+        batch = kmalloc_array(total_matches, sizeof(struct syscall_event), GFP_KERNEL);
+        if (!batch) {
+            // Allocation failed: Fallback to processing just the stack batch
+            // Log a warning that hooks are being dropped
+            DBG_PRINTK("IGLOO: Failed to allocate batch for %d hooks, dropping %d\n", 
+                       total_matches, total_matches - IGLOO_STACK_BATCH_SIZE);
+            match_count = IGLOO_STACK_BATCH_SIZE;
+            batch = stack_batch; // Point back to stack
+        } else {
+            using_heap = true;
+            capacity = total_matches;
+            
+            // Re-acquire lock to populate the full heap buffer
+            match_count = 0; // Reset count to fill buffer from scratch
+            rcu_read_lock();
+            
+            // Re-scan "match all" list
+            if (!hlist_empty(&syscall_all_hooks)) {
+                hlist_for_each_entry_rcu(hook, &syscall_all_hooks, name_hlist) {
+                    bool matches = is_entry ? 
+                        (hook->hook.on_enter && hook_matches_syscall(hook, syscall_name, argc, args)) :
+                        (hook->hook.on_return && hook_matches_syscall_return(hook, syscall_name, argc, args, modified_ret));
+                    
+                    if (matches && match_count < capacity) {
+                        capture_syscall_event(&batch[match_count], hook, &template_event, is_entry, modified_ret);
+                        match_count++;
+                    }
+                }
+            }
+            
+            // Re-scan named list
+            if (syscall_name) {
+                u32 name_hash = syscall_name_hash(syscall_name);
+                hash_for_each_possible_rcu(syscall_name_table, hook, name_hlist, name_hash) {
+                    bool matches = is_entry ? 
+                        (hook->hook.on_enter && hook_matches_syscall(hook, syscall_name, argc, args)) :
+                        (hook->hook.on_return && hook_matches_syscall_return(hook, syscall_name, argc, args, modified_ret));
+                    
+                    if (matches && match_count < capacity) {
+                        capture_syscall_event(&batch[match_count], hook, &template_event, is_entry, modified_ret);
+                        match_count++;
+                    }
+                }
+            }
+            rcu_read_unlock();
+        }
+    }
+
+    // 4. Process Events
+    for (i = 0; i < match_count; i++) {
+        if (!is_entry) {
+            batch[i].retval = modified_ret;
+        }
+        do_hyp(is_entry, &batch[i]);
+        if (is_entry) {
+            // Handle argument modifications
+            bool was_modified = false;
+            int j;
+            for (j = 0; j < IGLOO_SYSCALL_MAXARGS && j < argc; j++) {
+                if (batch[i].args[j] != template_event.args[j]) {
+                    was_modified = true;
+                    break;
+                }
+            }
+            if (was_modified && setter_func && args) {
+                setter_func(args, (const __le64 *)&batch[i].args[0]);
+            }
+            // Handle syscall skipping
+            if (batch[i].skip_syscall) {
+                skip_syscall = true;
+                skip_ret_val_local = batch[i].retval;
+                break;
+            }
+        } else {
+            // Handle return value modifications
+            long new_ret = batch[i].retval;
+            if (new_ret != modified_ret) {
+                modified_ret = new_ret;
+                if (batch[i].retval != modified_ret) {
+                    modified_ret = batch[i].retval;
+                }
+            }
+        }
+    }
+    // 5. Cleanup
+    if (using_heap) {
+        kfree(batch);
+    }
     if (is_entry) {
         if (skip_syscall) {
             *skip_ret_val = skip_ret_val_local;
