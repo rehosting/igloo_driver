@@ -18,9 +18,11 @@
     X(write_file, WRITE_FILE) \
     X(register_uprobe, REGISTER_UPROBE) \
     X(unregister_uprobe, UNREGISTER_UPROBE) \
+    X(register_kprobe, REGISTER_KPROBE) \
+    X(unregister_kprobe, UNREGISTER_KPROBE) \
     X(register_syscall_hook, REGISTER_SYSCALL_HOOK) \
     X(ffi_exec, FFI_EXEC) \
     X(kallsyms_lookup, KALLSYMS_LOOKUP) \
     X(tramp_generate, TRAMP_GENERATE) \
     X(hyperfs_add_hyperfile, HYPERFS_ADD_HYPERFILE) \
-    X(copy_buf_guest, COPY_BUF_GUEST)
+    X(copy_buf_guest, COPY_BUF_GUEST) 
