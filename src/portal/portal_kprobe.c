@@ -5,6 +5,8 @@
 #include <linux/syscalls.h>
 #include <linux/version.h>
 
+/* TODO: consider using tracepoints if available */
+
 // Helper macro for kprobe debug logs
 #define kprobe_debug(fmt, ...) igloo_debug_kprobe(fmt, ##__VA_ARGS__)
 
@@ -91,14 +93,13 @@ static int portal_kprobe_pre_handler(struct kprobe *p, struct pt_regs *regs) {
 
 // Kretprobe handler (Return)
 static int portal_kretprobe_handler(struct kretprobe_instance *ri, struct pt_regs *regs) {
-    #ifdef CONFIG_KRETPROBE_ON_RETHOOK
-    /* rethook path: get your portal_kprobe from whatever handle you actually have
-    * (often this means you must store it in ri->data or use container_of on the
-    * struct kretprobe pointer you already have in the handler args)
-    */
+    struct portal_kprobe *pk;
+    #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 2, 0)
+    struct kretprobe *curr_rp = get_kretprobe(ri);
+    pk = container_of(curr_rp, struct portal_kprobe, rp);
     #else
     /* legacy path */
-    struct portal_kprobe *pk = container_of(ri->rp, struct portal_kprobe, rp);
+    pk = container_of(ri->rp, struct portal_kprobe, rp);
     #endif
 
     kprobe_debug("igloo: kprobe return: id=%llu, symbol=%s, proc=%s, pid=%d\n",
