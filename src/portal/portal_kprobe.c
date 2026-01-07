@@ -45,7 +45,7 @@ static DEFINE_HASHTABLE(kprobe_table, 10);  // 1024 buckets
 static DEFINE_SPINLOCK(kprobe_lock);
 static atomic_t kprobe_id_counter = ATOMIC_INIT(0);
 
-// Global atomic counter for syscall sequence numbers
+// Global atomic counter for kprobe sequence numbers
 static atomic64_t kprobe_sequence_counter = ATOMIC64_INIT(0);
 
 struct portal_event {
@@ -59,9 +59,9 @@ static void do_hyp_kprobe(bool is_enter, uint64_t id, struct pt_regs *regs) {
     uint64_t sequence = atomic64_inc_return(&kprobe_sequence_counter);
 
     struct portal_event pe = {
-	    .id = id,
-	    .task = current,
-	    .regs = regs,
+        .id = id,
+        .task = current,
+        .regs = regs,
     };
 
     // Add the hook_id and metadata to the call so the hypervisor knows which hook was triggered
@@ -119,19 +119,16 @@ static int portal_kretprobe_handler(struct kretprobe_instance *ri, struct pt_reg
     return 0;
 }
 
-// Search for a kprobe by ID
+// Search for a kprobe by ID - assumes kprobe_lock is held
 static struct portal_kprobe *find_kprobe_by_id(unsigned long id)
 {
     struct portal_kprobe *pk;
 
-    spin_lock(&kprobe_lock);
     hash_for_each_possible(kprobe_table, pk, hlist, id) {
         if ((pk->id) == id) {
-            spin_unlock(&kprobe_lock);
             return pk;
         }
     }
-    spin_unlock(&kprobe_lock);
 
     return NULL;
 }
@@ -193,7 +190,7 @@ void handle_op_register_kprobe(portal_region *mem_region)
     pk->id = id;
 
     // Register KPROBE (Entry)
-    if (reg->type == PORTAL_UPROBE_TYPE_ENTRY || reg->type == PORTAL_UPROBE_TYPE_BOTH) {
+    if (reg->type == PORTAL_KPROBE_TYPE_ENTRY || reg->type == PORTAL_KPROBE_TYPE_BOTH) {
         pk->kp.symbol_name = pk->symbol;
         pk->kp.offset = reg->offset;
         pk->kp.pre_handler = portal_kprobe_pre_handler;
@@ -207,11 +204,10 @@ void handle_op_register_kprobe(portal_region *mem_region)
     }
 
     // Register KRETPROBE (Return)
-    if (reg->type == PORTAL_UPROBE_TYPE_RETURN || reg->type == PORTAL_UPROBE_TYPE_BOTH) {
-        // kretprobe doesn't support offset usually, or it must be 0 (entry)
-        // We'll use the symbol.
+    if (reg->type == PORTAL_KPROBE_TYPE_RETURN || reg->type == PORTAL_KPROBE_TYPE_BOTH) {
+        // kretprobes always attach at function entry (offset 0) and return,
+        // so a per-probe offset is not applicable/used; we just specify the symbol.
         pk->rp.kp.symbol_name = pk->symbol;
-        // pk->rp.kp.offset = reg->offset; // Usually 0 for kretprobe
         pk->rp.handler = portal_kretprobe_handler;
         pk->rp.maxactive = 0; // Default maxactive
 
@@ -225,6 +221,11 @@ void handle_op_register_kprobe(portal_region *mem_region)
             goto fail_free_comm;
         }
         pk->rp_registered = true;
+    }
+
+    if (!pk->kp_registered && !pk->rp_registered) {
+        kprobe_debug("igloo: No kprobe or kretprobe registered\n");
+        goto fail_free_comm;
     }
 
     // Add to hash table
@@ -260,24 +261,25 @@ void handle_op_unregister_kprobe(portal_region *mem_region)
     kprobe_debug("igloo: Unregistering kprobe with ID=%lu\n", id);
 
     // Find the kprobe
+    spin_lock(&kprobe_lock);
     pk = find_kprobe_by_id(id);
     if (!pk) {
         kprobe_debug("igloo: Kprobe with ID %lu not found\n", id);
         mem_region->header.op = HYPER_RESP_READ_FAIL;
+        spin_unlock(&kprobe_lock);
         return;
     }
+    // Remove from hash table
+    hash_del(&pk->hlist);
+    spin_unlock(&kprobe_lock);
 
+    // This used to happen before removing from the table, safe to do here since we haven't freed yet
     if (pk->kp_registered) {
         unregister_kprobe(&pk->kp);
     }
     if (pk->rp_registered) {
         unregister_kretprobe(&pk->rp);
     }
-
-    // Remove from hash table
-    spin_lock(&kprobe_lock);
-    hash_del(&pk->hlist);
-    spin_unlock(&kprobe_lock);
 
     // Free resources
     kfree(pk->symbol);
