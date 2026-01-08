@@ -201,6 +201,7 @@ void handle_op_register_kprobe(portal_region *mem_region)
             goto fail_free_comm;
         }
         pk->kp_registered = true;
+        kprobe_debug("kprobe registered with sym=%s off=%lu addr=%px\n", pk->kp.symbol_name ?: "NULL", pk->kp.offset, pk->kp.addr);
     }
 
     // Register KRETPROBE (Return)
@@ -221,6 +222,7 @@ void handle_op_register_kprobe(portal_region *mem_region)
             goto fail_free_comm;
         }
         pk->rp_registered = true;
+        kprobe_debug("kretprobe registered with sym=%s off=%lu addr=%px\n", pk->rp.kp.symbol_name ?: "NULL", pk->rp.kp.offset, pk->rp.kp.addr);
     }
 
     if (!pk->kp_registered && !pk->rp_registered) {
