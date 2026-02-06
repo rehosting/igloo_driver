@@ -36,6 +36,7 @@ void igloo_sock_bind(struct socket *sock, struct sockaddr_storage *address){
 	int hrv = 1;
 	int i;
 	mutex_lock(&bind_mutex);
+	char buffer[32];
 
 	if (address->ss_family == AF_INET) {
 		// IPv4: hypercall 200
@@ -51,8 +52,8 @@ void igloo_sock_bind(struct socket *sock, struct sockaddr_storage *address){
 			}
 			hrv = igloo_hypercall2(IGLOO_IPV4_SETUP, (unsigned long)current->comm,  (unsigned long)addr_in->sin_addr.s_addr);
 		}
-	
-		igloo_hypercall2(IGLOO_IPV4_BIND, (unsigned long)port, (unsigned long)is_stream);
+		snprintf(buffer, sizeof(buffer), "%hu:%ld", port, (long)current->pid);
+		igloo_hypercall2(IGLOO_IPV4_BIND, (unsigned long)&buffer, (unsigned long)is_stream);
 	
 	} else if (address->ss_family == AF_INET6) {
 		// IPv6: hypercall 201
@@ -70,8 +71,8 @@ void igloo_sock_bind(struct socket *sock, struct sockaddr_storage *address){
 			}
 			hrv = igloo_hypercall2(IGLOO_IPV6_SETUP, (unsigned long)current->comm, (unsigned long)&addr_in6->sin6_addr);
 		}
-	
-		igloo_hypercall2(IGLOO_IPV6_BIND, (unsigned long)port, (unsigned long)is_stream);
+		snprintf(buffer, sizeof(buffer), "%hu:%ld", port, (long)current->pid);
+		igloo_hypercall2(IGLOO_IPV6_BIND, (unsigned long)&buffer, (unsigned long)is_stream);
 	}
 	mutex_unlock(&bind_mutex);
 }
