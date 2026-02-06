@@ -69,3 +69,52 @@ void handle_op_register_syscall_hook(portal_region *mem_region)
     mem_region->header.size = (unsigned long)kernel_hook;
     mem_region->header.op = HYPER_RESP_READ_NUM;
 }
+
+int unregister_syscall_hook(struct kernel_syscall_hook *hook_ptr)
+{
+    if (!hook_ptr) {
+        return -EINVAL;
+    }
+    
+    // 1. Immediately disable the hook to stop it from firing
+    hook_ptr->hook.enabled = false;
+
+    // 2. Remove from hash tables under lock
+    spin_lock(&syscall_hook_lock);
+
+    hash_del_rcu(&hook_ptr->hlist);
+    hlist_del_rcu(&hook_ptr->name_hlist);
+
+    spin_unlock(&syscall_hook_lock);
+
+    // 3. Decrement global count
+    atomic_dec(&global_syscall_hook_count);
+
+    // 4. Free memory safely using RCU
+    kfree_rcu(hook_ptr, rcu);
+
+    printk(KERN_EMERG "IGLOO: Unregistered syscall hook %p\n", hook_ptr);
+    return 0;
+}
+
+void handle_op_unregister_syscall_hook(portal_region *mem_region)
+{
+    struct kernel_syscall_hook *kernel_hook;
+    
+    igloo_pr_debug("igloo: Handling HYPER_OP_UNREGISTER_SYSCALL_HOOK\n");
+    
+    // Safety check: Ensure we received a pointer-sized payload
+    if (mem_region->header.size < sizeof(void *)) {
+        mem_region->header.op = HYPER_RESP_READ_FAIL;
+        return;
+    }
+    
+    // Retrieve the hook pointer from the portal data buffer
+    kernel_hook = *(struct kernel_syscall_hook **)PORTAL_DATA(mem_region);
+    
+    if (unregister_syscall_hook(kernel_hook) == 0) {
+        mem_region->header.op = HYPER_RESP_READ_OK;
+    } else {
+        mem_region->header.op = HYPER_RESP_WRITE_FAIL;
+    }
+}
