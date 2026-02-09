@@ -82,8 +82,13 @@ int unregister_syscall_hook(struct kernel_syscall_hook *hook_ptr)
     // 2. Remove from hash tables under lock
     spin_lock(&syscall_hook_lock);
 
+    // Always remove from the main pointer table (it is always added)
     hash_del_rcu(&hook_ptr->hlist);
-    hlist_del_rcu(&hook_ptr->name_hlist);
+
+    // FIX: Only remove from name_hlist if it was actually added
+    if (hook_ptr->hook.on_all || hook_ptr->hook.name[0] != '\0') {
+        hlist_del_rcu(&hook_ptr->name_hlist);
+    }
 
     spin_unlock(&syscall_hook_lock);
 
@@ -101,17 +106,9 @@ void handle_op_unregister_syscall_hook(portal_region *mem_region)
 {
     struct kernel_syscall_hook *kernel_hook;
     
-    igloo_pr_debug("igloo: Handling HYPER_OP_UNREGISTER_SYSCALL_HOOK\n");
-    
-    // Safety check: Ensure we received a pointer-sized payload
-    if (mem_region->header.size < sizeof(void *)) {
-        mem_region->header.op = HYPER_RESP_READ_FAIL;
-        return;
-    }
-    
     // Retrieve the hook pointer from the portal data buffer
-    kernel_hook = *(struct kernel_syscall_hook **)PORTAL_DATA(mem_region);
-    
+    kernel_hook = (struct kernel_syscall_hook *)mem_region->header.addr;
+
     if (unregister_syscall_hook(kernel_hook) == 0) {
         mem_region->header.op = HYPER_RESP_READ_OK;
     } else {
