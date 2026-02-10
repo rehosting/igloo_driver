@@ -34,6 +34,7 @@ struct portal_uprobe {
 
     // Handle returned by uprobe_register (required for unregistering in newer kernels)
     struct uprobe *uprobe_handle;
+    struct work_struct unregister_work;
 };
 
 // Structure for uprobe registration
@@ -258,6 +259,37 @@ fail_free_pu:
 fail:
     mem_region->header.op = HYPER_RESP_READ_FAIL;
 }
+static void unregister_uprobe_deferred(struct work_struct *work)
+{
+    struct portal_uprobe *pu = container_of(work, struct portal_uprobe, unregister_work);
+    
+    printk(KERN_EMERG "igloo: Deferred unregistering uprobe at ptr=%p\n", pu);
+    
+    // Unregister the uprobe using the stored handle
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,12,0)
+    uprobe_unregister_nosync(pu->uprobe_handle, &pu->consumer);
+    uprobe_unregister_sync();
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5,11,0)
+    uprobe_unregister(pu->uprobe_handle, &pu->consumer);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0)
+    if (pu->uprobe_handle)
+        uprobe_unregister(pu->uprobe_handle, &pu->consumer);
+    else
+        uprobe_unregister(pu->path.dentry->d_inode, pu->offset, &pu->consumer);
+#else
+    uprobe_unregister(pu->path.dentry->d_inode, pu->offset, &pu->consumer);
+#endif
+    
+    synchronize_rcu();
+
+    // Free resources
+    path_put(&pu->path);
+    kfree(pu->filename);
+    if (pu->filter_comm) {
+        kfree(pu->filter_comm);
+    }
+    kfree(pu);
+}
 
 // Handler for unregistering a uprobe
 void handle_op_unregister_uprobe(portal_region *mem_region)
@@ -272,42 +304,11 @@ void handle_op_unregister_uprobe(portal_region *mem_region)
         mem_region->header.op = HYPER_RESP_READ_FAIL;
         return;
     }
-
-    uprobe_debug("igloo: Unregistering uprobe at ptr=%p\n", pu);
     
-    // Unregister the uprobe using the stored handle
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,12,0)
-    /* * In 6.12+, uprobe_unregister was removed.
-     * We use uprobe_unregister_nosync to initiate removal,
-     * and uprobe_unregister_sync (which takes NO arguments) to wait for completion.
-     */
-    uprobe_unregister_nosync(pu->uprobe_handle, &pu->consumer);
-    uprobe_unregister_sync();
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5,11,0)
-    /* Newer kernels providing pointer-based unregister (synchronous) */
-    uprobe_unregister(pu->uprobe_handle, &pu->consumer);
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0)
-    /* Fallback for 5.4-5.10 range */
-    if (pu->uprobe_handle)
-        uprobe_unregister(pu->uprobe_handle, &pu->consumer);
-    else
-        uprobe_unregister(pu->path.dentry->d_inode, pu->offset, &pu->consumer);
-#else
-    /* Old kernels (e.g. 4.10) require inode + offset + consumer */
-    uprobe_unregister(pu->path.dentry->d_inode, pu->offset, &pu->consumer);
-#endif
+    // Initialize and schedule the deferred work
+    INIT_WORK(&pu->unregister_work, unregister_uprobe_deferred);
+    schedule_work(&pu->unregister_work);
     
-    // Extra safety barrier (redundant with unregister_sync but cheap protection against races on older kernels)
-    synchronize_rcu();
-
-    // Free resources
-    path_put(&pu->path);
-    kfree(pu->filename);
-    if (pu->filter_comm) {
-        kfree(pu->filter_comm);
-    }
-    kfree(pu);
-    
-    // Return success
+    // Return success immediately
     mem_region->header.op = HYPER_RESP_READ_OK;
 }
