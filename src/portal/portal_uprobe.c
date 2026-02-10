@@ -276,14 +276,30 @@ void handle_op_unregister_uprobe(portal_region *mem_region)
     uprobe_debug("igloo: Unregistering uprobe at ptr=%p\n", pu);
     
     // Unregister the uprobe using the stored handle
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0)
-    /* Newer kernels providing no-sync variant */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,12,0)
+    /* * In 6.12+, uprobe_unregister was removed.
+     * We use uprobe_unregister_nosync to initiate removal,
+     * and uprobe_unregister_sync (which takes NO arguments) to wait for completion.
+     */
     uprobe_unregister_nosync(pu->uprobe_handle, &pu->consumer);
+    uprobe_unregister_sync();
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5,11,0)
+    /* Newer kernels providing pointer-based unregister (synchronous) */
+    uprobe_unregister(pu->uprobe_handle, &pu->consumer);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0)
+    /* Fallback for 5.4-5.10 range */
+    if (pu->uprobe_handle)
+        uprobe_unregister(pu->uprobe_handle, &pu->consumer);
+    else
+        uprobe_unregister(pu->path.dentry->d_inode, pu->offset, &pu->consumer);
 #else
     /* Old kernels (e.g. 4.10) require inode + offset + consumer */
     uprobe_unregister(pu->path.dentry->d_inode, pu->offset, &pu->consumer);
 #endif
     
+    // Extra safety barrier (redundant with unregister_sync but cheap protection against races on older kernels)
+    synchronize_rcu();
+
     // Free resources
     path_put(&pu->path);
     kfree(pu->filename);
