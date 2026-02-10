@@ -2,7 +2,6 @@
 #include <linux/slab.h>
 #include <linux/uprobes.h>
 #include <linux/kprobes.h>
-#include <linux/hashtable.h>
 #include <linux/namei.h>
 #include <linux/syscalls.h>
 #include <linux/path.h>
@@ -21,15 +20,10 @@ static int portal_uprobe_handler(struct uprobe_consumer *uc, struct pt_regs *reg
 static int portal_uprobe_ret_handler(struct uprobe_consumer *uc, unsigned long flags, struct pt_regs *regs);
 #endif
 
-// Maximum number of uprobes we can register
-#define MAX_UPROBES 1024
-
 // Structure to track a registered uprobe
 struct portal_uprobe {
-    uint64_t id;                 // Unique ID for this probe
     struct path path;          // Path to the file with the uprobe
     uint64_t offset;             // Offset in the file
-    struct hlist_node hlist;   // For tracking in hash table
     char *filename;            // Name of file (for reporting)
     char *filter_comm;         // Process name filter (NULL = no filter)
     uint64_t probe_type;         // Type of probe (entry or return)
@@ -37,6 +31,9 @@ struct portal_uprobe {
     
     // PID filtering support
     uint64_t filter_pid;         // PID to filter on (0 = no filter/match any)
+
+    // Handle returned by uprobe_register (required for unregistering in newer kernels)
+    struct uprobe *uprobe_handle;
 };
 
 // Structure for uprobe registration
@@ -47,11 +44,6 @@ struct uprobe_registration {
     unsigned long pid;    // PID filter or CURRENT_PID_NUM for any
     char comm[TASK_COMM_LEN]; // Process name filter (empty for none)
 } __attribute__((packed));
-
-// Hash table to track uprobes by ID
-static DEFINE_HASHTABLE(uprobe_table, 10);  // 1024 buckets
-static DEFINE_SPINLOCK(uprobe_lock);
-static atomic_t uprobe_id_counter = ATOMIC_INIT(0);
 
 // Global atomic counter for syscall sequence numbers
 static atomic64_t syscall_sequence_counter = ATOMIC64_INIT(0);
@@ -85,8 +77,8 @@ static int portal_uprobe(struct uprobe_consumer *uc, struct pt_regs *regs, bool 
 #endif
     struct portal_uprobe *pu = container_of(uc, struct portal_uprobe, consumer);
 
-    uprobe_debug("igloo: portal_uprobe: id=%llu, file=%s, offset=%lld, proc=%s, pid=%d\n",
-                 (unsigned long long)(pu->id), pu->filename, 
+    uprobe_debug("igloo: portal_uprobe: ptr=%p, file=%s, offset=%lld, proc=%s, pid=%d\n",
+                 pu, pu->filename, 
                  (long long)(pu->offset), current->comm, task_pid_nr(current));
     
     // Apply process name filter if set
@@ -104,12 +96,13 @@ static int portal_uprobe(struct uprobe_consumer *uc, struct pt_regs *regs, bool 
     }
     
     // Explicitly inform the user which type of probe we're detecting
-    uprobe_debug("igloo: %s uprobe hit: id=%llu, file=%s, offset=%lld, proc=%s, pid=%d\n",
+    uprobe_debug("igloo: %s uprobe hit: ptr=%p, file=%s, offset=%lld, proc=%s, pid=%d\n",
                  is_enter ? "Entry" : "Return",
-                 (unsigned long long)(pu->id), pu->filename, 
+                 pu, pu->filename, 
                  (long long)(pu->offset), current->comm, task_pid_nr(current));
     
-    do_hyp(is_enter, pu->id, regs);
+    // Pass the pointer address as the ID
+    do_hyp(is_enter, (uint64_t)pu, regs);
     return 0;
 }
 
@@ -133,29 +126,11 @@ static int portal_uprobe_ret_handler(struct uprobe_consumer *uc, unsigned long f
 }
 #endif
 
-// Search for a uprobe by ID
-static struct portal_uprobe *find_uprobe_by_id(unsigned long id)
-{
-    struct portal_uprobe *pu;
-    
-    spin_lock(&uprobe_lock);
-    hash_for_each_possible(uprobe_table, pu, hlist, id) {
-        if ((pu->id) == id) {
-            spin_unlock(&uprobe_lock);
-            return pu;
-        }
-    }
-    spin_unlock(&uprobe_lock);
-    
-    return NULL;
-}
-
 // Handler for registering a new uprobe
 void handle_op_register_uprobe(portal_region *mem_region)
 {
     struct portal_uprobe *pu;
     struct uprobe_registration *reg;
-    unsigned long id;
     int ret;
     struct path file_path;
     struct inode *inode;
@@ -218,10 +193,6 @@ void handle_op_register_uprobe(portal_region *mem_region)
         }
     }
     
-    // Get a unique ID for this uprobe
-    id = atomic_inc_return(&uprobe_id_counter);
-    pu->id = id;
-    
     // Zero the consumer struct to ensure clean state
     memset(&pu->consumer, 0, sizeof(pu->consumer));
     
@@ -261,6 +232,8 @@ void handle_op_register_uprobe(portal_region *mem_region)
             uprobe_debug("igloo: Failed to register uprobe: %d\n", ret);
             goto fail_put_path;
         }
+        // Store the handle so we can safely unregister later
+        pu->uprobe_handle = uprobe;
     }
 #else
     ret = uprobe_register(inode, reg->offset, &pu->consumer);
@@ -270,15 +243,8 @@ void handle_op_register_uprobe(portal_region *mem_region)
     }
 #endif
     
-    // We don't need to store the uprobe pointer as uprobe_unregister_nosync takes the consumer
-    
-    // Add to hash table
-    spin_lock(&uprobe_lock);
-    hash_add(uprobe_table, &pu->hlist, id);
-    spin_unlock(&uprobe_lock);
-    
-    // Return success with the unique ID
-    mem_region->header.size = id; // Return the ID in size
+    // Return success with the pointer address as the ID
+    mem_region->header.size = (uint64_t)pu;
 
     mem_region->header.op = HYPER_RESP_READ_NUM;
     return;
@@ -296,37 +262,27 @@ fail:
 // Handler for unregistering a uprobe
 void handle_op_unregister_uprobe(portal_region *mem_region)
 {
-    unsigned long id;
     struct portal_uprobe *pu;
     
-    // ID is stored in header.addr
-    id = mem_region->header.addr;
+    // ID is stored in header.addr, which is now the pointer
+    pu = (struct portal_uprobe *)mem_region->header.addr;
     
-    uprobe_debug("igloo: Unregistering uprobe with ID=%lu\n", id);
-    
-    // Find the uprobe
-    pu = find_uprobe_by_id(id);
     if (!pu) {
-        uprobe_debug("igloo: Uprobe with ID %lu not found\n", id);
+        uprobe_debug("igloo: Attempted to unregister NULL pointer\n");
         mem_region->header.op = HYPER_RESP_READ_FAIL;
         return;
     }
+
+    uprobe_debug("igloo: Unregistering uprobe at ptr=%p\n", pu);
     
-    // Unregister the uprobe using the function from uprobes.h
-    // NOTE: According to uprobes.h, uprobe_unregister_nosync() takes a struct uprobe*
-    // Since we didn't store the returned uprobe pointer, we need to access the inode
+    // Unregister the uprobe using the stored handle
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0)
     /* Newer kernels providing no-sync variant */
-    uprobe_unregister_nosync(NULL, &pu->consumer);
+    uprobe_unregister_nosync(pu->uprobe_handle, &pu->consumer);
 #else
     /* Old kernels (e.g. 4.10) require inode + offset + consumer */
     uprobe_unregister(pu->path.dentry->d_inode, pu->offset, &pu->consumer);
 #endif
-    
-    // Remove from hash table
-    spin_lock(&uprobe_lock);
-    hash_del(&pu->hlist);
-    spin_unlock(&uprobe_lock);
     
     // Free resources
     path_put(&pu->path);
