@@ -102,7 +102,7 @@ static int portal_uprobe(struct uprobe_consumer *uc, struct pt_regs *regs, bool 
                  (long long)(pu->offset), current->comm, task_pid_nr(current));
     
     // Pass the pointer address as the ID
-    do_hyp(is_enter, (uint64_t)pu, regs);
+    do_hyp(is_enter, (uint64_t)(unsigned long)pu, regs);
     return 0;
 }
 
@@ -244,7 +244,7 @@ void handle_op_register_uprobe(portal_region *mem_region)
 #endif
     
     // Return success with the pointer address as the ID
-    mem_region->header.size = (uint64_t)pu;
+    mem_region->header.size = (uint64_t)(unsigned long)pu;
 
     mem_region->header.op = HYPER_RESP_READ_NUM;
     return;
@@ -265,7 +265,7 @@ void handle_op_unregister_uprobe(portal_region *mem_region)
     struct portal_uprobe *pu;
     
     // ID is stored in header.addr, which is now the pointer
-    pu = (struct portal_uprobe *)mem_region->header.addr;
+    pu = (struct portal_uprobe *)(unsigned long)mem_region->header.addr;
     
     if (!pu) {
         uprobe_debug("igloo: Attempted to unregister NULL pointer\n");
