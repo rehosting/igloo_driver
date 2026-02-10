@@ -77,6 +77,7 @@ struct kernel_syscall_hook {
     bool in_use;                  /* Whether this slot is used */
     struct rcu_head rcu;          /* For RCU freeing */
     char normalized_name[SYSCALL_NAME_MAX_LEN]; /* Cached normalized syscall name */
+    struct work_struct unregister_work;
 };
 
 /* Global variables - defined in syscalls_hc.c */

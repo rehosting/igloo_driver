@@ -4,6 +4,7 @@
 #include <linux/spinlock.h>
 #include <linux/string.h>
 #include "syscalls_hc.h"
+#include <linux/workqueue.h>
 
 // Import functions and variables from syscalls_hc.c
 extern struct hlist_head syscall_hook_table[1024];
@@ -69,23 +70,21 @@ void handle_op_register_syscall_hook(portal_region *mem_region)
     mem_region->header.size = (unsigned long)kernel_hook;
     mem_region->header.op = HYPER_RESP_READ_NUM;
 }
-
-int unregister_syscall_hook(struct kernel_syscall_hook *hook_ptr)
+// Worker function for deferred unregistration
+static void unregister_syscall_deferred(struct work_struct *work)
 {
-    if (!hook_ptr) {
-        return -EINVAL;
-    }
+    struct kernel_syscall_hook *hook_ptr = container_of(work, struct kernel_syscall_hook, unregister_work);
     
-    // 1. Immediately disable the hook to stop it from firing
+    // 1. Immediately disable the hook (redundant but safe)
     hook_ptr->hook.enabled = false;
 
     // 2. Remove from hash tables under lock
     spin_lock(&syscall_hook_lock);
 
-    // Always remove from the main pointer table (it is always added)
+    // Always remove from the main pointer table
     hash_del_rcu(&hook_ptr->hlist);
 
-    // FIX: Only remove from name_hlist if it was actually added
+    // Remove from name_hlist if it was added
     if (hook_ptr->hook.on_all || hook_ptr->hook.name[0] != '\0') {
         hlist_del_rcu(&hook_ptr->name_hlist);
     }
@@ -98,8 +97,7 @@ int unregister_syscall_hook(struct kernel_syscall_hook *hook_ptr)
     // 4. Free memory safely using RCU
     kfree_rcu(hook_ptr, rcu);
 
-    printk(KERN_EMERG "IGLOO: Unregistered syscall hook %p\n", hook_ptr);
-    return 0;
+    printk(KERN_INFO "IGLOO: Unregistered syscall hook %p (deferred)\n", hook_ptr);
 }
 
 void handle_op_unregister_syscall_hook(portal_region *mem_region)
@@ -109,9 +107,15 @@ void handle_op_unregister_syscall_hook(portal_region *mem_region)
     // Retrieve the hook pointer from the portal data buffer
     kernel_hook = (struct kernel_syscall_hook *)(unsigned long)mem_region->header.addr;
 
-    if (unregister_syscall_hook(kernel_hook) == 0) {
-        mem_region->header.op = HYPER_RESP_READ_OK;
-    } else {
+    if (!kernel_hook) {
         mem_region->header.op = HYPER_RESP_WRITE_FAIL;
+        return;
     }
+
+    // Initialize and schedule the work
+    INIT_WORK(&kernel_hook->unregister_work, unregister_syscall_deferred);
+    schedule_work(&kernel_hook->unregister_work);
+
+    // Return success immediately
+    mem_region->header.op = HYPER_RESP_READ_OK;
 }
