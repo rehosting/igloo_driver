@@ -107,7 +107,7 @@ void handle_op_unregister_syscall_hook(portal_region *mem_region)
     struct kernel_syscall_hook *kernel_hook;
     
     // Retrieve the hook pointer from the portal data buffer
-    kernel_hook = (struct kernel_syscall_hook *)mem_region->header.addr;
+    kernel_hook = (struct kernel_syscall_hook *)(unsigned long)mem_region->header.addr;
 
     if (unregister_syscall_hook(kernel_hook) == 0) {
         mem_region->header.op = HYPER_RESP_READ_OK;

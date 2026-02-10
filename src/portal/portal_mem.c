@@ -366,17 +366,21 @@ void handle_op_copy_buf_guest(portal_region *mem_region)
     region_header *req = &mem_region->header;
     void * data = PORTAL_DATA(mem_region);
     void * buf;
-    int copy_size = min(req->size, sizeof(mem_region->raw));
-    igloo_pr_debug("igloo: Handling COPY_BUF_GUEST for size %lu\n", req->size);
+    
+    size_t copy_size = min_t(size_t, req->size, sizeof(mem_region->raw));
+    
+    igloo_pr_debug("igloo: Handling COPY_BUF_GUEST for size %llu\n", (unsigned long long) req->size);
 
+    // kzalloc takes size_t, so this handles truncation on 32-bit systems implicitly
     buf = kzalloc(req->size, GFP_KERNEL);
     if (!buf) {
-        igloo_pr_debug("igloo: kzalloc failed for size %lu\n", req->size);
+        igloo_pr_debug("igloo: kzalloc failed for size %llu\n", (unsigned long long) req->size);
         mem_region->header.op = HYPER_RESP_READ_FAIL;
         return;
     }
     memcpy(buf, data, copy_size);
 
+    // Cast the pointer to unsigned long to safely store it in the 64-bit header field
     mem_region->header.size = (unsigned long)buf;
     mem_region->header.op = HYPER_RESP_READ_NUM;
 }
