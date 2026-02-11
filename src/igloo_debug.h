@@ -10,6 +10,7 @@ struct igloo_debug_config {
     bool vma;          // Enable debug for VMA tracking
     bool syscall;      // Enable debug for syscall tracking
     bool osi;          // Enable debug for OSI features
+    bool kprobe;       // Enable debug for kprobe module
 };
 
 // Global debug configuration (defined in igloo_hc.c)
@@ -30,5 +31,8 @@ extern struct igloo_debug_config igloo_debug;
 
 #define igloo_debug_osi(fmt, ...) \
     do { if (igloo_debug.osi) pr_emerg("IGLOO-OSI: " fmt, ##__VA_ARGS__); } while (0)
+
+#define igloo_debug_kprobe(fmt, ...) \
+    do { if (igloo_debug.kprobe) pr_emerg("IGLOO-KPROBE: " fmt, ##__VA_ARGS__); } while (0)
 
 #endif /* _IGLOO_DEBUG_H */
