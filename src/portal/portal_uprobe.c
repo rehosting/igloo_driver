@@ -7,6 +7,8 @@
 #include <linux/path.h>
 #include <linux/fs.h>
 #include <linux/version.h>
+#include <linux/workqueue.h>
+#include <linux/sched.h>
 
 // Helper macro for uprobe debug logs (using the designated uprobe module)
 #define uprobe_debug(fmt, ...) igloo_debug_uprobe(fmt, ##__VA_ARGS__)
@@ -31,10 +33,11 @@ struct portal_uprobe {
     
     // PID filtering support
     uint64_t filter_pid;         // PID to filter on (0 = no filter/match any)
-
+    
     // Handle returned by uprobe_register (required for unregistering in newer kernels)
     struct uprobe *uprobe_handle;
-    struct work_struct unregister_work;
+        struct work_struct unregister_work;
+    bool enabled;               // Flag to indicate if the probe is currently enabled
 };
 
 // Structure for uprobe registration
@@ -53,19 +56,23 @@ struct portal_event {
     uint64_t id;
     struct task_struct *task;
     struct pt_regs *regs;
+    pid_t tid;  // Thread ID
+    pid_t tgid; // Thread Group ID (Process ID)
 };
 
 static void do_hyp(bool is_enter, uint64_t id, struct pt_regs *regs) {
-    // Set the sequence number atomically
+// Set the sequence number atomically
     uint64_t sequence = atomic64_inc_return(&syscall_sequence_counter);
 
     struct portal_event pe = {
-	    .id = id,
-	    .task = current,
-	    .regs = regs,
+        .id = id,
+        .task = current,
+        .regs = regs,
+        .tid = current->pid,
+        .tgid = current->tgid,
     };
 
-    // Add the hook_id and metadata to the call so the hypervisor knows which hook was triggered
+// Add the hook_id and metadata to the call so the hypervisor knows which hook was triggered
     // and has access to syscall metadata - pass the hook_id as third argument
     igloo_portal(is_enter ? IGLOO_HYP_UPROBE_ENTER : IGLOO_HYP_UPROBE_RETURN,
                 sequence, (unsigned long)&pe);
@@ -78,51 +85,52 @@ static int portal_uprobe(struct uprobe_consumer *uc, struct pt_regs *regs, bool 
 #endif
     struct portal_uprobe *pu = container_of(uc, struct portal_uprobe, consumer);
 
+    if (!pu->enabled){
+        printk(KERN_EMERG "igloo: Received uprobe hit for disabled probe at ptr=%p\n", pu);
+        return false;
+    }
+
     uprobe_debug("igloo: portal_uprobe: ptr=%p, file=%s, offset=%lld, proc=%s, pid=%d\n",
                  pu, pu->filename, 
                  (long long)(pu->offset), current->comm, task_pid_nr(current));
     
-    // Apply process name filter if set
+// Apply process name filter if set
     if (pu->filter_comm && strncmp(current->comm, pu->filter_comm, TASK_COMM_LEN) != 0) {
-        uprobe_debug("igloo: Process name filter failed: %s != %s\n", current->comm, pu->filter_comm);
+uprobe_debug("igloo: Process name filter failed: %s != %s\n", current->comm, pu->filter_comm);
         return 0; // Not our target process, silently continue
     }
     
-    // Apply PID filter if set (non-zero)
+// Apply PID filter if set (non-zero)
     if ((pu->filter_pid) != CURRENT_PID_NUM && 
         (pu->filter_pid) != task_pid_nr(current)) {
-        uprobe_debug("igloo: PID filter failed: %d != %d\n", 
+uprobe_debug("igloo: PID filter failed: %d != %d\n", 
                      (int)(pu->filter_pid), task_pid_nr(current));
         return 0; // Not our target PID, silently continue
     }
     
-    // Explicitly inform the user which type of probe we're detecting
+// Explicitly inform the user which type of probe we're detecting
     uprobe_debug("igloo: %s uprobe hit: ptr=%p, file=%s, offset=%lld, proc=%s, pid=%d\n",
                  is_enter ? "Entry" : "Return",
                  pu, pu->filename, 
                  (long long)(pu->offset), current->comm, task_pid_nr(current));
     
-    // Pass the pointer address as the ID
+// Pass the pointer address as the ID
     do_hyp(is_enter, (uint64_t)(unsigned long)pu, regs);
     return 0;
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0)
-static int portal_uprobe_handler(struct uprobe_consumer *uc, struct pt_regs *regs, __u64 *data)
-{
+static int portal_uprobe_handler(struct uprobe_consumer *uc, struct pt_regs *regs, __u64 *data) {
     return portal_uprobe(uc, regs, data, true);
 }
-static int portal_uprobe_ret_handler(struct uprobe_consumer *uc, unsigned long flags, struct pt_regs *regs, __u64 *data)
-{
+static int portal_uprobe_ret_handler(struct uprobe_consumer *uc, unsigned long func_addr, struct pt_regs *regs, __u64 *data) {
     return portal_uprobe(uc, regs, data, false);
 }
 #else
-static int portal_uprobe_handler(struct uprobe_consumer *uc, struct pt_regs *regs)
-{
+static int portal_uprobe_handler(struct uprobe_consumer *uc, struct pt_regs *regs) {
     return portal_uprobe(uc, regs, true);
 }
-static int portal_uprobe_ret_handler(struct uprobe_consumer *uc, unsigned long flags, struct pt_regs *regs)
-{
+static int portal_uprobe_ret_handler(struct uprobe_consumer *uc, unsigned long func_addr, struct pt_regs *regs) {
     return portal_uprobe(uc, regs, false);
 }
 #endif
@@ -137,55 +145,56 @@ void handle_op_register_uprobe(portal_region *mem_region)
     struct inode *inode;
     char *filter_comm = NULL;
     
-    // Map the input data to our registration structure
+// Map the input data to our registration structure
     reg = (struct uprobe_registration *) PORTAL_DATA(mem_region);
-    
+
     // Ensure the path is null-terminated
     reg->path[sizeof(reg->path) - 1] = '\0';
     reg->comm[TASK_COMM_LEN - 1] = '\0';
     
-    // Set filter_comm if not empty
+// Set filter_comm if not empty
     if (reg->comm[0] != '\0') {
         filter_comm = reg->comm;
     }
     
     uprobe_debug("igloo: Registering uprobe for path=%s, offset=%lu, type=%lu, filter=%s, pid=%lu\n", 
                  reg->path, reg->offset, reg->type, 
-                 filter_comm ? filter_comm : "none", 
-                 reg->pid);
+filter_comm ? filter_comm : "none", 
+reg->pid);
     
-    // Allocate a new uprobe structure
+// Allocate a new uprobe structure
     pu = kzalloc(sizeof(*pu), GFP_KERNEL);
     if (!pu) {
-        uprobe_debug("igloo: Failed to allocate uprobe structure\n");
+uprobe_debug("igloo: Failed to allocate uprobe structure\n");
         goto fail;
     }
     
-    // Allocate memory for filename
+// Allocate memory for filename
     pu->filename = kstrdup(reg->path, GFP_KERNEL);
     if (!pu->filename) {
-        uprobe_debug("igloo: Failed to allocate filename memory\n");
+uprobe_debug("igloo: Failed to allocate filename memory\n");
         goto fail_free_pu;
     }
     
-    // Look up the file inode
+// Look up the file inode
     ret = kern_path(reg->path, LOOKUP_FOLLOW, &file_path);
     if (ret) {
-        uprobe_debug("igloo: Failed to look up path %s: %d\n", reg->path, ret);
+uprobe_debug("igloo: Failed to look up path %s: %d\n", reg->path, ret);
         goto fail_free_filename;
     }
     
-    // Save the path 
+// Save the path 
+    pu->enabled = true; // Mark the probe as enabled
     pu->path = file_path;
     pu->offset = reg->offset;
     pu->probe_type = reg->type;
     pu->filter_pid = reg->pid;
-    
-    // Save process filter if provided
+        
+// Save process filter if provided
     if (filter_comm) {
         pu->filter_comm = kstrdup(filter_comm, GFP_KERNEL);
         if (!pu->filter_comm) {
-            uprobe_debug("igloo: Failed to allocate filter_comm memory\n");
+uprobe_debug("igloo: Failed to allocate filter_comm memory\n");
             path_put(&file_path);
             kfree(pu->filename);
             kfree(pu);
@@ -194,16 +203,16 @@ void handle_op_register_uprobe(portal_region *mem_region)
         }
     }
     
-    // Zero the consumer struct to ensure clean state
+// Zero the consumer struct to ensure clean state
     memset(&pu->consumer, 0, sizeof(pu->consumer));
     
-    // Set up handlers based on probe type
+// Set up handlers based on probe type
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0)
     if (reg->type == PORTAL_UPROBE_TYPE_ENTRY) {
         pu->consumer.handler = portal_uprobe_handler;
-        pu->consumer.ret_handler = NULL;
+pu->consumer.ret_handler = NULL;
     } else if (reg->type == PORTAL_UPROBE_TYPE_RETURN) {
-        pu->consumer.handler = NULL;
+pu->consumer.handler = NULL;
         pu->consumer.ret_handler = portal_uprobe_ret_handler;
     } else if (reg->type == PORTAL_UPROBE_TYPE_BOTH) {
         pu->consumer.handler = portal_uprobe_handler;
@@ -212,9 +221,9 @@ void handle_op_register_uprobe(portal_region *mem_region)
 #else
     if (reg->type == PORTAL_UPROBE_TYPE_ENTRY) {
         pu->consumer.handler = portal_uprobe_handler;
-        pu->consumer.ret_handler = NULL;
+pu->consumer.ret_handler = NULL;
     } else if (reg->type == PORTAL_UPROBE_TYPE_RETURN) {
-        pu->consumer.handler = NULL;
+pu->consumer.handler = NULL;
         pu->consumer.ret_handler = portal_uprobe_ret_handler;
     } else if (reg->type == PORTAL_UPROBE_TYPE_BOTH) {
         pu->consumer.handler = portal_uprobe_handler;
@@ -222,7 +231,7 @@ void handle_op_register_uprobe(portal_region *mem_region)
     }
 #endif
 
-    // Register the uprobe
+// Register the uprobe
     inode = file_path.dentry->d_inode;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0)
     {
@@ -230,21 +239,21 @@ void handle_op_register_uprobe(portal_region *mem_region)
         uprobe = uprobe_register(inode, reg->offset, 0, &pu->consumer);
         if (IS_ERR(uprobe)) {
             ret = PTR_ERR(uprobe);
-            uprobe_debug("igloo: Failed to register uprobe: %d\n", ret);
+uprobe_debug("igloo: Failed to register uprobe: %d\n", ret);
             goto fail_put_path;
         }
-        // Store the handle so we can safely unregister later
+// Store the handle so we can safely unregister later
         pu->uprobe_handle = uprobe;
     }
 #else
     ret = uprobe_register(inode, reg->offset, &pu->consumer);
     if (ret) {
-        uprobe_debug("igloo: Failed to register uprobe: %d\n", ret);
+uprobe_debug("igloo: Failed to register uprobe: %d\n", ret);
         goto fail_put_path;
     }
 #endif
     
-    // Return success with the pointer address as the ID
+// Return success with the pointer address as the ID
     mem_region->header.size = (uint64_t)(unsigned long)pu;
 
     mem_region->header.op = HYPER_RESP_READ_NUM;
@@ -259,13 +268,13 @@ fail_free_pu:
 fail:
     mem_region->header.op = HYPER_RESP_READ_FAIL;
 }
+
 static void unregister_uprobe_deferred(struct work_struct *work)
 {
     struct portal_uprobe *pu = container_of(work, struct portal_uprobe, unregister_work);
     
-    printk(KERN_EMERG "igloo: Deferred unregistering uprobe at ptr=%p\n", pu);
+    uprobe_debug("igloo: Deferred unregistering uprobe at ptr=%p\n", pu);
     
-    // Unregister the uprobe using the stored handle
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,12,0)
     uprobe_unregister_nosync(pu->uprobe_handle, &pu->consumer);
     uprobe_unregister_sync();
@@ -304,8 +313,11 @@ void handle_op_unregister_uprobe(portal_region *mem_region)
         mem_region->header.op = HYPER_RESP_READ_FAIL;
         return;
     }
+
+    // Immediately disable the probe to prevent further hits
+    pu->enabled = false;
     
-    // Initialize and schedule the deferred work
+    // Defer the blocking unregistration to a workqueue
     INIT_WORK(&pu->unregister_work, unregister_uprobe_deferred);
     schedule_work(&pu->unregister_work);
     
