@@ -120,7 +120,7 @@ static int portal_uprobe(struct uprobe_consumer *uc, struct pt_regs *regs, bool 
     }
     
     // Explicitly inform the user which type of probe we're detecting
-    uprobe_debug("igloo: %s uprobe hit: ptr=%p, file=%s, offset=%lld, proc=%s, pid=%d\n",
+    uprobe_debug("igloo: %s uprobe hit: id=%llu, file=%s, offset=%lld, proc=%s, pid=%d\n",
                  is_enter ? "Entry" : "Return",
                  (unsigned long long)(pu->id), pu->filename, 
                  (long long)(pu->offset), current->comm, task_pid_nr(current));
