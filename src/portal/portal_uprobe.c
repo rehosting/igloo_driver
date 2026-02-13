@@ -145,21 +145,36 @@ static int portal_uprobe_ret_handler(struct uprobe_consumer *uc, unsigned long f
 }
 #endif
 
-// Search for a uprobe by ID
-static struct portal_uprobe *find_uprobe_by_id(unsigned long id)
+
+static void unregister_uprobe_deferred(struct work_struct *work)
 {
-    struct portal_uprobe *pu;
+    struct portal_uprobe *pu = container_of(work, struct portal_uprobe, unregister_work);
     
-    spin_lock(&uprobe_lock);
-    hash_for_each_possible(uprobe_table, pu, hlist, id) {
-        if ((pu->id) == id) {
-            spin_unlock(&uprobe_lock);
-            return pu;
-        }
+    uprobe_debug("igloo: Deferred unregistering uprobe at ptr=%p\n", pu);
+    
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,12,0)
+    uprobe_unregister_nosync(pu->uprobe_handle, &pu->consumer);
+    uprobe_unregister_sync();
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5,11,0)
+    uprobe_unregister(pu->uprobe_handle, &pu->consumer);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0)
+    if (pu->uprobe_handle)
+        uprobe_unregister(pu->uprobe_handle, &pu->consumer);
+    else
+        uprobe_unregister(pu->path.dentry->d_inode, pu->offset, &pu->consumer);
+#else
+    uprobe_unregister(pu->path.dentry->d_inode, pu->offset, &pu->consumer);
+#endif
+    
+    synchronize_rcu();
+
+    // Free resources
+    path_put(&pu->path);
+    kfree(pu->filename);
+    if (pu->filter_comm) {
+        kfree(pu->filter_comm);
     }
-    spin_unlock(&uprobe_lock);
-    
-    return NULL;
+    kfree(pu);
 }
 
 // Handler for registering a new uprobe
@@ -309,36 +324,6 @@ fail:
     mem_region->header.op = HYPER_RESP_READ_FAIL;
 }
 
-static void unregister_uprobe_deferred(struct work_struct *work)
-{
-    struct portal_uprobe *pu = container_of(work, struct portal_uprobe, unregister_work);
-    
-    uprobe_debug("igloo: Deferred unregistering uprobe at ptr=%p\n", pu);
-    
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,12,0)
-    uprobe_unregister_nosync(pu->uprobe_handle, &pu->consumer);
-    uprobe_unregister_sync();
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5,11,0)
-    uprobe_unregister(pu->uprobe_handle, &pu->consumer);
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0)
-    if (pu->uprobe_handle)
-        uprobe_unregister(pu->uprobe_handle, &pu->consumer);
-    else
-        uprobe_unregister(pu->path.dentry->d_inode, pu->offset, &pu->consumer);
-#else
-    uprobe_unregister(pu->path.dentry->d_inode, pu->offset, &pu->consumer);
-#endif
-    
-    synchronize_rcu();
-
-    // Free resources
-    path_put(&pu->path);
-    kfree(pu->filename);
-    if (pu->filter_comm) {
-        kfree(pu->filter_comm);
-    }
-    kfree(pu);
-}
 
 // Handler for unregistering a uprobe
 void handle_op_unregister_uprobe(portal_region *mem_region)
