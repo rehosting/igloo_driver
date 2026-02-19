@@ -50,7 +50,8 @@ PORTAL_OP_LIST
 #undef X
 
 void handle_op_register_netdev(portal_region *mem_region);
-
 void handle_op_lookup_netdev(portal_region *mem_region);
+void handle_op_get_netdev_state(portal_region *mem_region);
+void handle_op_set_netdev_state(portal_region *mem_region);
 
 #endif /* __PORTAL_INTERNAL_H__ */
