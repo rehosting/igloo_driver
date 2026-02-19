@@ -4,12 +4,12 @@
 #include <linux/version.h>
 #include "../netdevs/igloonet.h"
 
-void handle_op_register_netdev(portal_region *mem_region)
+void handle_op_netdev_register(portal_region *mem_region)
 {
     struct net_device *ndev;
     char *devname = (char *)PORTAL_DATA(mem_region);
 
-    printk(KERN_EMERG "igloo: register_netdev request for '%s'\n", devname);
+    printk(KERN_EMERG "igloo: netdev_register request for '%s'\n", devname);
 
     ndev = igloonet_init_one(devname);
     if (ndev) {
@@ -23,12 +23,12 @@ void handle_op_register_netdev(portal_region *mem_region)
     }
 }
 
-void handle_op_lookup_netdev(portal_region *mem_region)
+void handle_op_netdev_lookup(portal_region *mem_region)
 {
     char *devname = (char *)PORTAL_DATA(mem_region);
     struct net_device *ndev = dev_get_by_name(&init_net, devname);
 
-    printk(KERN_EMERG "igloo: lookup_netdev request for '%s'\n", devname);
+    printk(KERN_EMERG "igloo: netdev_lookup request for '%s'\n", devname);
 
     if (ndev) {
         printk(KERN_EMERG "igloo: found netdev '%s' at %p\n", devname, ndev);
@@ -42,14 +42,14 @@ void handle_op_lookup_netdev(portal_region *mem_region)
     }
 }
 
-void handle_op_set_netdev_state(portal_region *mem_region)
+void handle_op_netdev_set_state(portal_region *mem_region)
 {
     char *devname = (char *)PORTAL_DATA(mem_region);
     struct net_device *ndev;
     int ret = 0;
     unsigned long requested_state = mem_region->header.size;
 
-    printk(KERN_EMERG "igloo: set_netdev_state request for '%s' state=%lu\n", devname, requested_state);
+    printk(KERN_EMERG "igloo: netdev_set_state request for '%s' state=%lu\n", devname, requested_state);
 
     ndev = dev_get_by_name(&init_net, devname);
     if (!ndev) {
@@ -88,13 +88,13 @@ void handle_op_set_netdev_state(portal_region *mem_region)
     dev_put(ndev);
 }
 
-void handle_op_get_netdev_state(portal_region *mem_region)
+void handle_op_netdev_get_state(portal_region *mem_region)
 {
     char *devname = (char *)PORTAL_DATA(mem_region);
     struct net_device *ndev;
     unsigned int state = 0;
 
-    printk(KERN_EMERG "igloo: get_netdev_state request for '%s'\n", devname);
+    printk(KERN_EMERG "igloo: netdev_get_state request for '%s'\n", devname);
 
     ndev = dev_get_by_name(&init_net, devname);
     if (!ndev) {

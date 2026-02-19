@@ -24,4 +24,8 @@
     X(kallsyms_lookup, KALLSYMS_LOOKUP) \
     X(tramp_generate, TRAMP_GENERATE) \
     X(hyperfs_add_hyperfile, HYPERFS_ADD_HYPERFILE) \
-    X(copy_buf_guest, COPY_BUF_GUEST)
+    X(copy_buf_guest, COPY_BUF_GUEST) \
+    X(netdev_register, NETDEV_REGISTER) \
+    X(netdev_lookup, NETDEV_LOOKUP) \
+    X(netdev_get_state, NETDEV_GET_STATE) \
+    X(netdev_set_state, NETDEV_SET_STATE)
