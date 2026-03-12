@@ -13,6 +13,32 @@ static inline bool local_mips_syscall_is_indirect(struct task_struct *task,
 		(regs->regs[2] == __NR_syscall);
 }
 
+static inline unsigned long __mips_get_syscall_arg(struct pt_regs *regs, unsigned int n)
+{
+	unsigned long usp __maybe_unused = regs->regs[29];
+
+	switch (n) {
+	case 0: case 1: case 2: case 3:
+		return regs->regs[4 + n];
+
+#ifdef CONFIG_32BIT
+	case 4: case 5: case 6: case 7:
+        /* Stack arguments require memory access, returning 0 for now as
+           send_signal only uses args 0-2 (registers) */
+		return 0;
+#endif
+
+#ifdef CONFIG_64BIT
+	case 4: case 5: case 6: case 7:
+		return regs->regs[4 + n];
+#endif
+
+	default:
+		BUG();
+	}
+
+	unreachable();
+}
 
 static inline void mips_set_syscall_arg(unsigned long arg,
 	struct task_struct *task, struct pt_regs *regs, unsigned int n)
@@ -49,6 +75,14 @@ static inline void mips_set_syscall_arg(unsigned long arg,
 
 	unreachable();
 }
+
+static inline unsigned long syscall_get_argument(struct task_struct *task,
+					 struct pt_regs *regs, int i)
+{
+	/* O32 ABI syscall() indirect check skipped for function probing */
+    return __mips_get_syscall_arg(regs, i);
+}
+
 static inline void syscall_set_argument(struct task_struct *task,
 					 struct pt_regs *regs,
                      int i, unsigned long arg)
