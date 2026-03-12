@@ -29,4 +29,12 @@
     X(lookup_netdev, LOOKUP_NETDEV) \
     X(set_netdev_state, SET_NETDEV_STATE) \
     X(get_netdev_state, GET_NETDEV_STATE) \
-    X(copy_buf_guest, COPY_BUF_GUEST)
+    X(copy_buf_guest, COPY_BUF_GUEST) \
+    X(procfs_create_file, PROCFS_CREATE_FILE) \
+    X(procfs_create_or_lookup_dir, PROCFS_CREATE_OR_LOOKUP_DIR) \
+    X(sysfs_create_file, SYSFS_CREATE_FILE) \
+    X(sysfs_create_or_lookup_dir, SYSFS_CREATE_OR_LOOKUP_DIR) \
+    X(devfs_create_device, DEVFS_CREATE_DEVICE) \
+    X(devfs_create_or_lookup_dir, DEVFS_CREATE_OR_LOOKUP_DIR) \
+    X(mtd_nuke, MTD_NUKE) \
+    X(mtd_create, MTD_CREATE)
