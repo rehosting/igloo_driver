@@ -6,9 +6,9 @@
 #include <linux/version.h>
 
 /* --- Callback Type Definitions --- */
-typedef int (*py_read_cb_t)(int id, uint64_t offset, uint32_t len, uint8_t *buf);
-typedef int (*py_write_cb_t)(int id, uint64_t offset, uint32_t len, const uint8_t *buf);
-typedef int (*py_erase_cb_t)(int id, uint64_t offset, uint64_t len);
+typedef int (*py_read_cb_t)(int id, unsigned long offset, unsigned long len, uint8_t *buf);
+typedef int (*py_write_cb_t)(int id, unsigned long offset, unsigned long len, const uint8_t *buf);
+typedef int (*py_erase_cb_t)(int id, unsigned long offset, unsigned long len);
 
 /* --- Data Structures --- */
 
@@ -58,7 +58,7 @@ static int hybrid_mtd_read(struct mtd_info *mtd, loff_t from, size_t len,
 
     if (dev->py_read) {
         /* MODE 1: CALLBACK */
-        int ret = dev->py_read(dev->id, (uint64_t)from, (uint32_t)len, buf);
+        int ret = dev->py_read(dev->id, (unsigned long)from, (unsigned long)len, buf);
         if (ret == 0) *retlen = len;
         return ret;
     }
@@ -78,7 +78,7 @@ static int hybrid_mtd_write(struct mtd_info *mtd, loff_t to, size_t len,
 
     if (dev->py_write) {
         /* MODE 1: CALLBACK */
-        int ret = dev->py_write(dev->id, (uint64_t)to, (uint32_t)len, buf);
+        int ret = dev->py_write(dev->id, (unsigned long)to, (unsigned long)len, buf);
         if (ret == 0) *retlen = len;
         return ret;
     }
@@ -97,7 +97,7 @@ static int hybrid_mtd_erase(struct mtd_info *mtd, struct erase_info *instr)
 
     if (dev->py_erase) {
         /* MODE 1: CALLBACK */
-        ret = dev->py_erase(dev->id, (uint64_t)instr->addr, (uint64_t)instr->len);
+        ret = dev->py_erase(dev->id, (unsigned long)instr->addr, (unsigned long)instr->len);
     }
     
     /* MODE 0: VIRTUAL ZEROS -> Do nothing (already clean) */
