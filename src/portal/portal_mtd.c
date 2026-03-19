@@ -113,13 +113,6 @@ static int hybrid_mtd_erase(struct mtd_info *mtd, struct erase_info *instr)
 
 static int fake_block_isbad(struct mtd_info *mtd, loff_t ofs) { return 0; }
 
-static int fake_read_oob(struct mtd_info *mtd, loff_t from, struct mtd_oob_ops *ops) {
-    if (ops->datbuf) hybrid_mtd_read(mtd, from, ops->len, &ops->retlen, ops->datbuf);
-    if (ops->oobbuf) memset(ops->oobbuf, 0xFF, ops->ooblen); // OOB is usually 0xFF on clean flash
-    ops->oobretlen = ops->ooblen;
-    return 0;
-}
-
 /* --- Command Handlers --- */
 /* OP: NUKE EXISTING MTDs */
 void handle_op_mtd_nuke(portal_region *mem_region)
@@ -163,6 +156,9 @@ void handle_op_mtd_create(portal_region *mem_region)
     struct portal_mtd_create_req *req = (struct portal_mtd_create_req *)PORTAL_DATA(mem_region);
     struct portal_mtd_entry *entry;
     struct mtd_info *mtd;
+    u32 req_writesize;
+    u32 req_erasesize;
+    uint64_t req_total_size;
     
     entry = kzalloc(sizeof(*entry), GFP_KERNEL);
     mtd = kzalloc(sizeof(struct mtd_info), GFP_KERNEL);
@@ -173,12 +169,37 @@ void handle_op_mtd_create(portal_region *mem_region)
         return;
     }
 
+    req->label[sizeof(req->label) - 1] = '\0';
+
+    req_writesize = req->write_size ? req->write_size : 1;
+    req_erasesize = req->erase_size ? req->erase_size : req_writesize;
+    req_total_size = req->total_size;
+
+    if (!req_total_size || !req->label[0]) {
+        printk(KERN_ERR "portal_mtd: invalid create request (label='%s', size=%llu)\n",
+               req->label, (unsigned long long)req_total_size);
+        kfree(entry);
+        kfree(mtd);
+        mem_region->header.op = HYPER_RESP_WRITE_FAIL;
+        return;
+    }
+
+    if (req_total_size < req_erasesize)
+        req_total_size = req_erasesize;
+
     /* Configure Identity */
     mtd->name = kstrdup(req->label, GFP_KERNEL);
-    mtd->size = req->total_size;
-    mtd->erasesize = req->erase_size;
-    mtd->writesize = req->write_size;
-    mtd->oobsize = req->oob_size;
+    if (!mtd->name) {
+        kfree(entry);
+        kfree(mtd);
+        mem_region->header.op = HYPER_RESP_WRITE_FAIL;
+        return;
+    }
+
+    mtd->size = req_total_size;
+    mtd->erasesize = req_erasesize;
+    mtd->writesize = req_writesize;
+    mtd->oobsize = req->is_nand ? req->oob_size : 0;
     mtd->owner = THIS_MODULE;
     mtd->priv = entry;
 
@@ -188,12 +209,15 @@ void handle_op_mtd_create(portal_region *mem_region)
     
     if (req->is_nand) {
         mtd->type = MTD_NANDFLASH;
-        mtd->flags = MTD_CAP_NANDFLASH;
+        mtd->flags = MTD_CAP_NANDFLASH | MTD_WRITEABLE;
         mtd->_block_isbad = fake_block_isbad;
-        mtd->_read_oob = fake_read_oob;
+        /*
+         * Keep only ->_read/->_write hooks. Newer MTD core rejects
+         * devices that provide both ->_read and ->_read_oob.
+         */
     } else {
         mtd->type = MTD_RAM;
-        mtd->flags = MTD_CAP_RAM;
+        mtd->flags = MTD_CAP_RAM | MTD_WRITEABLE;
     }
 
     /* Configure Mode */
@@ -204,13 +228,14 @@ void handle_op_mtd_create(portal_region *mem_region)
         entry->py_erase = NULL;
     } else {
         // CALLBACK MODE: Assign pointers
-        entry->py_read = (py_read_cb_t)(uintptr_t)req->cb_read_ptr;
-        entry->py_write = (py_write_cb_t)(uintptr_t)req->cb_write_ptr;
-        entry->py_erase = (py_erase_cb_t)(uintptr_t)req->cb_erase_ptr;
+        entry->py_read = (py_read_cb_t)(unsigned long)req->cb_read_ptr;
+        entry->py_write = (py_write_cb_t)(unsigned long)req->cb_write_ptr;
+        entry->py_erase = (py_erase_cb_t)(unsigned long)req->cb_erase_ptr;
     }
 
     /* Register */
     if (mtd_device_register(mtd, NULL, 0)) {
+        printk(KERN_ERR "portal_mtd: failed to register mtd '%s'\n", req->label);
         kfree(mtd->name); kfree(entry); kfree(mtd);
         mem_region->header.op = HYPER_RESP_WRITE_FAIL;
         return;
