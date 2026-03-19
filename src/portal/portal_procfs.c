@@ -7,6 +7,12 @@
 #include <linux/atomic.h>
 #include <linux/version.h>
 #include <linux/kallsyms.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
+#include "portal_procfs.h"
+#define IGLOO_NEEDS_PROC_PERMANENT_CLEAR 1
+#else
+#define IGLOO_NEEDS_PROC_PERMANENT_CLEAR 0
+#endif
 
 static LIST_HEAD(procfs_entry_list);
 static atomic_t procfs_entry_id = ATOMIC_INIT(1);
@@ -15,6 +21,8 @@ static DEFINE_SPINLOCK(procfs_entry_lock);
 static LIST_HEAD(procfs_dir_list);
 static atomic_t procfs_dir_id = ATOMIC_INIT(1);
 static DEFINE_SPINLOCK(procfs_dir_lock);
+
+static void igloo_remove_proc_entry(const char *name, struct proc_dir_entry *parent);
 
 // Add this forward declaration before any use of find_proc_dir_by_id
 static struct proc_dir_entry *find_proc_dir_by_id(int id)
@@ -122,14 +130,14 @@ static struct proc_dir_entry *get_or_create_proc_dir(const char *name, struct pr
 
     dir = kzalloc(sizeof(*dir), GFP_KERNEL);
     if (!dir) {
-        remove_proc_entry(name, parent);
+        igloo_remove_proc_entry(name, parent);
         return NULL;
     }
     dir->entry = entry;
     dir->path = kstrdup(full_path, GFP_KERNEL);
     if (!dir->path) {
         kfree(dir);
-        remove_proc_entry(name, parent);
+        igloo_remove_proc_entry(name, parent);
         return NULL;
     }
     dir->id = atomic_inc_return(&procfs_dir_id);
@@ -147,6 +155,15 @@ typedef struct proc_dir_entry *(*pde_subdir_find_t)(struct proc_dir_entry *dir, 
 
 static struct proc_dir_entry *internal_proc_root = NULL;
 static pde_subdir_find_t internal_pde_subdir_find = NULL;
+
+#if IGLOO_NEEDS_PROC_PERMANENT_CLEAR
+#if defined(PROC_ENTRY_PERMANENT) && (PROC_ENTRY_PERMANENT != 0U)
+#define IGLOO_PROC_ENTRY_PERMANENT_BIT PROC_ENTRY_PERMANENT
+#else
+/* Runtime internal procfs flag bit; public headers may map PROC_ENTRY_PERMANENT to 0 for modules. */
+#define IGLOO_PROC_ENTRY_PERMANENT_BIT (1U << 0)
+#endif
+#endif
 
 static int resolve_proc_symbols(void)
 {
@@ -182,6 +199,44 @@ static bool check_proc_entry_exists(struct proc_dir_entry *parent, const char *n
     return (found != NULL);
 }
 
+static struct proc_dir_entry *find_proc_subdir_entry(struct proc_dir_entry *parent,
+						     const char *name)
+{
+    if (resolve_proc_symbols() < 0)
+        return NULL;
+
+    if (!parent)
+        parent = internal_proc_root;
+
+    return internal_pde_subdir_find(parent, name, strlen(name));
+}
+
+static void clear_permanent_flag_if_needed(struct proc_dir_entry *entry,
+					     const char *name)
+{
+#if IGLOO_NEEDS_PROC_PERMANENT_CLEAR
+    if (!entry)
+        return;
+
+    if (!(entry->flags & IGLOO_PROC_ENTRY_PERMANENT_BIT))
+        return;
+
+    printk(KERN_EMERG "portal_procfs: Clearing PROC_ENTRY_PERMANENT for '%s'\n", name);
+    entry->flags &= ~IGLOO_PROC_ENTRY_PERMANENT_BIT;
+#else
+    (void)entry;
+    (void)name;
+#endif
+}
+
+static void igloo_remove_proc_entry(const char *name, struct proc_dir_entry *parent)
+{
+    struct proc_dir_entry *entry = find_proc_subdir_entry(parent, name);
+
+    clear_permanent_flag_if_needed(entry, name);
+    remove_proc_entry(name, parent);
+}
+
 // Create a new procfs entry
 void handle_op_procfs_create_file(portal_region *mem_region)
 {
@@ -204,9 +259,6 @@ void handle_op_procfs_create_file(portal_region *mem_region)
         goto out;
     }
 
-    // Use kallsyms/pde_subdir_find to check for existence before removing/creating
-    exists = check_proc_entry_exists(parent, entry_name);
-
     // Parent must be provided (0 means root)
     if (req->parent_id) {
         parent = find_proc_dir_by_id(req->parent_id);
@@ -219,12 +271,15 @@ void handle_op_procfs_create_file(portal_region *mem_region)
         parent = NULL;
     }
 
+    // Use kallsyms/pde_subdir_find to check for existence before removing/creating
+    exists = check_proc_entry_exists(parent, entry_name);
+
     printk(KERN_EMERG "portal_procfs: parent=%p, entry_name='%s'\n", parent, entry_name);
 
     // Remove only if exists and replace is set
     if (exists && req->replace) {
         printk(KERN_EMERG "portal_procfs: Removing existing proc entry: %s\n", entry_name);
-        remove_proc_entry(entry_name, parent);
+        igloo_remove_proc_entry(entry_name, parent);
         exists = false;
     }
 
@@ -245,7 +300,7 @@ void handle_op_procfs_create_file(portal_region *mem_region)
     pe = kzalloc(sizeof(*pe), GFP_KERNEL);
     if (!pe) {
         printk(KERN_EMERG "portal_procfs: Failed to allocate portal_procfs_entry\n");
-        remove_proc_entry(entry_name, parent);
+        igloo_remove_proc_entry(entry_name, parent);
         mem_region->header.op = HYPER_RESP_WRITE_FAIL;
         goto out;
     }
@@ -255,7 +310,7 @@ void handle_op_procfs_create_file(portal_region *mem_region)
     pe->name = kstrdup(entry_name, GFP_KERNEL);
     if (!pe->name) {
         printk(KERN_EMERG "portal_procfs: Failed to allocate name for procfs entry\n");
-        remove_proc_entry(entry_name, parent);
+        igloo_remove_proc_entry(entry_name, parent);
         kfree(pe);
         mem_region->header.op = HYPER_RESP_WRITE_FAIL;
         goto out;
