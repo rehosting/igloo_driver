@@ -1,7 +1,7 @@
 # Auto-generated trampoline generator for portal
 import sys
 
-COUNT = int(sys.argv[1]) if len(sys.argv) > 1 else 4096
+COUNT = int(sys.argv[1]) if len(sys.argv) > 1 else 8192
 
 print("// Auto-generated trampoline functions\n")
 print("#define PORTAL_TRAMPOLINE_COUNT {0}\n".format(COUNT))
