@@ -27,4 +27,6 @@
     X(hyperfs_add_hyperfile, HYPERFS_ADD_HYPERFILE) \
     X(register_netdev, REGISTER_NETDEV) \
     X(lookup_netdev, LOOKUP_NETDEV) \
+    X(set_netdev_state, SET_NETDEV_STATE) \
+    X(get_netdev_state, GET_NETDEV_STATE) \
     X(copy_buf_guest, COPY_BUF_GUEST)
