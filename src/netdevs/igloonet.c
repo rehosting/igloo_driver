@@ -130,10 +130,18 @@ static const struct ethtool_ops igloonet_ethtool_ops = {
 
 static void igloonet_setup(struct net_device *dev)
 {
+	struct igloonet_priv *priv = netdev_priv(dev);
+
 	ether_setup(dev);
 
-	dev->netdev_ops = &igloonet_netdev_ops;
-	dev->ethtool_ops = &igloonet_ethtool_ops;
+	/* Copy the static global templates into this device's private memory */
+	memcpy(&priv->netdev_ops, &igloonet_netdev_ops, sizeof(struct net_device_ops));
+	memcpy(&priv->ethtool_ops, &igloonet_ethtool_ops, sizeof(struct ethtool_ops));
+
+	/* Point this device to its OWN private copies */
+	dev->netdev_ops = &priv->netdev_ops;
+	dev->ethtool_ops = &priv->ethtool_ops;
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
 	dev->needs_free_netdev = true;
 #else
@@ -199,6 +207,7 @@ static struct rtnl_link_ops igloonet_link_ops __read_mostly = {
 struct net_device* igloonet_init_one(const char *devname)
 {
 	struct net_device *dev_igloonet;
+	struct igloonet_priv *priv;
 	int err;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
 	/* allocate without calling the setup callback so we can copy the
@@ -206,10 +215,16 @@ struct net_device* igloonet_init_one(const char *devname)
 	 * reference dev->name). We'll call igloonet_setup() ourselves. */
 	dev_igloonet = alloc_netdev(0, devname, NET_NAME_USER, igloonet_setup);
 #else
-	dev_igloonet = alloc_netdev(0, devname, NET_NAME_USER, igloonet_setup);
+	dev_igloonet = alloc_netdev(sizeof(struct igloonet_priv), devname, NET_NAME_USER, igloonet_setup);
 #endif
 	if (!dev_igloonet)
 		return NULL;
+
+	/* Get the private data block */
+	priv = netdev_priv(dev_igloonet);
+
+	/* Copy the static template into our per-interface private data */
+	memcpy(&priv->link_ops, &igloonet_link_ops, sizeof(struct rtnl_link_ops));
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
 	/* copy the requested name into the netdev so igloonet_setup can use it */
@@ -219,7 +234,8 @@ struct net_device* igloonet_init_one(const char *devname)
 	strlcpy(dev_igloonet->name, devname, IFNAMSIZ);
 #endif
 
-	dev_igloonet->rtnl_link_ops = &igloonet_link_ops;
+	/* Assign the dynamically copied ops, NOT the static global one */
+	dev_igloonet->rtnl_link_ops = &priv->link_ops;
 	err = register_netdev(dev_igloonet);
 	if (err < 0)
 		goto err;
