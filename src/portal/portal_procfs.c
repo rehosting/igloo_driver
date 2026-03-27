@@ -7,6 +7,13 @@
 #include <linux/atomic.h>
 #include <linux/version.h>
 #include <linux/kallsyms.h>
+#include <linux/mm.h>
+#include <linux/pagemap.h>
+#include <linux/fs.h>
+#include <linux/file.h>        // Required for fput()
+#include <linux/shmem_fs.h>    // Required for shmem_file_setup()
+#include <linux/vmalloc.h>     // Required for vzalloc()
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
 #include "portal_procfs.h"
 #define IGLOO_NEEDS_PROC_PERMANENT_CLEAR 1
@@ -23,6 +30,121 @@ static atomic_t procfs_dir_id = ATOMIC_INIT(1);
 static DEFINE_SPINLOCK(procfs_dir_lock);
 
 static void igloo_remove_proc_entry(const char *name, struct proc_dir_entry *parent);
+int igloo_proxy_mmap(struct file *file, struct vm_area_struct *vma);
+
+// --- Forward declaration for the hypercall bridge ---
+extern ssize_t igloo_fetch_mmap_page(struct file *file, void *buffer, loff_t offset, size_t size);
+
+ssize_t igloo_fetch_mmap_page(struct file *file, void *buffer, loff_t offset, size_t size)
+{
+    loff_t pos = offset;
+    ssize_t ret;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
+    mm_segment_t old_fs; // FIXED: C90 declaration at the top
+#endif
+
+    if (!file || !file->f_op || !file->f_op->read) {
+        printk(KERN_ERR "igloo_mmap: No .read hook available to trampoline.\n");
+        return -EINVAL;
+    }
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
+    old_fs = get_fs();
+    set_fs(KERNEL_DS);
+#endif
+
+    ret = file->f_op->read(file, (char __user *)buffer, size, &pos);
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
+    set_fs(old_fs);
+#endif
+
+    return ret;
+}
+
+int igloo_proxy_mmap(struct file *file, struct vm_area_struct *vma)
+{
+    // Retrieve our tracking structure from the proc inode using the correct API for the kernel version
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
+    struct portal_procfs_entry *pe = pde_data(file_inode(file));
+#else
+    struct portal_procfs_entry *pe = PDE_DATA(file_inode(file));
+#endif
+    struct file *shm_file;
+    size_t size = vma->vm_end - vma->vm_start;
+    int ret;
+
+    if (!pe) {
+        printk(KERN_ERR "igloo_mmap: No portal tracking data found for inode\n");
+        return -ENODEV;
+    }
+
+    // Lock to ensure only the first mmap call triggers the hypervisor fetch
+    mutex_lock(&pe->shm_lock);
+    
+    if (!pe->shm_file) {
+        // LAZY INITIALIZATION: Create the backing file on first use
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+        shm_file = shmem_kernel_file_setup(pe->name, size, vma->vm_flags | VM_NORESERVE);
+#else
+        shm_file = shmem_file_setup(pe->name, size, vma->vm_flags | VM_NORESERVE);
+#endif
+        
+        if (!IS_ERR(shm_file)) {
+            // kvzalloc introduced in 4.12. Fall back to vzalloc for older kernels.
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
+            void *buffer = kvzalloc(size, GFP_KERNEL);
+#else
+            void *buffer = vzalloc(size);
+#endif
+            if (buffer) {
+                ssize_t bytes = igloo_fetch_mmap_page(file, buffer, 0, size);
+                if (bytes > 0) {
+                    loff_t pos = 0;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+                    kernel_write(shm_file, buffer, bytes, &pos);
+#else
+                    mm_segment_t old_fs = get_fs();
+                    set_fs(KERNEL_DS);
+                    shm_file->f_op->write(shm_file, (char __user *)buffer, bytes, &pos);
+                    set_fs(old_fs);
+#endif
+                }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
+                kvfree(buffer);
+#else
+                vfree(buffer);
+#endif
+            }
+            // Cache it for the next process!
+            pe->shm_file = shm_file;
+        }
+    }
+    
+    // Grab the cached file
+    shm_file = pe->shm_file;
+    mutex_unlock(&pe->shm_lock);
+
+    if (IS_ERR_OR_NULL(shm_file))
+        return PTR_ERR(shm_file) ? PTR_ERR(shm_file) : -ENOMEM;
+
+    // Swap the VMA backing file to our shared RAM file
+    if (vma->vm_file) {
+        fput(vma->vm_file);
+    }
+    
+    // get_file() increments the refcount so the cached shm_file isn't 
+    // destroyed when this specific process closes its VMA
+    vma->vm_file = get_file(shm_file);
+
+    // Let the kernel's shmem subsystem handle the rest natively
+    if (shm_file->f_op && shm_file->f_op->mmap)
+        ret = shm_file->f_op->mmap(shm_file, vma);
+    else
+        ret = -ENODEV;
+
+    return ret;
+}
 
 // Add this forward declaration before any use of find_proc_dir_by_id
 static struct proc_dir_entry *find_proc_dir_by_id(int id)
@@ -86,18 +208,29 @@ igloo_convert_ops_to_fops(const struct igloo_proc_ops *ops, struct file_operatio
 #endif
 
 // Unified proc_create wrapper
-static struct proc_dir_entry *igloo_proc_create(const char *name, umode_t mode,
-						struct proc_dir_entry *parent,
-						const struct igloo_proc_ops *uops)
+static struct proc_dir_entry *igloo_proc_create_data(const char *name, umode_t mode,
+                        struct proc_dir_entry *parent,
+                        struct igloo_proc_ops *uops,
+                        void *data)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0)
-	struct proc_ops *pops = kmalloc(sizeof(struct proc_ops), GFP_KERNEL);
-	igloo_convert_ops_to_proc_ops(uops, pops);
-	return proc_create(name, mode, parent, pops);
+    struct proc_ops *pops;
 #else
-	struct file_operations *fops = kmalloc(sizeof(struct file_operations), GFP_KERNEL);
-	igloo_convert_ops_to_fops(uops, fops);
-	return proc_create(name, mode, parent, fops);
+    struct file_operations *fops;
+#endif
+
+    if (uops->mmap == NULL){
+        uops->mmap = igloo_proxy_mmap;
+    }
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0)
+    pops = kmalloc(sizeof(struct proc_ops), GFP_KERNEL);
+    igloo_convert_ops_to_proc_ops(uops, pops);
+    return proc_create_data(name, mode, parent, pops, data); // <-- Updated API
+#else
+    fops = kmalloc(sizeof(struct file_operations), GFP_KERNEL);
+    igloo_convert_ops_to_fops(uops, fops);
+    return proc_create_data(name, mode, parent, fops, data); // <-- Updated API
 #endif
 }
 
@@ -243,6 +376,7 @@ void handle_op_procfs_create_file(portal_region *mem_region)
     struct portal_procfs_create_req *req = (struct portal_procfs_create_req *)PORTAL_DATA(mem_region);
     struct proc_dir_entry *parent = NULL, *file;
     struct portal_procfs_entry *pe;
+    umode_t file_mode;
     int id;
     char *entry_name;
     bool exists;
@@ -289,32 +423,33 @@ void handle_op_procfs_create_file(portal_region *mem_region)
         mem_region->header.op = HYPER_RESP_WRITE_FAIL;
         goto out;
     }
+    file_mode = req->mode ? req->mode : 0444;
 
-    file = igloo_proc_create(entry_name, 0444, parent, &req->fops);
-    if (!file) {
-        printk(KERN_EMERG "portal_procfs: Failed to create proc entry: %s\n", entry_name);
-        mem_region->header.op = HYPER_RESP_WRITE_FAIL;
-        goto out;
-    }
-
+    // --- FIXED: You must allocate 'pe' before using it! ---
     pe = kzalloc(sizeof(*pe), GFP_KERNEL);
     if (!pe) {
         printk(KERN_EMERG "portal_procfs: Failed to allocate portal_procfs_entry\n");
-        igloo_remove_proc_entry(entry_name, parent);
         mem_region->header.op = HYPER_RESP_WRITE_FAIL;
         goto out;
     }
+    // ------------------------------------------------------
 
-    pe->entry = file;
-    pe->parent = parent;
+    mutex_init(&pe->shm_lock); // Now this is safe
     pe->name = kstrdup(entry_name, GFP_KERNEL);
-    if (!pe->name) {
-        printk(KERN_EMERG "portal_procfs: Failed to allocate name for procfs entry\n");
-        igloo_remove_proc_entry(entry_name, parent);
+
+    // 2. Create the file and bind the tracker
+    file = igloo_proc_create_data(entry_name, file_mode, parent, &req->fops, pe);
+    if (!file) {
+        printk(KERN_EMERG "portal_procfs: Failed to create proc entry: %s\n", entry_name);
+        kfree(pe->name);
         kfree(pe);
         mem_region->header.op = HYPER_RESP_WRITE_FAIL;
         goto out;
     }
+    proc_set_size(file, req->size);
+    
+    pe->entry = file;
+    pe->parent = parent;
 
     id = atomic_inc_return(&procfs_entry_id);
     pe->id = id;
