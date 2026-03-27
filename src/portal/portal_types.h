@@ -146,7 +146,9 @@ struct igloo_proc_ops {
 struct portal_procfs_create_req {
     char path[PROCFS_MAX_PATH];
     struct igloo_proc_ops fops;
+    uint64_t size;
     int parent_id;
+    umode_t mode;
     uint8_t replace;
 };
 
@@ -156,6 +158,8 @@ struct portal_procfs_entry {
     struct proc_dir_entry *entry;
     char *name;
     struct proc_dir_entry *parent;
+    struct file *shm_file;
+    struct mutex shm_lock;
 };
 
 struct portal_procfs_dir {
