@@ -19,21 +19,21 @@
 static void set_multicast_list(struct net_device *dev) {}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
-// 6.13+ uses dev_lstats for stats
+// 6.13+ uses dev_lstats for stats (returns void)
 static void igloonet_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *stats)
 {
 	dev_lstats_read(dev, &stats->tx_packets, &stats->tx_bytes);
 }
-#else
-// 4.10 uses per-cpu stats
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,11,0)
+// 4.11 to 6.12 uses per-cpu dstats (returns void)
 struct pcpu_dstats {
 	u64			tx_packets;
 	u64			tx_bytes;
 	struct u64_stats_sync	syncp;
 };
 
-static struct rtnl_link_stats64 *igloonet_get_stats64(struct net_device *dev,
-						   struct rtnl_link_stats64 *stats)
+static void igloonet_get_stats64(struct net_device *dev,
+				 struct rtnl_link_stats64 *stats)
 {
 	int i;
 	for_each_possible_cpu(i) {
@@ -49,6 +49,16 @@ static struct rtnl_link_stats64 *igloonet_get_stats64(struct net_device *dev,
 		stats->tx_bytes += tbytes;
 		stats->tx_packets += tpackets;
 	}
+}
+#else
+// 4.10 and older fall back to dev->stats (returns struct rtnl_link_stats64 *)
+static struct rtnl_link_stats64 *igloonet_get_stats64(struct net_device *dev,
+						   struct rtnl_link_stats64 *stats)
+{
+	stats->tx_packets = dev->stats.tx_packets;
+	stats->tx_bytes = dev->stats.tx_bytes;
+	stats->rx_packets = dev->stats.rx_packets;
+	stats->rx_bytes = dev->stats.rx_bytes;
 	return stats;
 }
 #endif
@@ -58,12 +68,16 @@ static netdev_tx_t igloonet_xmit(struct sk_buff *skb, struct net_device *dev)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
 	dev_lstats_add(dev, skb->len);
 	skb_tx_timestamp(skb);
-#else
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,11,0)
 	struct pcpu_dstats *dstats = this_cpu_ptr(dev->dstats);
 	u64_stats_update_begin(&dstats->syncp);
 	dstats->tx_packets++;
 	dstats->tx_bytes += skb->len;
 	u64_stats_update_end(&dstats->syncp);
+#else
+	/* 4.10 and older fallback - kernel will auto-report dev->stats */
+	dev->stats.tx_packets++;
+	dev->stats.tx_bytes += skb->len;
 #endif
 	dev_kfree_skb(skb);
 	return NETDEV_TX_OK;
@@ -75,15 +89,17 @@ static int igloonet_dev_init(struct net_device *dev)
 	dev->pcpu_stat_type = NETDEV_PCPU_STAT_LSTATS;
 	netdev_lockdep_set_classes(dev);
 	return 0;
-#else
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,11,0)
 	dev->dstats = netdev_alloc_pcpu_stats(struct pcpu_dstats);
 	if (!dev->dstats)
 		return -ENOMEM;
 	return 0;
+#else
+	return 0;
 #endif
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6,13,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,13,0) && LINUX_VERSION_CODE >= KERNEL_VERSION(4,11,0)
 static void igloonet_dev_uninit(struct net_device *dev)
 {
 	free_percpu(dev->dstats);
@@ -101,7 +117,7 @@ static int igloonet_change_carrier(struct net_device *dev, bool new_carrier)
 
 static const struct net_device_ops igloonet_netdev_ops = {
 	.ndo_init		= igloonet_dev_init,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6,13,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,13,0) && LINUX_VERSION_CODE >= KERNEL_VERSION(4,11,0)
 	.ndo_uninit		= igloonet_dev_uninit,
 #endif
 	.ndo_start_xmit		= igloonet_xmit,
@@ -151,8 +167,10 @@ static void igloonet_setup(struct net_device *dev)
 	dev->flags |= IFF_NOARP;
 	dev->flags &= ~IFF_MULTICAST;
 	
-	/* Add IFF_NO_ADDRCONF to prevent the IPv6 DAD crash */
-	dev->priv_flags |= IFF_LIVE_ADDR_CHANGE | IFF_NO_QUEUE | IFF_NO_ADDRCONF;
+	dev->priv_flags |= IFF_LIVE_ADDR_CHANGE;
+#ifdef IFF_NO_QUEUE
+	dev->priv_flags |= IFF_NO_QUEUE;
+#endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
 	dev->lltx = true;
@@ -181,10 +199,9 @@ static void igloonet_dellink(struct net_device *dev, struct list_head *head)
 {
     pr_info("igloonet: preventing deletion of %s\n", dev->name);
     return;
-    // unregister_netdevice_queue(dev, head);
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
 static int igloonet_validate(struct nlattr *tb[], struct nlattr *data[],
 			  struct netlink_ext_ack *extack)
 #else
@@ -212,14 +229,9 @@ struct net_device* igloonet_init_one(const char *devname)
 	struct net_device *dev_igloonet;
 	struct igloonet_priv *priv;
 	int err;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
-	/* allocate without calling the setup callback so we can copy the
-	 * requested name into dev->name before setup runs (setup may
-	 * reference dev->name). We'll call igloonet_setup() ourselves. */
-	dev_igloonet = alloc_netdev(0, devname, NET_NAME_USER, igloonet_setup);
-#else
+
+	/* allocate passing sizeof(struct igloonet_priv) to properly allocate private memory */
 	dev_igloonet = alloc_netdev(sizeof(struct igloonet_priv), devname, NET_NAME_USER, igloonet_setup);
-#endif
 	if (!dev_igloonet)
 		return NULL;
 
