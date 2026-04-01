@@ -62,16 +62,19 @@ void handle_op_set_netdev_state(portal_region *mem_region)
     rtnl_lock();
     if (requested_state) {
         if (!(ndev->flags & IFF_UP)) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
-            ret = dev_open(ndev, NULL);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
+            ret = dev_change_flags(ndev, ndev->flags | IFF_UP, NULL);
 #else
-            ret = dev_open(ndev);
+            ret = dev_change_flags(ndev, ndev->flags | IFF_UP);
 #endif
         }
     } else {
         if (ndev->flags & IFF_UP) {
-            dev_close(ndev); // dev_close returns void
-            ret = 0;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
+            ret = dev_change_flags(ndev, ndev->flags & ~IFF_UP, NULL);
+#else
+            ret = dev_change_flags(ndev, ndev->flags & ~IFF_UP);
+#endif
         }
     }
     rtnl_unlock();
