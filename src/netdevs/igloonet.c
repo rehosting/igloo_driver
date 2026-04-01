@@ -150,7 +150,10 @@ static void igloonet_setup(struct net_device *dev)
 
 	dev->flags |= IFF_NOARP;
 	dev->flags &= ~IFF_MULTICAST;
-	dev->priv_flags |= IFF_LIVE_ADDR_CHANGE | IFF_NO_QUEUE;
+	
+	/* Add IFF_NO_ADDRCONF to prevent the IPv6 DAD crash */
+	dev->priv_flags |= IFF_LIVE_ADDR_CHANGE | IFF_NO_QUEUE | IFF_NO_ADDRCONF;
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
 	dev->lltx = true;
 	dev->features	|= NETIF_F_SG | NETIF_F_FRAGLIST;
