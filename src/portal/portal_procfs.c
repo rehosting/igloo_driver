@@ -14,8 +14,9 @@
 #include <linux/shmem_fs.h>    // Required for shmem_file_setup()
 #include <linux/vmalloc.h>     // Required for vzalloc()
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
 #include "portal_procfs.h"
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
 #define IGLOO_NEEDS_PROC_PERMANENT_CLEAR 1
 #else
 #define IGLOO_NEEDS_PROC_PERMANENT_CLEAR 0
@@ -283,10 +284,6 @@ static struct proc_dir_entry *find_proc_subdir_entry(struct proc_dir_entry *pare
     return internal_pde_subdir_find(parent, name, strlen(name));
 }
 
-static bool check_proc_entry_exists(struct proc_dir_entry *parent, const char *name)
-{
-    return (find_proc_subdir_entry(parent, name) != NULL);
-}
 
 static void clear_permanent_flag_if_needed(struct proc_dir_entry *entry,
 					     const char *name)
