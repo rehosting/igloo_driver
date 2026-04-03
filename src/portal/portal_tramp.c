@@ -32,7 +32,7 @@ static struct portal_tramp_entry *tramp_entries[MAX_TRAMPOLINES];
 static int portal_tramp_kprobe_handler(struct kprobe *p, struct pt_regs *regs)
 {
     struct portal_tramp_entry *entry = container_of(p, struct portal_tramp_entry, kp);
-    printk(KERN_EMERG "igloo: Trampoline hit for ID %d\n", entry->tramp_id);
+    // printk(KERN_EMERG "igloo: Trampoline hit for ID %d\n", entry->tramp_id);
     igloo_portal(IGLOO_HYP_TRAMP_HIT, entry->tramp_id, (unsigned long)regs);
     return 0;
 }
