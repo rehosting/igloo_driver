@@ -234,56 +234,9 @@ static struct proc_dir_entry *igloo_proc_create_data(const char *name, umode_t m
 #endif
 }
 
-
-
-// Find or create a directory, return its proc_dir_entry and id
-static struct proc_dir_entry *get_or_create_proc_dir(const char *name, struct proc_dir_entry *parent, const char *full_path, int *out_id)
-{
-    struct portal_procfs_dir *dir;
-    struct proc_dir_entry *entry = NULL;
-    int found = 0;
-
-    spin_lock(&procfs_dir_lock);
-    list_for_each_entry(dir, &procfs_dir_list, list) {
-        if (strcmp(dir->path, full_path) == 0) {
-            *out_id = dir->id;
-            entry = dir->entry;
-            found = 1;
-            break;
-        }
-    }
-    spin_unlock(&procfs_dir_lock);
-
-    if (found)
-        return entry;
-
-    entry = proc_mkdir(name, parent);
-    if (!entry)
-        return NULL;
-
-    dir = kzalloc(sizeof(*dir), GFP_KERNEL);
-    if (!dir) {
-        igloo_remove_proc_entry(name, parent);
-        return NULL;
-    }
-    dir->entry = entry;
-    dir->path = kstrdup(full_path, GFP_KERNEL);
-    if (!dir->path) {
-        kfree(dir);
-        igloo_remove_proc_entry(name, parent);
-        return NULL;
-    }
-    dir->id = atomic_inc_return(&procfs_dir_id);
-
-    spin_lock(&procfs_dir_lock);
-    list_add(&dir->list, &procfs_dir_list);
-    spin_unlock(&procfs_dir_lock);
-
-    *out_id = dir->id;
-    return entry;
-}
-
-/* Internal procfs symbol resolution for existence checks */
+/* =========================================================================
+ * 1. INTERNAL PROCFS SYMBOL RESOLUTION
+ * ========================================================================= */
 typedef struct proc_dir_entry *(*pde_subdir_find_t)(struct proc_dir_entry *dir, const char *name, unsigned int len);
 
 static struct proc_dir_entry *internal_proc_root = NULL;
@@ -318,22 +271,7 @@ static int resolve_proc_symbols(void)
     return 0;
 }
 
-static bool check_proc_entry_exists(struct proc_dir_entry *parent, const char *name)
-{
-    struct proc_dir_entry *found;
-
-    if (resolve_proc_symbols() < 0)
-        return false;
-
-    if (!parent)
-        parent = internal_proc_root;
-
-    found = internal_pde_subdir_find(parent, name, strlen(name));
-    return (found != NULL);
-}
-
-static struct proc_dir_entry *find_proc_subdir_entry(struct proc_dir_entry *parent,
-						     const char *name)
+static struct proc_dir_entry *find_proc_subdir_entry(struct proc_dir_entry *parent, const char *name)
 {
     if (resolve_proc_symbols() < 0)
         return NULL;
@@ -341,7 +279,13 @@ static struct proc_dir_entry *find_proc_subdir_entry(struct proc_dir_entry *pare
     if (!parent)
         parent = internal_proc_root;
 
+    // Directly accesses the internal unmounted tree!
     return internal_pde_subdir_find(parent, name, strlen(name));
+}
+
+static bool check_proc_entry_exists(struct proc_dir_entry *parent, const char *name)
+{
+    return (find_proc_subdir_entry(parent, name) != NULL);
 }
 
 static void clear_permanent_flag_if_needed(struct proc_dir_entry *entry,
@@ -368,6 +312,69 @@ static void igloo_remove_proc_entry(const char *name, struct proc_dir_entry *par
 
     clear_permanent_flag_if_needed(entry, name);
     remove_proc_entry(name, parent);
+}
+
+/* =========================================================================
+ * 2. DIRECTORY CREATION LOGIC
+ * ========================================================================= */
+
+// Find or create a directory, return its proc_dir_entry and id
+static struct proc_dir_entry *get_or_create_proc_dir(const char *name, struct proc_dir_entry *parent, const char *full_path, int *out_id)
+{
+    struct portal_procfs_dir *dir;
+    struct proc_dir_entry *entry = NULL;
+    int found = 0;
+    bool created_new = false;
+
+    // 1. Check if we already track it
+    spin_lock(&procfs_dir_lock);
+    list_for_each_entry(dir, &procfs_dir_list, list) {
+        if (strcmp(dir->path, full_path) == 0) {
+            *out_id = dir->id;
+            entry = dir->entry;
+            found = 1;
+            break;
+        }
+    }
+    spin_unlock(&procfs_dir_lock);
+
+    if (found)
+        return entry;
+
+    // 2. Check if the kernel already created it natively (bypassing VFS)
+    entry = find_proc_subdir_entry(parent, name);
+
+    // 3. If it doesn't exist natively, create it
+    if (!entry) {
+        entry = proc_mkdir(name, parent);
+        if (!entry)
+            return NULL;
+        created_new = true;
+    }
+
+    dir = kzalloc(sizeof(*dir), GFP_KERNEL);
+    if (!dir) {
+        if (created_new)
+            igloo_remove_proc_entry(name, parent);
+        return NULL;
+    }
+    
+    dir->entry = entry;
+    dir->path = kstrdup(full_path, GFP_KERNEL);
+    if (!dir->path) {
+        kfree(dir);
+        if (created_new)
+            igloo_remove_proc_entry(name, parent);
+        return NULL;
+    }
+    dir->id = atomic_inc_return(&procfs_dir_id);
+
+    spin_lock(&procfs_dir_lock);
+    list_add(&dir->list, &procfs_dir_list);
+    spin_unlock(&procfs_dir_lock);
+
+    *out_id = dir->id;
+    return entry;
 }
 
 // Create a new procfs entry
