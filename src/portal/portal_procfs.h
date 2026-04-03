@@ -7,7 +7,9 @@
 #include <linux/list.h>
 #include <linux/proc_fs.h>
 #include <linux/rbtree.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
 #include <linux/refcount.h>
+#endif
 #include <linux/seq_file.h>
 #include <linux/spinlock.h>
 #include <linux/types.h>
