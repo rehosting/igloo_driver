@@ -8,16 +8,21 @@ void handle_op_register_netdev(portal_region *mem_region)
 {
     struct net_device *ndev;
     char *devname = (char *)PORTAL_DATA(mem_region);
+    char safe_name[IFNAMSIZ];
 
-    printk(KERN_EMERG "igloo: register_netdev request for '%s'\n", devname);
+    // Truncate to maximum allowed kernel netdev name length (15 chars)
+    strncpy(safe_name, devname, IFNAMSIZ - 1);
+    safe_name[IFNAMSIZ - 1] = '\0';
 
-    ndev = igloonet_init_one(devname);
+    printk(KERN_EMERG "igloo: register_netdev request for '%s' (using '%s')\n", devname, safe_name);
+
+    ndev = igloonet_init_one(safe_name);
     if (ndev) {
-        printk(KERN_EMERG "igloo: registered netdev '%s' returned %p\n", devname, ndev);
+        printk(KERN_EMERG "igloo: registered netdev '%s' returned %p\n", safe_name, ndev);
         mem_region->header.op = HYPER_RESP_READ_NUM;
         mem_region->header.size = (uintptr_t)ndev;
     } else {
-        printk(KERN_EMERG "igloo: failed to register netdev '%s'\n", devname);
+        printk(KERN_EMERG "igloo: failed to register netdev '%s'\n", safe_name);
         mem_region->header.op = HYPER_RESP_READ_FAIL;
         mem_region->header.size = (uintptr_t)ndev;
     }
