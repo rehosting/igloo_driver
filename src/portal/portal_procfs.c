@@ -344,7 +344,12 @@ static struct proc_dir_entry *get_or_create_proc_dir(const char *name, struct pr
     // 2. Check if the kernel already created it natively (bypassing VFS)
     entry = find_proc_subdir_entry(parent, name);
 
-    // 3. If it doesn't exist natively, create it
+    // COLLISION CHECK: If it exists natively, it MUST be a directory
+    if (entry && !S_ISDIR(entry->mode)) {
+        printk(KERN_ERR "portal_procfs: Collision: '%s' exists but is a file, cannot use as directory\n", name);
+        return NULL;
+    }
+
     if (!entry) {
         entry = proc_mkdir(name, parent);
         if (!entry)
@@ -382,6 +387,7 @@ void handle_op_procfs_create_file(portal_region *mem_region)
 {
     struct portal_procfs_create_req *req = (struct portal_procfs_create_req *)PORTAL_DATA(mem_region);
     struct proc_dir_entry *parent = NULL, *file;
+    struct proc_dir_entry *existing = NULL;
     struct portal_procfs_entry *pe;
     umode_t file_mode;
     int id;
@@ -408,17 +414,23 @@ void handle_op_procfs_create_file(portal_region *mem_region)
             mem_region->header.op = HYPER_RESP_WRITE_FAIL;
             goto out;
         }
-    } else {
-        parent = NULL;
     }
 
-    // Use kallsyms/pde_subdir_find to check for existence before removing/creating
-    exists = check_proc_entry_exists(parent, entry_name);
+    // Safety: Fetch the entry to check its type
+    existing = find_proc_subdir_entry(parent, entry_name);
+    exists = (existing != NULL);
 
     printk(KERN_EMERG "portal_procfs: parent=%p, entry_name='%s'\n", parent, entry_name);
 
     // Remove only if exists and replace is set
     if (exists && req->replace) {
+        // COLLISION PROTECTION: Do not allow a file registration to overwrite a directory
+        if (S_ISDIR(existing->mode)) {
+            printk(KERN_ERR "portal_procfs: Refusing to replace directory '%s' with a file\n", entry_name);
+            mem_region->header.op = HYPER_RESP_WRITE_FAIL;
+            goto out;
+        }
+
         printk(KERN_EMERG "portal_procfs: Removing existing proc entry: %s\n", entry_name);
         igloo_remove_proc_entry(entry_name, parent);
         exists = false;
