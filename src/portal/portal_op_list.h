@@ -36,5 +36,6 @@
     X(sysfs_create_or_lookup_dir, SYSFS_CREATE_OR_LOOKUP_DIR) \
     X(devfs_create_device, DEVFS_CREATE_DEVICE) \
     X(devfs_create_or_lookup_dir, DEVFS_CREATE_OR_LOOKUP_DIR) \
+    X(sysctl_create_file, SYSCTL_CREATE_FILE) \
     X(mtd_nuke, MTD_NUKE) \
     X(mtd_create, MTD_CREATE)
