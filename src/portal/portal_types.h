@@ -1,5 +1,7 @@
 #include "portal_op_list.h"
 
+#include <linux/types.h>
+
 enum HYPER_OP {
     HYPER_OP_NONE = 0,
 #define X(lower, upper) HYPER_OP_##upper,
@@ -167,4 +169,17 @@ struct portal_procfs_dir {
     struct proc_dir_entry *entry;
     char *path;
     int id;
+};
+
+#define SYSCTL_MAX_PATH 256
+#define SYSCTL_MAX_NAME 64
+#define SYSCTL_MAX_VAL  256
+
+struct portal_sysctl_create_req {
+    char dir_path[SYSCTL_MAX_PATH]; 
+    char entry_name[SYSCTL_MAX_NAME]; 
+    char initial_value[SYSCTL_MAX_VAL];
+    umode_t mode;
+    int maxlen;
+    void *handler; 
 };
