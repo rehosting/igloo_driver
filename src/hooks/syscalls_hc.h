@@ -100,53 +100,143 @@ int syscalls_hc_init(void);
 /* Helper for chunked comparison to avoid large stack buffers */
 #define CMP_CHUNK_SIZE 64
 
-static inline bool check_str_startswith(long user_ptr, const char *pattern, u32 len) {
-    char buf[CMP_CHUNK_SIZE];
-    u32 offset = 0;
+#include <linux/slab.h>
+
+#define MAX_FAST_STR_LEN 256
+#define MAX_SAFE_ALLOC 4096 // Typical PATH_MAX limit
+
+static inline bool check_str_exact(long user_ptr, const char *pattern, int len) {
+    char stack_buf[MAX_FAST_STR_LEN];
+    char *buf = stack_buf;
+    bool match = false;
     long ret;
-    
-    while (offset < len) {
-        int chunk = (len - offset > CMP_CHUNK_SIZE) ? CMP_CHUNK_SIZE : (len - offset);
-        ret = strncpy_from_user(buf, (const char __user *)(user_ptr + offset), chunk);
-        if (ret < chunk) return false; // EFAULT or hit null too early
-        if (memcmp(buf, pattern + offset, chunk) != 0) return false;
-        offset += chunk;
+
+    // Basic sanity checks
+    if (!user_ptr || !pattern || len <= 0 || len >= MAX_SAFE_ALLOC) return false;
+
+    // If the length exceeds our safe stack buffer, allocate from the heap
+    if (len >= MAX_FAST_STR_LEN) {
+        buf = kmalloc(len + 1, GFP_ATOMIC);
+        if (!buf) return false; // Allocation failed, bail out safely
     }
-    return true;
-}
 
-static inline bool check_str_exact(long user_ptr, const char *pattern, u32 len) {
-    char buf[1];
-    // Check prefix match
-    if (!check_str_startswith(user_ptr, pattern, len)) return false;
-    // Verify null termination at len
-    if (strncpy_from_user(buf, (const char __user *)(user_ptr + len), 1) != 1) return false;
-    return buf[0] == '\0';
-}
-
-static inline bool check_str_endswith(long user_ptr, const char *pattern, u32 pat_len) {
-    long str_len = strnlen_user((const char __user *)user_ptr, 32768); // Soft limit 32KB
-    if (str_len <= 0 || str_len - 1 < pat_len) return false;
-    return check_str_startswith(user_ptr + (str_len - 1 - pat_len), pattern, pat_len);
-}
-
-static inline bool check_str_contains(long user_ptr, const char *pattern, u32 pat_len) {
-    // Naive scanning implementation
-    char buf[CMP_CHUNK_SIZE];
-    long str_len = strnlen_user((const char __user *)user_ptr, 32768);
-    long i;
+    // Read from user space into our buffer (whether stack or heap)
+    ret = strncpy_from_user(buf, (const char __user *)user_ptr, len + 1);
     
-    if (str_len <= 0 || str_len - 1 < pat_len) return false;
+    if (ret == len) {
+        match = (memcmp(buf, pattern, len) == 0);
+    }
+
+    // Free the buffer if we allocated it dynamically
+    if (buf != stack_buf) {
+        kfree(buf);
+    }
+
+    return match;
+}
+
+static inline bool check_str_startswith(long user_ptr, const char *pattern, int len) {
+    char stack_buf[MAX_FAST_STR_LEN];
+    char *buf = stack_buf;
+    bool match = false;
+    long ret;
+
+    // Basic sanity checks
+    if (!user_ptr || !pattern || len <= 0 || len >= MAX_SAFE_ALLOC) return false;
+
+    // If the length exceeds our safe stack buffer, allocate from the heap
+    if (len > MAX_FAST_STR_LEN) {
+        buf = kmalloc(len, GFP_ATOMIC);
+        if (!buf) return false;
+    }
+
+    // Only need to copy 'len' bytes to verify the prefix
+    ret = strncpy_from_user(buf, (const char __user *)user_ptr, len);
     
-    // Optimization: find first char then check prefix
-    for (i = 0; i <= str_len - 1 - pat_len; i++) {
-        long ret = strncpy_from_user(buf, (const char __user *)(user_ptr + i), 1);
-        if (ret != 1) return false;
-        if (buf[0] == pattern[0]) {
-            if (check_str_startswith(user_ptr + i, pattern, pat_len)) return true;
+    // If it successfully copied 'len' non-null bytes, we can safely memcmp
+    if (ret == len) {
+        match = (memcmp(buf, pattern, len) == 0);
+    }
+
+    if (buf != stack_buf) {
+        kfree(buf);
+    }
+
+    return match;
+}
+
+static inline bool check_str_endswith(long user_ptr, const char *pattern, int len) {
+    char stack_buf[MAX_FAST_STR_LEN];
+    char *buf = stack_buf;
+    bool match = false;
+    long ret;
+
+    if (!user_ptr || !pattern || len <= 0 || len >= MAX_SAFE_ALLOC) return false;
+
+    // Fast path: try to read the string into the stack buffer
+    ret = strncpy_from_user(buf, (const char __user *)user_ptr, MAX_FAST_STR_LEN);
+    if (ret < 0) return false;
+
+    // If it completely filled the stack buffer, it might be longer.
+    // Allocate the maximum safe size and read again.
+    if (ret == MAX_FAST_STR_LEN) {
+        buf = kmalloc(MAX_SAFE_ALLOC, GFP_ATOMIC);
+        if (!buf) return false;
+        
+        ret = strncpy_from_user(buf, (const char __user *)user_ptr, MAX_SAFE_ALLOC);
+        if (ret < 0) {
+            kfree(buf);
+            return false;
         }
     }
-    return false;
+
+    // If the read string is at least as long as the pattern, check the suffix
+    if (ret >= len) {
+        match = (memcmp(buf + ret - len, pattern, len) == 0);
+    }
+
+    if (buf != stack_buf) {
+        kfree(buf);
+    }
+
+    return match;
+}
+
+static inline bool check_str_contains(long user_ptr, const char *pattern, int len) {
+    char stack_buf[MAX_FAST_STR_LEN];
+    char *buf = stack_buf;
+    bool match = false;
+    long ret;
+
+    if (!user_ptr || !pattern || len <= 0 || len >= MAX_SAFE_ALLOC) return false;
+
+    // Fast path: try to read the string into the stack buffer
+    ret = strncpy_from_user(buf, (const char __user *)user_ptr, MAX_FAST_STR_LEN);
+    if (ret < 0) return false;
+
+    // If it completely filled the stack buffer, allocate max safe size and read again.
+    if (ret == MAX_FAST_STR_LEN) {
+        buf = kmalloc(MAX_SAFE_ALLOC, GFP_ATOMIC);
+        if (!buf) return false;
+        
+        ret = strncpy_from_user(buf, (const char __user *)user_ptr, MAX_SAFE_ALLOC);
+        if (ret < 0) {
+            kfree(buf);
+            return false;
+        }
+    }
+
+    // If the read string is at least as long as the pattern, search inside it.
+    // strnstr is perfectly safe here because we guarantee it bounds-checks 'ret'.
+    if (ret >= len) {
+        match = (strnstr(buf, pattern, ret) != NULL);
+    }
+
+    if (buf != stack_buf) {
+        kfree(buf);
+    }
+
+    return match;
 }
 
 /* Normalize syscall names by removing common prefixes like 'sys_', '_sys_', 'compat_sys_' */
