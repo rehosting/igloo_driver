@@ -74,7 +74,7 @@ void handle_op_register_syscall_hook(portal_region *mem_region)
 static void unregister_syscall_deferred(struct work_struct *work)
 {
     struct kernel_syscall_hook *hook_ptr = container_of(work, struct kernel_syscall_hook, unregister_work);
-    
+    int i = 0;
     // 1. Immediately disable the hook (redundant but safe)
     hook_ptr->hook.enabled = false;
 
