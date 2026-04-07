@@ -13,6 +13,8 @@
 #include <linux/dcache.h>
 #include <linux/mm_types.h>
 #include <linux/ptrace.h>
+#include <linux/fcntl.h>     // For AT_FDCWD
+#include <linux/fs_struct.h> // For task->fs and fs_struct layout
 
 /* Compat helper for file inode access (changed ~5.15) */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)
@@ -739,12 +741,12 @@ void handle_op_read_fds(portal_region *mem_region)
     struct osi_fd_entry *fd_entry;
     char *string_buf;
     size_t string_offset;
-    char *path_buf = NULL;   // moved outside loop (C90)
+    char *path_buf = NULL;
+    struct path pwd;
 
-    // Get start_fd from the header - this is where we'll start scanning FDs
-    start_fd = (mem_region->header.addr);
+    // Cast the start_fd to signed int to capture negative edgecases like AT_FDCWD
+    start_fd = (int)(mem_region->header.addr);
 
-    // Get target task using the same helper as other OSI functions
     task = get_target_task_by_id(mem_region);
 
     igloo_debug_osi("igloo: Handling HYPER_OP_READ_FDS starting at fd=%d for task %d\n",
@@ -759,17 +761,86 @@ void handle_op_read_fds(portal_region *mem_region)
         return;
     }
 
-    // Reserve space for result header at beginning
-    max_fds = (CHUNK_SIZE / 2) / sizeof(struct osi_fd_entry);
+    // -------------------------------------------------------------
+    // EDGECASE: Current Working Directory (AT_FDCWD)
+    // -------------------------------------------------------------
+    if (start_fd == AT_FDCWD) {
+        igloo_debug_osi("igloo: Resolving AT_FDCWD for task\n");
+        
+        header->result_count = 0;
+        header->total_count = 0;
 
-    // Initialize header with zeros
+        if (!task->fs) {
+            mem_region->header.size = sizeof(struct osi_result_header);
+            mem_region->header.op = HYPER_RESP_READ_OK;
+            return;
+        }
+
+        // Safely extract the pwd struct
+        spin_lock(&task->fs->lock);
+        pwd = task->fs->pwd;
+        path_get(&pwd);
+        spin_unlock(&task->fs->lock);
+
+        path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
+        if (path_buf) {
+            char *path = d_path(&pwd, path_buf, PATH_MAX);
+            if (!IS_ERR(path)) {
+                size_t name_len = strlen(path);
+                
+                // Ensure it fits
+                if (sizeof(struct osi_result_header) + sizeof(struct osi_fd_entry) + name_len + 1 <= CHUNK_SIZE) {
+                    fd_entry = (struct osi_fd_entry *)(data_buf + sizeof(struct osi_result_header));
+                    string_offset = sizeof(struct osi_result_header) + sizeof(struct osi_fd_entry);
+                    string_buf = data_buf + string_offset;
+                    
+                    fd_entry->fd = AT_FDCWD;
+                    fd_entry->name_offset = string_offset;
+                    
+                    strncpy(string_buf, path, name_len);
+                    string_buf[name_len] = '\0';
+                    
+                    header->result_count = 1;
+                    header->total_count = 1;
+                    
+                    mem_region->header.addr = 0; // Signals we are done
+                    mem_region->header.size = string_offset + name_len + 1;
+                    mem_region->header.op = HYPER_RESP_READ_OK;
+                } else {
+                    mem_region->header.op = HYPER_RESP_READ_FAIL;
+                }
+            } else {
+                mem_region->header.op = HYPER_RESP_READ_FAIL;
+            }
+            kfree(path_buf);
+        } else {
+            mem_region->header.op = HYPER_RESP_READ_FAIL;
+        }
+        
+        path_put(&pwd);
+        return;
+    }
+
+    // -------------------------------------------------------------
+    // EDGECASE: Reject Bad File Descriptors
+    // -------------------------------------------------------------
+    if (start_fd < 0) {
+        igloo_debug_osi("igloo: Invalid negative file descriptor: %d\n", start_fd);
+        header->result_count = 0;
+        header->total_count = 0;
+        mem_region->header.size = sizeof(struct osi_result_header);
+        mem_region->header.op = HYPER_RESP_READ_FAIL;
+        return;
+    }
+
+    // -------------------------------------------------------------
+    // STANDARD BEHAVIOR: File Descriptor Loop
+    // -------------------------------------------------------------
+    max_fds = (CHUNK_SIZE / 2) / sizeof(struct osi_fd_entry);
     header->result_count = 0;
     header->total_count = 0;
 
-    // Start filling fd entries after header
     fd_entry = (struct osi_fd_entry *)(data_buf + sizeof(struct osi_result_header));
-
-    // String buffer starts after fd entries
     string_offset = sizeof(struct osi_result_header) + (max_fds * sizeof(struct osi_fd_entry));
     string_buf = data_buf + string_offset;
 
