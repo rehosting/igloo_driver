@@ -105,9 +105,10 @@ int igloo_proxy_mmap(struct file *file, struct vm_area_struct *vma)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
                     kernel_write(shm_file, buffer, bytes, &pos);
 #else
+                    // FIX: Use vfs_write to safely handle the write vs write_iter abstraction
                     mm_segment_t old_fs = get_fs();
                     set_fs(KERNEL_DS);
-                    shm_file->f_op->write(shm_file, (char __user *)buffer, bytes, &pos);
+                    vfs_write(shm_file, (char __user *)buffer, bytes, &pos);
                     set_fs(old_fs);
 #endif
                 }
