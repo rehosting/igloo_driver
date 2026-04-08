@@ -1466,10 +1466,34 @@ static int hyperfs_show_options(struct seq_file *f, struct dentry *dentry)
 	return 0;
 }
 
+static int hyperfs_statfs(struct dentry *dentry, struct kstatfs *buf)
+{
+	struct hyperfs *fs = dentry->d_sb->s_fs_info;
+	struct path real_path;
+	int err;
+
+	// 1. Resolve the root of the passthrough path (e.g., "/proc" or "/sys")
+	err = kern_path(fs->passthrough_path, LOOKUP_FOLLOW, &real_path);
+	if (err) {
+		// If the passthrough path is completely unresolvable, 
+		// return the error so user-space knows the mount is broken.
+		return err; 
+	}
+
+	// 2. Ask the VFS to fill the kstatfs buffer using the real filesystem
+	err = vfs_statfs(&real_path, buf);
+
+	// 3. Release the path reference
+	path_put(&real_path);
+
+	return err;
+}
+
 static const struct super_operations hyperfs_super_operations = {
 	.put_super = hyperfs_put_super,
 	.show_options = hyperfs_show_options,
 	.drop_inode = generic_delete_inode,
+	.statfs = hyperfs_statfs,
 };
 
 static void hyperfs_d_release(struct dentry *dentry)
