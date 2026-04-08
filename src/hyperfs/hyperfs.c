@@ -1470,6 +1470,7 @@ static const struct super_operations hyperfs_super_operations = {
 	.put_super = hyperfs_put_super,
 	.show_options = hyperfs_show_options,
 	.drop_inode = generic_delete_inode,
+	.statfs = simple_statfs,
 };
 
 static void hyperfs_d_release(struct dentry *dentry)
