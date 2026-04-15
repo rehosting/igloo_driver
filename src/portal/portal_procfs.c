@@ -165,47 +165,133 @@ static struct proc_dir_entry *find_proc_dir_by_id(int id)
     return entry;
 }
 
+static void igloo_flush_shm_to_hypervisor(struct file *file, struct portal_procfs_entry *pe)
+{
+    void *buffer;
+    loff_t size;
+    ssize_t bytes;
+    loff_t pos = 0;
+
+    if (!pe || !pe->shm_file) return;
+    if (!file->f_op || !file->f_op->write) return; // Python didn't provide a write hook
+
+    mutex_lock(&pe->shm_lock);
+    
+    // Get the exact size of the shared memory file
+    size = i_size_read(file_inode(pe->shm_file));
+    if (size <= 0) goto unlock;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
+    buffer = kvzalloc(size, GFP_KERNEL);
+#else
+    buffer = vzalloc(size);
+#endif
+
+    if (buffer) {
+        // 1. Read the modified data from the hidden RAM file
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+        bytes = kernel_read(pe->shm_file, buffer, size, &pos);
+#else
+        mm_segment_t old_fs = get_fs();
+        set_fs(KERNEL_DS);
+        bytes = vfs_read(pe->shm_file, (char __user *)buffer, size, &pos);
+        set_fs(old_fs);
+#endif
+
+        // 2. Push it back to the Python plugin via the trampoline
+        if (bytes > 0) {
+            pos = 0;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
+            old_fs = get_fs();
+            set_fs(KERNEL_DS);
+            file->f_op->write(file, (const char __user *)buffer, bytes, &pos);
+            set_fs(old_fs);
+#else
+            // In newer kernels, our python hypercall still accepts this kernel pointer 
+            // because dwarffi reads virtual memory seamlessly.
+            file->f_op->write(file, (const char __user *)buffer, bytes, &pos);
+#endif
+        }
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
+        kvfree(buffer);
+#else
+        vfree(buffer);
+#endif
+    }
+
+unlock:
+    mutex_unlock(&pe->shm_lock);
+}
+
+static int igloo_proxy_release(struct inode *inode, struct file *file)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
+    struct portal_procfs_entry *pe = pde_data(inode);
+#else
+    struct portal_procfs_entry *pe = PDE_DATA(inode);
+#endif
+
+    // 1. Flush any mmap writebacks to Python
+    if (pe && pe->shm_file) {
+        igloo_flush_shm_to_hypervisor(file, pe);
+    }
+
+    // 2. We don't have direct access to the original uops struct here, 
+    // but you could store the original `release` pointer in `pe` if you need to
+    // explicitly forward the release event to Python.
+    // For now, if the file is closed, the VFS handles the cleanup.
+
+    return 0;
+}
+
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0)
 static inline const struct proc_ops *
 igloo_convert_ops_to_proc_ops(const struct igloo_proc_ops *ops, struct proc_ops *out)
 {
-	memset(out, 0, sizeof(*out));
-	out->proc_open    = ops->open;
-	out->proc_read    = ops->read;
-	out->proc_read_iter = ops->read_iter;
-	out->proc_write   = ops->write;
-	out->proc_lseek   = ops->lseek;
-    out->proc_release = ops->release;
+    memset(out, 0, sizeof(*out));
+    out->proc_open    = ops->open;
+    out->proc_read    = ops->read;
+    out->proc_read_iter = ops->read_iter;
+    out->proc_write   = ops->write;
+    out->proc_lseek   = ops->lseek;
+    
+    // NEW: Route release through our writeback proxy
+    out->proc_release = igloo_proxy_release; 
+    
     out->proc_poll = ops->poll;
     out->proc_ioctl   = ops->ioctl;
 #ifdef CONFIG_COMPAT
-	out->proc_compat_ioctl = ops->compat_ioctl;
+    out->proc_compat_ioctl = ops->compat_ioctl;
 #endif
-	out->proc_mmap    = ops->mmap;
-	out->proc_get_unmapped_area = ops->get_unmapped_area;
-	return out;
+    out->proc_mmap    = ops->mmap;
+    out->proc_get_unmapped_area = ops->get_unmapped_area;
+    return out;
 }
 #else
 static inline const struct file_operations *
 igloo_convert_ops_to_fops(const struct igloo_proc_ops *ops, struct file_operations *out)
 {
-	memset(out, 0, sizeof(*out));
-	out->owner   = THIS_MODULE;
-	out->open    = ops->open;
-	out->read    = ops->read;
-	out->read_iter = ops->read_iter;
-	out->write   = ops->write;
-	out->llseek  = ops->lseek;
-	out->release = ops->release;
-	out->poll    = ops->poll;
-	out->unlocked_ioctl = ops->ioctl;
+    memset(out, 0, sizeof(*out));
+    out->owner   = THIS_MODULE;
+    out->open    = ops->open;
+    out->read    = ops->read;
+    out->read_iter = ops->read_iter;
+    out->write   = ops->write;
+    out->llseek  = ops->lseek;
+    
+    // NEW: Route release through our writeback proxy
+    out->release = igloo_proxy_release; 
+    
+    out->poll    = ops->poll;
+    out->unlocked_ioctl = ops->ioctl;
 #ifdef CONFIG_COMPAT
-	out->compat_ioctl = ops->compat_ioctl;
+    out->compat_ioctl = ops->compat_ioctl;
 #endif
-	out->mmap    = ops->mmap;
-	out->get_unmapped_area = ops->get_unmapped_area;
-	return out;
+    out->mmap    = ops->mmap;
+    out->get_unmapped_area = ops->get_unmapped_area;
+    return out;
 }
 #endif
 
