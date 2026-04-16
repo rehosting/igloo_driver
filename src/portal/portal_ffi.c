@@ -63,20 +63,20 @@ void handle_op_ffi_exec(portal_region *mem_region)
 
     /* Validate function pointer */
     if (!ffi_data->func_ptr || !igloo_is_kernel_addr((unsigned long)ffi_data->func_ptr)) {
-        igloo_pr_debug("igloo: Invalid function pointer %p\n", (void *)ffi_data->func_ptr);
+        igloo_pr_debug("igloo: Invalid function pointer %p\n", (void *)(unsigned long)ffi_data->func_ptr);
         mem_region->header.op = HYPER_RESP_READ_FAIL;
         return;
     }
     
-    /* Safety check on number of arguments - limit to 12 */
-    if (ffi_data->num_args > 12) {
-        igloo_pr_debug("igloo: Too many arguments (%lu > 12)\n", ffi_data->num_args);
+    /* Safety check on number of arguments - limit to 8 */
+    if (ffi_data->num_args > 8) {
+        igloo_pr_debug("igloo: Too many arguments (%u > 8)\n", ffi_data->num_args);
         mem_region->header.op = HYPER_RESP_READ_FAIL;
         return;
     }
     
-    igloo_pr_debug("igloo: Calling function at %p with %lu arguments (sig_mask: 0x%x)\n", 
-                  (void *)ffi_data->func_ptr, ffi_data->num_args, ffi_data->sig_mask);
+    igloo_pr_debug("igloo: Calling function at %p with %u arguments (sig_mask: 0x%x)\n", 
+                  (void *)(unsigned long)ffi_data->func_ptr, ffi_data->num_args, ffi_data->sig_mask);
     
     /* * The generated jump table handles all casting, architecture alignment,
      * and execution natively using the compiler's ABI rules. 
