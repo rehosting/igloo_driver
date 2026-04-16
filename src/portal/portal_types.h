@@ -103,11 +103,11 @@ struct osi_result_header {
 
 /* Define the FFI execution structure */
 struct portal_ffi_call {
-    unsigned long func_ptr;  /* Pointer to the function to call */
-    unsigned long num_args;  /* Number of arguments (up to 12) */
-    uint32_t sig_mask;       /* Added signature bitmask */
-    unsigned long args[12];  /* Array of arguments bumped to 12 */
-    uint64_t result;         /* Force result to uint64_t so we don't truncate 64-bit returns! */
+    uint64_t func_ptr;       /* Pointer to the function to call */
+    uint32_t num_args;       /* Number of arguments (up to 8) */
+    uint32_t sig_mask;       /* Signature bitmask */
+    uint64_t args[8];        /* MUST be uint64_t */
+    uint64_t result;         /* Return value */
 };
 
 /* Structure for trampoline generate operation */
