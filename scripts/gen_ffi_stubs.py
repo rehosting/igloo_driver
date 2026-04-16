@@ -10,7 +10,7 @@ def generate():
         "/* ========================================================================= */",
         "/* 64-BIT FAST PATH                                                          */",
         "/* ========================================================================= */",
-        "#if BITS_PER_LONG == 64",
+        "#ifdef CONFIG_64BIT",
         "",
         "typedef uint64_t (*generic_ffi_t)(uint64_t, uint64_t, uint64_t, uint64_t,",
         "                                  uint64_t, uint64_t, uint64_t, uint64_t);",
