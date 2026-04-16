@@ -36,7 +36,7 @@ $(PORTAL_TRAMP_GEN): ../scripts/gen_portal_tramp.py
 PORTAL_FFI_GEN := portal/ffi_stubs_generated.h
 
 $(PORTAL_FFI_GEN): ../scripts/gen_ffi_stubs.py
-	python3 $< > $@
+	python3 $< $@
 
 all: $(PORTAL_TRAMP_GEN) $(PORTAL_FFI_GEN)
 	make -j$(nproc) -C $(KDIR) M=$(PWD) ARCH=$(ARCH) EXTRA_CFLAGS="$(EXTRA_CFLAGS)" \
