@@ -2,6 +2,9 @@
 #include <linux/slab.h>
 #include <linux/kallsyms.h>
 
+#include "portal_types.h"
+#include "ffi_stubs_generated.h"
+
 int igloo_test_function(int a, int b, int c, int d, int e, int f, int g, int h);
 void *igloo_kzalloc(size_t size);
 void igloo_kfree(void *ptr);
@@ -47,12 +50,11 @@ int igloo_printk(const char *fmt, ...)
 
 /*
  * Execute a function through the FFI mechanism
- * This allows calling kernel functions dynamically with up to 8 arguments
+ * This allows calling kernel functions dynamically with up to 12 arguments
  */
 void handle_op_ffi_exec(portal_region *mem_region)
 {
     struct portal_ffi_call *ffi_data;
-    unsigned long result = 0;
     
     igloo_pr_debug("igloo: Handling HYPER_OP_FFI_EXEC\n");
     
@@ -66,66 +68,23 @@ void handle_op_ffi_exec(portal_region *mem_region)
         return;
     }
     
-    /* Safety check on number of arguments - limit to 8 */
-    if (ffi_data->num_args > 8) {
-        igloo_pr_debug("igloo: Too many arguments (%lu > 8)\n", ffi_data->num_args);
+    /* Safety check on number of arguments - limit to 12 */
+    if (ffi_data->num_args > 12) {
+        igloo_pr_debug("igloo: Too many arguments (%lu > 12)\n", ffi_data->num_args);
         mem_region->header.op = HYPER_RESP_READ_FAIL;
         return;
     }
     
-    igloo_pr_debug("igloo: Calling function at %p with %lu arguments\n", 
-                  (void *)ffi_data->func_ptr, ffi_data->num_args);
+    igloo_pr_debug("igloo: Calling function at %p with %lu arguments (sig_mask: 0x%x)\n", 
+                  (void *)ffi_data->func_ptr, ffi_data->num_args, ffi_data->sig_mask);
     
-    /* Call the function with the appropriate number of arguments */
-    switch (ffi_data->num_args) {
-        case 0:
-            result = ((unsigned long (*)(void))ffi_data->func_ptr)();
-            break;
-        case 1:
-            result = ((unsigned long (*)(unsigned long))ffi_data->func_ptr)(
-                ffi_data->args[0]);
-            break;
-        case 2:
-            result = ((unsigned long (*)(unsigned long, unsigned long))ffi_data->func_ptr)(
-                ffi_data->args[0], ffi_data->args[1]);
-            break;
-        case 3:
-            result = ((unsigned long (*)(unsigned long, unsigned long, unsigned long))ffi_data->func_ptr)(
-                ffi_data->args[0], ffi_data->args[1], ffi_data->args[2]);
-            break;
-        case 4:
-            result = ((unsigned long (*)(unsigned long, unsigned long, unsigned long, unsigned long))ffi_data->func_ptr)(
-                ffi_data->args[0], ffi_data->args[1], ffi_data->args[2], ffi_data->args[3]);
-            break;
-        case 5:
-            result = ((unsigned long (*)(unsigned long, unsigned long, unsigned long, unsigned long, unsigned long))ffi_data->func_ptr)(
-                ffi_data->args[0], ffi_data->args[1], ffi_data->args[2], ffi_data->args[3], ffi_data->args[4]);
-            break;
-        case 6:
-            result = ((unsigned long (*)(unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long))ffi_data->func_ptr)(
-                ffi_data->args[0], ffi_data->args[1], ffi_data->args[2], ffi_data->args[3], 
-                ffi_data->args[4], ffi_data->args[5]);
-            break;
-        case 7:
-            result = ((unsigned long (*)(unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long))ffi_data->func_ptr)(
-                ffi_data->args[0], ffi_data->args[1], ffi_data->args[2], ffi_data->args[3], 
-                ffi_data->args[4], ffi_data->args[5], ffi_data->args[6]);
-            break;
-        case 8:
-            result = ((unsigned long (*)(unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long))ffi_data->func_ptr)(
-                ffi_data->args[0], ffi_data->args[1], ffi_data->args[2], ffi_data->args[3], 
-                ffi_data->args[4], ffi_data->args[5], ffi_data->args[6], ffi_data->args[7]);
-            break;
-        default:
-            igloo_pr_debug("igloo: Unsupported number of arguments: %lu\n", ffi_data->num_args);
-            mem_region->header.op = HYPER_RESP_READ_FAIL;
-            return;
-    }
+    /* * The generated jump table handles all casting, architecture alignment,
+     * and execution natively using the compiler's ABI rules. 
+     * It automatically assigns the return value to ffi_data->result.
+     */
+    dispatch_ffi_call(ffi_data, ffi_data->sig_mask);
     
-    /* Store the result back in the FFI structure */
-    ffi_data->result = result;
-    
-    igloo_pr_debug("igloo: Function call completed with result: %lu\n", result);
+    igloo_pr_debug("igloo: Function call completed with result: %llu\n", (unsigned long long)ffi_data->result);
     mem_region->header.op = HYPER_RESP_READ_OK;
     mem_region->header.size = sizeof(struct portal_ffi_call);
 }
