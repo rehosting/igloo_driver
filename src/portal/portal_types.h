@@ -1,3 +1,5 @@
+#ifndef __PORTAL_TYPES_H__
+#define __PORTAL_TYPES_H__
 #include "portal_op_list.h"
 
 #include <linux/types.h>
@@ -184,3 +186,5 @@ struct portal_sysctl_create_req {
     int maxlen;
     void *handler; 
 };
+
+#endif /* __PORTAL_TYPES_H__ */
