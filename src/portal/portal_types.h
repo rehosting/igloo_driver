@@ -103,7 +103,7 @@ struct osi_result_header {
 
 /* Define the FFI execution structure */
 struct portal_ffi_call {
-    uint64_t func_ptr;       /* Pointer to the function to call */
+    unsigned long func_ptr;       /* Pointer to the function to call */
     uint32_t num_args;       /* Number of arguments (up to 8) */
     uint32_t sig_mask;       /* Signature bitmask */
     uint64_t args[8];        /* MUST be uint64_t */
