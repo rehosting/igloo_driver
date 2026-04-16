@@ -6,15 +6,31 @@
 #include "ffi_stubs_generated.h"
 
 int igloo_test_function(int a, int b, int c, int d, int e, int f, int g, int h);
+int igloo_test_64b_function(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e, uint64_t f, uint64_t g, uint64_t h);
+int igloo_test_mixed_function(int a, uint64_t b, int c, uint64_t d, int e, uint64_t f, int g, uint64_t h);
 void *igloo_kzalloc(size_t size);
 void igloo_kfree(void *ptr);
 int igloo_printk(const char *fmt, ...);
 
 int igloo_test_function(int a, int b, int c, int d, int e, int f, int g, int h)
 {
-    printk(KERN_EMERG "igloo: test_function called with args: %d %d %d %d %d %d %d %d\n", 
+    printk(KERN_EMERG "igloo: test_function called with args: %x %x %x %x %x %x %x %x\n", 
            a, b, c, d, e, f, g, h);
     return a + b + c + d + e + f + g + h;
+}
+
+int igloo_test_64b_function(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e, uint64_t f, uint64_t g, uint64_t h)
+{
+    printk(KERN_EMERG "igloo: test_64b_function called with args: %llx %llx %llx %llx %llx %llx %llx %llx\n", 
+           a, b, c, d, e, f, g, h);
+    return a + b + c + d + e + f + g + h;
+}
+
+int igloo_test_mixed_function(int a, uint64_t b, int c, uint64_t d, int e, uint64_t f, int g, uint64_t h)
+{
+    printk(KERN_EMERG "igloo: test_mixed_function called with args: %d %llx %d %llx %d %llx %d %llx\n", 
+           a, b, c, d, e, f, g, h);
+    return a + c + e + g + (int)(b + d + f + h);
 }
 
 void* igloo_kzalloc(size_t size)
