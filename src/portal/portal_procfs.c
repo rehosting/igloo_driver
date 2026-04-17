@@ -241,6 +241,10 @@ static int igloo_proxy_release(struct inode *inode, struct file *file)
     // but you could store the original `release` pointer in `pe` if you need to
     // explicitly forward the release event to Python.
     // For now, if the file is closed, the VFS handles the cleanup.
+    if (pe && pe->python_release) {
+        int (*py_release)(struct inode *, struct file *) = pe->python_release;
+        return py_release(inode, file);
+    }
 
     return 0;
 }
@@ -539,6 +543,7 @@ void handle_op_procfs_create_file(portal_region *mem_region)
 
     mutex_init(&pe->shm_lock); // Now this is safe
     pe->name = kstrdup(entry_name, GFP_KERNEL);
+    pe->python_release = req->fops.release;
 
     // 2. Create the file and bind the tracker
     file = igloo_proc_create_data(entry_name, file_mode, parent, &req->fops, pe);
