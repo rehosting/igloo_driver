@@ -165,6 +165,7 @@ struct portal_procfs_entry {
     struct proc_dir_entry *parent;
     struct file *shm_file;
     struct mutex shm_lock;
+    void *python_release;
 };
 
 struct portal_procfs_dir {
