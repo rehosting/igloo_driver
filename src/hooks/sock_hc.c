@@ -33,10 +33,10 @@ void igloo_sock_bind(struct socket *sock, struct sockaddr_storage *address){
 	// Bind successfully occured. Hypercall to tell us
 	// the bind details.
 	// First hypercall to tell us process name.
+	char buffer[32];
 	int hrv = 1;
 	int i;
 	mutex_lock(&bind_mutex);
-	char buffer[32];
 
 	if (address->ss_family == AF_INET) {
 		// IPv4: hypercall 200
