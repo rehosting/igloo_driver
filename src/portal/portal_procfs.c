@@ -343,6 +343,39 @@ static pde_subdir_find_t internal_pde_subdir_find = NULL;
 #endif
 #endif
 
+// String matching exactly as implemented in fs/proc/generic.c
+static int igloo_proc_match(unsigned int len, const char *name, struct proc_dir_entry *de)
+{
+    if (len < de->namelen)
+        return -1;
+    if (len > de->namelen)
+        return 1;
+
+    return memcmp(name, de->name, len);
+}
+
+// Fallback structural tree walker (Requires your portal_procfs.h definitions)
+static struct proc_dir_entry *igloo_fallback_pde_subdir_find(struct proc_dir_entry *dir,
+                                                             const char *name,
+                                                             unsigned int len)
+{
+    struct rb_node *node = dir->subdir.rb_node;
+
+    while (node) {
+        // Because you defined the struct, container_of works perfectly here
+        struct proc_dir_entry *de = container_of(node, struct proc_dir_entry, subdir_node);
+        int result = igloo_proc_match(len, name, de);
+
+        if (result < 0)
+            node = node->rb_left;
+        else if (result > 0)
+            node = node->rb_right;
+        else
+            return de;
+    }
+    return NULL;
+}
+
 static int resolve_proc_symbols(void)
 {
     if (internal_proc_root && internal_pde_subdir_find)
@@ -356,8 +389,9 @@ static int resolve_proc_symbols(void)
 
     internal_pde_subdir_find = (pde_subdir_find_t)kallsyms_lookup_name("pde_subdir_find");
     if (!internal_pde_subdir_find) {
-        printk(KERN_ERR "portal_procfs: Failed to lookup symbol: pde_subdir_find\n");
-        return -ENOENT;
+        printk(KERN_INFO "portal_procfs: pde_subdir_find missing. Using structural RB-tree fallback.\n");
+        // Seamlessly route to your manual structural traverser
+        internal_pde_subdir_find = igloo_fallback_pde_subdir_find; 
     }
 
     return 0;
