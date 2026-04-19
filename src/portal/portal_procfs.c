@@ -519,8 +519,6 @@ void handle_op_procfs_create_file(portal_region *mem_region)
     char *entry_name;
     bool exists, enable_default_mmap;
 
-    printk(KERN_EMERG "portal_procfs: handle_op_procfs_create_file called\n");
-
     req->path[PROCFS_MAX_PATH - 1] = '\0';
     entry_name = req->path;
 
