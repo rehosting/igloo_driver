@@ -9,6 +9,9 @@
 #include <linux/atomic.h>
 #include <linux/version.h>
 #include <linux/kallsyms.h>
+#include <linux/file.h>        // Required for fput()
+#include <linux/shmem_fs.h>    // Required for shmem_kernel_file_setup()
+#include <linux/vmalloc.h>     // Required for kvzalloc/vzalloc()
 
 /* * -------------------------------------------------------------------------
  * Data Structures
@@ -48,6 +51,8 @@ struct portal_devfs_dir_req {
 // Request to create a device node
 struct portal_devfs_create_req {
     char name[64];
+    uint64_t size;
+    uint8_t support_mmap;
     int major; // -1 for dynamic
     int minor;
     struct igloo_dev_ops ops;
@@ -63,8 +68,13 @@ struct portal_devfs_entry {
     struct device *device;
     struct file_operations fops;
     struct list_head list;
+    
+    // MMAP / Release support
+    struct mutex shm_lock;
+    struct file *shm_file;
+    int (*python_release)(struct inode *, struct file *);
+    char *name;
 };
-
 // Internal: Track created directories to reconstruct paths
 struct portal_devfs_dir_entry {
     int id;
@@ -88,7 +98,164 @@ static struct class *portal_class = NULL;
  * -------------------------------------------------------------------------
  */
 
-static void igloo_convert_ops_to_fops(const struct igloo_dev_ops *ops, struct file_operations *out)
+// --- Forward declaration for the hypercall bridge (defined in portal_procfs.c) ---
+extern ssize_t igloo_fetch_mmap_page(struct file *file, void *buffer, loff_t offset, size_t size);
+
+static void igloo_devfs_flush_shm_to_hypervisor(struct file *file, struct portal_devfs_entry *pe)
+{
+    void *buffer;
+    loff_t size;
+    ssize_t bytes;
+    loff_t pos = 0;
+
+    if (!pe || !pe->shm_file) return;
+    if (!file->f_op || !file->f_op->write) return; // Python didn't provide a write hook
+
+    mutex_lock(&pe->shm_lock);
+    
+    // Get the exact size of the shared memory file
+    size = i_size_read(file_inode(pe->shm_file));
+    if (size <= 0) goto unlock;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
+    buffer = kvzalloc(size, GFP_KERNEL);
+#else
+    buffer = vzalloc(size);
+#endif
+
+    if (buffer) {
+        // 1. Read the modified data from the hidden RAM file
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+        bytes = kernel_read(pe->shm_file, buffer, size, &pos);
+#else
+        mm_segment_t old_fs = get_fs();
+        set_fs(KERNEL_DS);
+        bytes = vfs_read(pe->shm_file, (char __user *)buffer, size, &pos);
+        set_fs(old_fs);
+#endif
+
+        // 2. Push it back to the Python plugin via the trampoline
+        if (bytes > 0) {
+            pos = 0;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
+            old_fs = get_fs();
+            set_fs(KERNEL_DS);
+            file->f_op->write(file, (const char __user *)buffer, bytes, &pos);
+            set_fs(old_fs);
+#else
+            file->f_op->write(file, (const char __user *)buffer, bytes, &pos);
+#endif
+        }
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
+        kvfree(buffer);
+#else
+        vfree(buffer);
+#endif
+    }
+
+unlock:
+    mutex_unlock(&pe->shm_lock);
+}
+
+static int igloo_devfs_proxy_release(struct inode *inode, struct file *file)
+{
+    struct portal_devfs_entry *pe;
+    
+    if (!inode->i_cdev) return 0;
+    pe = container_of(inode->i_cdev, struct portal_devfs_entry, cdev);
+
+    // 1. Flush any mmap writebacks to Python
+    if (pe && pe->shm_file) {
+        igloo_devfs_flush_shm_to_hypervisor(file, pe);
+    }
+
+    // 2. Forward to Python release if provided
+    if (pe && pe->python_release) {
+        return pe->python_release(inode, file);
+    }
+
+    return 0;
+}
+
+static int igloo_devfs_proxy_mmap(struct file *file, struct vm_area_struct *vma)
+{
+    struct inode *inode = file_inode(file);
+    struct portal_devfs_entry *pe;
+    struct file *shm_file;
+    size_t size = vma->vm_end - vma->vm_start;
+    int ret;
+
+    if (!inode || !inode->i_cdev) return -ENODEV;
+    
+    // Resolve tracking struct from cdev
+    pe = container_of(inode->i_cdev, struct portal_devfs_entry, cdev);
+
+    if (!pe) {
+        printk(KERN_ERR "igloo_mmap: No portal tracking data found for devfs inode\n");
+        return -ENODEV;
+    }
+
+    mutex_lock(&pe->shm_lock);
+    
+    if (!pe->shm_file) {
+        // LAZY INITIALIZATION: Create the backing file on first use
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+        shm_file = shmem_kernel_file_setup(pe->name, size, vma->vm_flags | VM_NORESERVE);
+#else
+        shm_file = shmem_file_setup(pe->name, size, vma->vm_flags | VM_NORESERVE);
+#endif
+        
+        if (!IS_ERR(shm_file)) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
+            void *buffer = kvzalloc(size, GFP_KERNEL);
+#else
+            void *buffer = vzalloc(size);
+#endif
+            if (buffer) {
+                ssize_t bytes = igloo_fetch_mmap_page(file, buffer, 0, size);
+                if (bytes > 0) {
+                    loff_t pos = 0;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+                    kernel_write(shm_file, buffer, bytes, &pos);
+#else
+                    mm_segment_t old_fs = get_fs();
+                    set_fs(KERNEL_DS);
+                    vfs_write(shm_file, (char __user *)buffer, bytes, &pos);
+                    set_fs(old_fs);
+#endif
+                }
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
+                kvfree(buffer);
+#else
+                vfree(buffer);
+#endif
+            }
+            pe->shm_file = shm_file;
+        }
+    }
+    
+    shm_file = pe->shm_file;
+    mutex_unlock(&pe->shm_lock);
+
+    if (IS_ERR_OR_NULL(shm_file))
+        return PTR_ERR(shm_file) ? PTR_ERR(shm_file) : -ENOMEM;
+
+    // Swap the VMA backing file
+    if (vma->vm_file) {
+        fput(vma->vm_file);
+    }
+    vma->vm_file = get_file(shm_file);
+
+    if (shm_file->f_op && shm_file->f_op->mmap)
+        ret = shm_file->f_op->mmap(shm_file, vma);
+    else
+        ret = -ENODEV;
+
+    return ret;
+}
+
+static void igloo_convert_ops_to_fops(const struct igloo_dev_ops *ops, struct file_operations *out, bool enable_default_mmap)
 {
     memset(out, 0, sizeof(*out));
     out->owner = THIS_MODULE;
@@ -99,15 +266,25 @@ static void igloo_convert_ops_to_fops(const struct igloo_dev_ops *ops, struct fi
     out->write = ops->write;
     out->write_iter = ops->write_iter;
     out->llseek = ops->lseek;
-    out->release = ops->release;
+    
+    // NEW: Route release through our writeback proxy
+    out->release = igloo_devfs_proxy_release; 
+    
     out->poll = ops->poll;
     out->unlocked_ioctl = ops->ioctl;
 #ifdef CONFIG_COMPAT
     out->compat_ioctl = ops->compat_ioctl;
 #endif
-    out->mmap = ops->mmap;
-    out->get_unmapped_area = ops->get_unmapped_area;
+
+    // Conditionally attach our default mmap handler ONLY if requested
+    // and the user hasn't provided their own override.
+    if (enable_default_mmap && ops->mmap == NULL) {
+        out->mmap = igloo_devfs_proxy_mmap;
+    } else {
+        out->mmap = ops->mmap;
+    }
     
+    out->get_unmapped_area = ops->get_unmapped_area;
     out->flush = ops->flush;
     out->fsync = ops->fsync;
     out->fasync = ops->fasync;
@@ -297,10 +474,17 @@ void handle_op_devfs_create_device(portal_region *mem_region)
         return;
     }
 
+    // --- NEW: Initialize mmap/release tracking ---
+    mutex_init(&pe->shm_lock);
+    pe->name = kstrdup(req->name, GFP_KERNEL);
+    pe->python_release = req->ops.release;
+    bool enable_default_mmap = (req->size > 0 || req->support_mmap);
+    // ---------------------------------------------
+
     pe->devt = devt;
     
     // Convert the hypervisor ops into the persistent fops struct inside the entry
-    igloo_convert_ops_to_fops(&req->ops, &pe->fops);
+    igloo_convert_ops_to_fops(&req->ops, &pe->fops, enable_default_mmap);
     
     cdev_init(&pe->cdev, &pe->fops);
     pe->cdev.owner = THIS_MODULE;
