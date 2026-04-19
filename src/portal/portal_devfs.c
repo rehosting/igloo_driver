@@ -12,6 +12,8 @@
 #include <linux/file.h>        // Required for fput()
 #include <linux/shmem_fs.h>    // Required for shmem_kernel_file_setup()
 #include <linux/vmalloc.h>     // Required for kvzalloc/vzalloc()
+#include <linux/blkdev.h>
+#include <linux/genhd.h>
 
 /* * -------------------------------------------------------------------------
  * Data Structures
@@ -53,11 +55,13 @@ struct portal_devfs_create_req {
     char name[64];
     uint64_t size;
     uint8_t support_mmap;
+    uint8_t is_block;
+    uint16_t logical_block_size;
     int major; // -1 for dynamic
     int minor;
     struct igloo_dev_ops ops;
     int replace;
-    int parent_id; // <--- NEW: ID of the parent directory
+    int parent_id;
 };
 
 // Internal: Track created devices
@@ -68,6 +72,10 @@ struct portal_devfs_entry {
     struct device *device;
     struct file_operations fops;
     struct list_head list;
+
+    // Block dev specific
+    struct gendisk *gd;
+    struct block_device_operations bdops;
     
     // MMAP / Release support
     struct mutex shm_lock;
@@ -315,6 +323,64 @@ static char *get_dir_path_by_id(int id)
 }
 
 /* * -------------------------------------------------------------------------
+ * The Multi-Queue Request Handler
+ * ------------------------------------------------------------------------- */
+
+// Ensure cross-kernel compatibility for block status returns
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
+    typedef blk_status_t igloo_blk_status_t;
+    #define IGLOO_BLK_SUCCESS BLK_STS_OK
+#else
+    typedef int igloo_blk_status_t;
+    #define IGLOO_BLK_SUCCESS 0 /* BLK_MQ_RQ_QUEUE_OK / standard 0 success */
+#endif
+
+static igloo_blk_status_t igloo_queue_rq(struct blk_mq_hw_ctx *hctx, const struct blk_mq_queue_data *bd)
+{
+    struct request *req = bd->rq;
+    struct portal_devfs_entry *pe = req->rq_disk->private_data;
+    struct req_iterator iter;
+    struct bio_vec bvec;
+    
+    loff_t pos = (loff_t)blk_rq_pos(req) << 9; 
+
+    blk_mq_start_request(req);
+
+    rq_for_each_segment(bvec, req, iter) {
+        char *kaddr = kmap_atomic(bvec.bv_page) + bvec.bv_offset;
+        
+        if (rq_data_dir(req) == WRITE) {
+            if (pe->fops.write)
+                pe->fops.write(NULL, (const char __user *)kaddr, bvec.bv_len, &pos);
+        } else {
+            if (pe->fops.read)
+                pe->fops.read(NULL, (char __user *)kaddr, bvec.bv_len, &pos);
+        }
+        
+        kunmap_atomic(kaddr);
+    }
+
+    blk_mq_end_request(req, IGLOO_BLK_SUCCESS);
+    return IGLOO_BLK_SUCCESS;
+}
+
+static const struct blk_mq_ops igloo_mq_ops = {
+    .queue_rq = igloo_queue_rq,
+};
+
+static void igloo_convert_ops_to_bdops(const struct igloo_dev_ops *ops, struct block_device_operations *out)
+{
+    memset(out, 0, sizeof(*out));
+    out->owner = THIS_MODULE;
+    
+    // Forward block IOCTLs (HDIO_GETGEO, BLKGETSIZE, etc) to Python
+    out->ioctl = (void*)ops->ioctl;
+#ifdef CONFIG_COMPAT
+    out->compat_ioctl = (void*)ops->compat_ioctl;
+#endif
+}
+
+/* * -------------------------------------------------------------------------
  * Initialization
  * -------------------------------------------------------------------------
  */
@@ -441,81 +507,96 @@ void handle_op_devfs_create_device(portal_region *mem_region)
         return;
     }
 
-    /* 1. Allocation of Major/Minor */
-    if (req->major >= 0) {
-        devt = MKDEV(req->major, req->minor);
-        
-        if (req->replace) {
-            unregister_chrdev_region(devt, 1);
-        }
-
-        // Note: register_chrdev_region mainly affects /proc/devices. Slashes here are
-        // generally acceptable, or we could sanitize just for this call if it fails.
-        // For now, passing full path.
-        ret = register_chrdev_region(devt, 1, final_device_name);
-    } else {
-        ret = alloc_chrdev_region(&devt, 0, 1, final_device_name);
-    }
-
-    if (ret < 0) {
-        printk(KERN_ERR "portal_devfs: Failed to register chrdev region %d:%d name=%s (err: %d)\n", 
-               req->major, req->minor, final_device_name, ret);
-        kfree(final_device_name);
-        mem_region->header.op = HYPER_RESP_WRITE_FAIL;
-        return;
-    }
-
-    /* 2. Setup Structures */
     pe = kzalloc(sizeof(*pe), GFP_KERNEL);
     if (!pe) {
-        unregister_chrdev_region(devt, 1);
         kfree(final_device_name);
         mem_region->header.op = HYPER_RESP_WRITE_FAIL;
         return;
     }
 
-    // --- NEW: Initialize mmap/release tracking ---
     mutex_init(&pe->shm_lock);
     pe->name = kstrdup(req->name, GFP_KERNEL);
     pe->python_release = req->ops.release;
-    bool enable_default_mmap = (req->size > 0 || req->support_mmap);
-    // ---------------------------------------------
+    pe->is_block = req->is_block;
 
-    pe->devt = devt;
-    
-    // Convert the hypervisor ops into the persistent fops struct inside the entry
-    igloo_convert_ops_to_fops(&req->ops, &pe->fops, enable_default_mmap);
-    
-    cdev_init(&pe->cdev, &pe->fops);
-    pe->cdev.owner = THIS_MODULE;
+    /* =====================================================================
+     * BLOCK DEVICE REGISTRATION
+     * ===================================================================== */
+    if (pe->is_block) {
+        int major = req->major;
+        
+        // 1. Register Major
+        if (major >= 0) {
+            ret = register_blkdev(major, final_device_name);
+        } else {
+            ret = register_blkdev(0, final_device_name);
+            major = ret; 
+        }
+        if (ret < 0) goto fail_alloc;
 
-    /* 3. Add Cdev */
-    ret = cdev_add(&pe->cdev, devt, 1);
-    if (ret) {
-        printk(KERN_ERR "portal_devfs: cdev_add failed (err: %d)\n", ret);
-        kfree(pe);
-        kfree(final_device_name);
-        unregister_chrdev_region(devt, 1);
-        mem_region->header.op = HYPER_RESP_WRITE_FAIL;
-        return;
+        // 2. Setup Operations
+        igloo_convert_ops_to_bdops(&req->ops, &pe->bdops);
+        // We STILL populate fops so our queue_rq can invoke the Python pointers!
+        igloo_convert_ops_to_fops(&req->ops, &pe->fops, false); 
+
+        // 3. Initialize Multi-Queue
+        pe->tag_set.ops = &igloo_mq_ops;
+        pe->tag_set.nr_hw_queues = 1;
+        pe->tag_set.queue_depth = 128;
+        pe->tag_set.numa_node = NUMA_NO_NODE;
+        pe->tag_set.cmd_size = 0;
+        pe->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
+        blk_mq_alloc_tag_set(&pe->tag_set);
+
+        // 4. Allocate Disk
+        pe->gd = alloc_disk(1); 
+        pe->gd->major = major;
+        pe->gd->first_minor = req->minor;
+        pe->gd->fops = &pe->bdops;
+        pe->gd->private_data = pe;
+        pe->gd->queue = blk_mq_init_queue(&pe->tag_set);
+        snprintf(pe->gd->disk_name, 32, "%s", req->name);
+        
+        // Block customizations
+        blk_queue_logical_block_size(pe->gd->queue, req->logical_block_size ? req->logical_block_size : 512);
+        set_capacity(pe->gd, req->size >> 9); // Size in 512-byte sectors
+
+        add_disk(pe->gd);
+        devt = MKDEV(major, req->minor);
+        
+    } else {
+        bool enable_default_mmap = (req->size > 0 || req->support_mmap);
+
+        if (req->major >= 0) {
+            devt = MKDEV(req->major, req->minor);
+            if (req->replace) unregister_chrdev_region(devt, 1);
+            ret = register_chrdev_region(devt, 1, final_device_name);
+        } else {
+            ret = alloc_chrdev_region(&devt, 0, 1, final_device_name);
+        }
+
+        if (ret < 0) goto fail_alloc;
+
+        pe->devt = devt;
+        igloo_convert_ops_to_fops(&req->ops, &pe->fops, enable_default_mmap);
+        
+        cdev_init(&pe->cdev, &pe->fops);
+        pe->cdev.owner = THIS_MODULE;
+
+        if (cdev_add(&pe->cdev, devt, 1)) {
+            unregister_chrdev_region(devt, 1);
+            goto fail_alloc;
+        }
+
+        pe->device = device_create(portal_class, NULL, devt, NULL, "%s", final_device_name);
+        if (IS_ERR(pe->device)) {
+            cdev_del(&pe->cdev);
+            unregister_chrdev_region(devt, 1);
+            goto fail_alloc;
+        }
     }
 
-    /* 4. Create Device Node */
-    // Passing portal_class ensures devtmpfs creates the /dev node.
-    // Passing a name with slashes triggers subdirectory creation in devtmpfs.
-    pe->device = device_create(portal_class, NULL, devt, NULL, "%s", final_device_name);
-    
-    if (IS_ERR(pe->device)) {
-        printk(KERN_ERR "portal_devfs: device_create failed for %s\n", final_device_name);
-        cdev_del(&pe->cdev);
-        unregister_chrdev_region(devt, 1);
-        kfree(pe);
-        kfree(final_device_name);
-        mem_region->header.op = HYPER_RESP_WRITE_FAIL;
-        return;
-    }
-
-    /* 5. Track it */
+    /* Track it */
     id = atomic_inc_return(&devfs_entry_id);
     pe->id = id;
 
@@ -523,10 +604,17 @@ void handle_op_devfs_create_device(portal_region *mem_region)
     list_add(&pe->list, &devfs_entry_list);
     spin_unlock(&devfs_entry_lock);
 
-    printk(KERN_INFO "portal_devfs: Registered device '%s' (%d:%d) id=%d\n", 
-           final_device_name, MAJOR(devt), MINOR(devt), id);
+    printk(KERN_INFO "portal_devfs: Registered %s '%s' (%d:%d) id=%d\n", 
+           pe->is_block ? "blkdev" : "chrdev", final_device_name, MAJOR(devt), MINOR(devt), id);
 
     kfree(final_device_name);
     mem_region->header.size = id;
     mem_region->header.op = HYPER_RESP_READ_NUM;
+    return;
+
+fail_alloc:
+    kfree(pe->name);
+    kfree(pe);
+    kfree(final_device_name);
+    mem_region->header.op = HYPER_RESP_WRITE_FAIL;
 }
