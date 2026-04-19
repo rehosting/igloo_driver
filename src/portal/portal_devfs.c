@@ -13,8 +13,10 @@
 #include <linux/shmem_fs.h>    // Required for shmem_kernel_file_setup()
 #include <linux/vmalloc.h>     // Required for kvzalloc/vzalloc()
 #include <linux/blkdev.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
 #include <linux/genhd.h>
-
+#endif
+#include <linux/blk-mq.h>
 /* * -------------------------------------------------------------------------
  * Data Structures
  * -------------------------------------------------------------------------
@@ -68,6 +70,8 @@ struct portal_devfs_create_req {
 struct portal_devfs_entry {
     int id;
     dev_t devt;
+    uint8_t is_block;
+
     struct cdev cdev;
     struct device *device;
     struct file_operations fops;
@@ -76,6 +80,7 @@ struct portal_devfs_entry {
     // Block dev specific
     struct gendisk *gd;
     struct block_device_operations bdops;
+    struct blk_mq_tag_set tag_set;
     
     // MMAP / Release support
     struct mutex shm_lock;
@@ -338,11 +343,19 @@ static char *get_dir_path_by_id(int id)
 static igloo_blk_status_t igloo_queue_rq(struct blk_mq_hw_ctx *hctx, const struct blk_mq_queue_data *bd)
 {
     struct request *req = bd->rq;
-    struct portal_devfs_entry *pe = req->rq_disk->private_data;
+    struct portal_devfs_entry *pe;
     struct req_iterator iter;
     struct bio_vec bvec;
-    
-    loff_t pos = (loff_t)blk_rq_pos(req) << 9; 
+    loff_t pos;
+
+    // API Break: rq_disk removed in 5.11
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
+    pe = req->q->disk->private_data;
+#else
+    pe = req->rq_disk->private_data;
+#endif
+
+    pos = (loff_t)blk_rq_pos(req) << 9; 
 
     blk_mq_start_request(req);
 
@@ -540,7 +553,8 @@ void handle_op_devfs_create_device(portal_region *mem_region)
         igloo_convert_ops_to_fops(&req->ops, &pe->fops, false); 
 
         // 3. Initialize Multi-Queue
-        pe->tag_set.ops = &igloo_mq_ops;
+        // The (void *) cast gracefully silences the const warning on 4.10
+        pe->tag_set.ops = (void *)&igloo_mq_ops;
         pe->tag_set.nr_hw_queues = 1;
         pe->tag_set.queue_depth = 128;
         pe->tag_set.numa_node = NUMA_NO_NODE;
@@ -548,20 +562,59 @@ void handle_op_devfs_create_device(portal_region *mem_region)
         pe->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
         blk_mq_alloc_tag_set(&pe->tag_set);
 
-        // 4. Allocate Disk
+        // 4. Allocate Disk (The API changed fundamentally in 5.14 and again in 6.9)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+        {
+            struct queue_limits lim;
+            memset(&lim, 0, sizeof(lim));
+            lim.logical_block_size = req->logical_block_size ? req->logical_block_size : 512;
+            pe->gd = blk_mq_alloc_disk(&pe->tag_set, &lim, pe);
+        }
+        if (IS_ERR(pe->gd)) {
+            unregister_blkdev(major, final_device_name);
+            goto fail_alloc;
+        }
+        pe->gd->minors = 1;
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 14, 0)
+        pe->gd = blk_mq_alloc_disk(&pe->tag_set, pe);
+        if (IS_ERR(pe->gd)) {
+            unregister_blkdev(major, final_device_name);
+            goto fail_alloc;
+        }
+        pe->gd->minors = 1;
+#else
         pe->gd = alloc_disk(1); 
+        if (!pe->gd) {
+            unregister_blkdev(major, final_device_name);
+            goto fail_alloc;
+        }
+        pe->gd->queue = blk_mq_init_queue(&pe->tag_set);
+#endif
+
         pe->gd->major = major;
         pe->gd->first_minor = req->minor;
         pe->gd->fops = &pe->bdops;
         pe->gd->private_data = pe;
-        pe->gd->queue = blk_mq_init_queue(&pe->tag_set);
         snprintf(pe->gd->disk_name, 32, "%s", req->name);
         
-        // Block customizations
+        // Block customizations (moved to queue_limits in 6.9+)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 9, 0)
         blk_queue_logical_block_size(pe->gd->queue, req->logical_block_size ? req->logical_block_size : 512);
+#endif
         set_capacity(pe->gd, req->size >> 9); // Size in 512-byte sectors
 
+        // 5. Add Disk (Error handling became mandatory in 5.15)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0)
+        ret = add_disk(pe->gd);
+        if (ret) {
+            put_disk(pe->gd);
+            unregister_blkdev(major, final_device_name);
+            goto fail_alloc;
+        }
+#else
         add_disk(pe->gd);
+#endif
+        
         devt = MKDEV(major, req->minor);
         
     } else {
