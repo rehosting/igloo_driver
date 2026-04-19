@@ -303,7 +303,8 @@ igloo_convert_ops_to_fops(const struct igloo_proc_ops *ops, struct file_operatio
 static struct proc_dir_entry *igloo_proc_create_data(const char *name, umode_t mode,
                         struct proc_dir_entry *parent,
                         struct igloo_proc_ops *uops,
-                        void *data)
+                        void *data,
+                        bool enable_default_mmap)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0)
     struct proc_ops *pops;
@@ -311,7 +312,9 @@ static struct proc_dir_entry *igloo_proc_create_data(const char *name, umode_t m
     struct file_operations *fops;
 #endif
 
-    if (uops->mmap == NULL){
+    // Conditionally attach our default mmap handler ONLY if requested
+    // and the user hasn't provided their own override.
+    if (enable_default_mmap && uops->mmap == NULL) {
         uops->mmap = igloo_proxy_mmap;
     }
 
@@ -514,7 +517,7 @@ void handle_op_procfs_create_file(portal_region *mem_region)
     umode_t file_mode;
     int id;
     char *entry_name;
-    bool exists;
+    bool exists, enable_default_mmap;
 
     printk(KERN_EMERG "portal_procfs: handle_op_procfs_create_file called\n");
 
@@ -579,8 +582,11 @@ void handle_op_procfs_create_file(portal_region *mem_region)
     pe->name = kstrdup(entry_name, GFP_KERNEL);
     pe->python_release = req->fops.release;
 
-    // 2. Create the file and bind the tracker
-    file = igloo_proc_create_data(entry_name, file_mode, parent, &req->fops, pe);
+    // Evaluate if we should fall back to the default mmap proxy
+    enable_default_mmap = (req->size > 0 || req->support_mmap);
+
+    // Create the file and bind the tracker
+    file = igloo_proc_create_data(entry_name, file_mode, parent, &req->fops, pe, enable_default_mmap);
     if (!file) {
         printk(KERN_EMERG "portal_procfs: Failed to create proc entry: %s\n", entry_name);
         kfree(pe->name);
