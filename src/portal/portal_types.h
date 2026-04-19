@@ -152,6 +152,7 @@ struct portal_procfs_create_req {
     char path[PROCFS_MAX_PATH];
     struct igloo_proc_ops fops;
     uint64_t size;
+    uint8_t support_mmap;
     int parent_id;
     umode_t mode;
     uint8_t replace;
