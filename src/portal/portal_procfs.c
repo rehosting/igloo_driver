@@ -608,10 +608,9 @@ void handle_op_procfs_create_file(portal_region *mem_region)
 
     mem_region->header.size = id;
     mem_region->header.op = HYPER_RESP_READ_NUM;
-out:
-    // No need to kfree(entry_name) since it's now just req->path
-    printk(KERN_EMERG "portal_procfs: handle_op_procfs_create_file exit, op=%d\n", mem_region->header.op);
-}
+    out:
+        return;
+    }
 
 // Handler for directory create/lookup operation
 void handle_op_procfs_create_or_lookup_dir(portal_region *mem_region)
