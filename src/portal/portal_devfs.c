@@ -56,10 +56,10 @@ struct portal_devfs_dir_req {
 struct portal_devfs_create_req {
     char name[64];
     uint64_t size;
-    uint8_t support_mmap;
-    uint8_t is_block;
-    uint16_t logical_block_size;
-    int major; // -1 for dynamic
+    int support_mmap;
+    int is_block;
+    int logical_block_size;
+    int major; 
     int minor;
     struct igloo_dev_ops ops;
     int replace;
