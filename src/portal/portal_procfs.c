@@ -423,7 +423,7 @@ static void clear_permanent_flag_if_needed(struct proc_dir_entry *entry,
     if (!(entry->flags & IGLOO_PROC_ENTRY_PERMANENT_BIT))
         return;
 
-    printk(KERN_EMERG "portal_procfs: Clearing PROC_ENTRY_PERMANENT for '%s'\n", name);
+    // printk(KERN_EMERG "portal_procfs: Clearing PROC_ENTRY_PERMANENT for '%s'\n", name);
     entry->flags &= ~IGLOO_PROC_ENTRY_PERMANENT_BIT;
 #else
     (void)entry;
@@ -543,7 +543,7 @@ void handle_op_procfs_create_file(portal_region *mem_region)
     existing = find_proc_subdir_entry(parent, entry_name);
     exists = (existing != NULL);
 
-    printk(KERN_EMERG "portal_procfs: parent=%p, entry_name='%s'\n", parent, entry_name);
+    // printk(KERN_EMERG "portal_procfs: parent=%p, entry_name='%s'\n", parent, entry_name);
 
     // Remove only if exists and replace is set
     if (exists && req->replace) {
@@ -604,7 +604,7 @@ void handle_op_procfs_create_file(portal_region *mem_region)
     list_add(&pe->list, &procfs_entry_list);
     spin_unlock(&procfs_entry_lock);
 
-    printk(KERN_EMERG "portal_procfs: Created procfs entry '%s' with id %d\n", entry_name, id);
+    // printk(KERN_EMERG "portal_procfs: Created procfs entry '%s' with id %d\n", entry_name, id);
 
     mem_region->header.size = id;
     mem_region->header.op = HYPER_RESP_READ_NUM;
@@ -683,7 +683,7 @@ void handle_op_procfs_create_or_lookup_dir(portal_region *mem_region)
         return;
     }
 
-    printk(KERN_EMERG "portal_procfs: Created/Found dir '%s' with id %d\n", full_path, dir_id);
+    // printk(KERN_EMERG "portal_procfs: Created/Found dir '%s' with id %d\n", full_path, dir_id);
     mem_region->header.size = dir_id;
     mem_region->header.op = HYPER_RESP_READ_NUM;
 }

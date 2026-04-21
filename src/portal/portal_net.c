@@ -14,11 +14,11 @@ void handle_op_register_netdev(portal_region *mem_region)
     strncpy(safe_name, devname, IFNAMSIZ - 1);
     safe_name[IFNAMSIZ - 1] = '\0';
 
-    printk(KERN_EMERG "igloo: register_netdev request for '%s' (using '%s')\n", devname, safe_name);
+    // printk(KERN_EMERG "igloo: register_netdev request for '%s' (using '%s')\n", devname, safe_name);
 
     ndev = igloonet_init_one(safe_name);
     if (ndev) {
-        printk(KERN_EMERG "igloo: registered netdev '%s' returned %p\n", safe_name, ndev);
+        // printk(KERN_EMERG "igloo: registered netdev '%s' returned %p\n", safe_name, ndev);
         mem_region->header.op = HYPER_RESP_READ_NUM;
         mem_region->header.size = (uintptr_t)ndev;
     } else {
@@ -33,10 +33,10 @@ void handle_op_lookup_netdev(portal_region *mem_region)
     char *devname = (char *)PORTAL_DATA(mem_region);
     struct net_device *ndev = dev_get_by_name(&init_net, devname);
 
-    printk(KERN_EMERG "igloo: lookup_netdev request for '%s'\n", devname);
+    // printk(KERN_EMERG "igloo: lookup_netdev request for '%s'\n", devname);
 
     if (ndev) {
-        printk(KERN_EMERG "igloo: found netdev '%s' at %p\n", devname, ndev);
+        // printk(KERN_EMERG "igloo: found netdev '%s' at %p\n", devname, ndev);
         mem_region->header.op = HYPER_RESP_READ_NUM;
         mem_region->header.size = (uintptr_t)ndev;
         dev_put(ndev);
@@ -54,7 +54,7 @@ void handle_op_set_netdev_state(portal_region *mem_region)
     int ret = 0;
     unsigned long requested_state = mem_region->header.size;
 
-    printk(KERN_EMERG "igloo: set_netdev_state request for '%s' state=%lu\n", devname, requested_state);
+    // printk(KERN_EMERG "igloo: set_netdev_state request for '%s' state=%lu\n", devname, requested_state);
 
     ndev = dev_get_by_name(&init_net, devname);
     if (!ndev) {
@@ -85,7 +85,7 @@ void handle_op_set_netdev_state(portal_region *mem_region)
     rtnl_unlock();
 
     if (ret == 0) {
-        printk(KERN_EMERG "igloo: netdev '%s' state set to %lu\n", devname, requested_state);
+        // printk(KERN_EMERG "igloo: netdev '%s' state set to %lu\n", devname, requested_state);
         mem_region->header.op = HYPER_RESP_READ_NUM;
         mem_region->header.size = requested_state;
     } else {
@@ -102,7 +102,7 @@ void handle_op_get_netdev_state(portal_region *mem_region)
     struct net_device *ndev;
     unsigned int state = 0;
 
-    printk(KERN_EMERG "igloo: get_netdev_state request for '%s'\n", devname);
+    // printk(KERN_EMERG "igloo: get_netdev_state request for '%s'\n", devname);
 
     ndev = dev_get_by_name(&init_net, devname);
     if (!ndev) {
@@ -113,7 +113,7 @@ void handle_op_get_netdev_state(portal_region *mem_region)
     }
 
     state = !!(ndev->flags & IFF_UP);
-    printk(KERN_EMERG "igloo: netdev '%s' state is %u\n", devname, state);
+    // printk(KERN_EMERG "igloo: netdev '%s' state is %u\n", devname, state);
 
     mem_region->header.op = HYPER_RESP_READ_NUM;
     mem_region->header.size = state;
