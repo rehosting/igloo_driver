@@ -1,5 +1,4 @@
 #!/bin/bash
-
 set -eu
 
 # Input parameters
@@ -9,7 +8,18 @@ KERNEL_DEVEL_BASE="$3"  # Base directory containing extracted kernel-devel files
 MODULE_DIR="$4"         # Directory containing the module source code
 OUTPUT_BASE="$5"        # Output directory for built modules and symbols
 
-# Function to get cross-compiler prefix
+# Calculate optimal thread distribution to avoid OOM killer
+TOTAL_CORES=$(nproc 2>/dev/null || echo 4)
+MAX_PARALLEL_BUILDS=4
+if [ "$TOTAL_CORES" -lt 4 ]; then MAX_PARALLEL_BUILDS=$TOTAL_CORES; fi
+export CORES_PER_BUILD=$(( TOTAL_CORES / MAX_PARALLEL_BUILDS ))
+if [ "$CORES_PER_BUILD" -lt 1 ]; then export CORES_PER_BUILD=1; fi
+
+export RELEASE="${RELEASE:-0}"
+
+mkdir -p "${OUTPUT_BASE}/workspaces/scripts"
+cp -a -u /app/scripts/. "${OUTPUT_BASE}/workspaces/scripts/"
+
 get_cc() {
     local arch=$1
     local version=$2
@@ -20,12 +30,12 @@ get_cc() {
     unset KCFLAGS
 
     if [[ $arch == *"arm64"* ]]; then
-        abi=""
+        abi="";
         arch="aarch64"
     elif [[ $arch == *"arm"* ]]; then
         abi="eabi"
         if [[ $arch == *"eb"* ]]; then
-            export CFLAGS="-mbig-endian"
+            export CFLAGS="-mbig-endian"; 
             export KCFLAGS="-mbig-endian"
         fi
         arch="arm"
@@ -47,170 +57,121 @@ get_cc() {
         echo "/opt/cross/${arch}-linux-musl${abi}/bin/${arch}-linux-musl${abi}-"
     fi
 }
+export -f get_cc
 
-for VERSION in $VERSIONS; do
-for TARGET in $TARGETS; do
-    # Set short_arch based on TARGET
-    short_arch=$(echo $TARGET | sed -E 's/(.*)(e[lb]|eb64)$/\1/')
-    if [ "$short_arch" == "mips64" ]; then
-        short_arch="mips"
-    elif [ "$short_arch" == "loongarch64" ]; then
-        short_arch="loongarch"
-    elif [[ "$short_arch" == "powerpc64" || "$short_arch" == "powerpc64le" || "$short_arch" == "powerpcle" ]]; then
-        short_arch="powerpc"
-    elif [ "$short_arch" == "riscv64" ]; then
-        short_arch="riscv"
-    elif [ "$short_arch" == "riscv32" ]; then
-        short_arch="riscv"
-    fi
+build_module() {
+    local TARGET=$1
+    local VERSION=$2
+    local KERNEL_DEVEL_BASE=$3
+    local MODULE_DIR=$4
+    local OUTPUT_BASE=$5
 
-    # Use extracted kernel-devel directory structure
-    TARGET_BUILD_DIR="${KERNEL_DEVEL_BASE}/${TARGET}.${VERSION}"
+    local short_arch=$(echo $TARGET | sed -E 's/(.*)(e[lb]|eb64)$/\1/')
+    if [[ "$short_arch" == "mips64" ]]; then short_arch="mips"; fi
+    if [[ "$short_arch" == "loongarch64" ]]; then short_arch="loongarch"; fi
+    if [[ "$short_arch" == "powerpc64" || "$short_arch" == "powerpc64le" || "$short_arch" == "powerpcle" ]]; then short_arch="powerpc"; fi
+    if [[ "$short_arch" == "riscv64" || "$short_arch" == "riscv32" ]]; then short_arch="riscv"; fi
 
-    # Check for .config file in kernel-devel
-    if [ ! -f "${TARGET_BUILD_DIR}/.config" ]; then
-        echo "Kernel config not found at ${TARGET_BUILD_DIR}/.config! Please ensure the kernel source and config are available."
-        if [ "$(echo $VERSIONS | wc -w)" -eq 1 ]; then
-            echo "Since only one version is being built, exiting."
-            exit 1
-        fi
-        echo "Assuming this is fine in multi-version builds, skipping."
-        continue
-    fi
+    local TARGET_BUILD_DIR="${KERNEL_DEVEL_BASE}/${TARGET}.${VERSION}"
+    local LOG_FILE="${OUTPUT_BASE}/logs/build_${TARGET}_${VERSION}.log"
+    local OUTPUT_DIR="${OUTPUT_BASE}/kernels/${VERSION}"
+    local WORK_DIR="${OUTPUT_BASE}/workspaces/${TARGET}_${VERSION}"
 
-    if [ ! -d "${TARGET_BUILD_DIR}/include/generated" ]; then
-        echo "include/generated directory not found in ${TARGET_BUILD_DIR}!"
-        echo "Found kernel config but missing generated headers."
-        exit 1
-    fi
-
-    if [ ! -f "${TARGET_BUILD_DIR}/Module.symvers" ]; then
-        echo "Module.symvers not found in ${TARGET_BUILD_DIR}!"
-        exit 1
-    fi
-
-    echo "Building IGLOO module for $TARGET with kernel at ${TARGET_BUILD_DIR}"
-    
-    
-    # Debug: Check if crtsavres.o exists in the expected location
-    if [[ "$TARGET" == powerpc* ]]; then
-        echo "Debug: Checking for crtsavres.o in ${TARGET_BUILD_DIR}"
-        ls -la "${TARGET_BUILD_DIR}/arch/powerpc/lib/crtsavres.o" || echo "crtsavres.o not found!"
-        echo "Debug: Current working directory structure:"
-        pwd
-        ls -la "${TARGET_BUILD_DIR}/arch/powerpc/lib/" | head -5
-    fi
-
-    # Create output directory
-    OUTPUT_DIR="${OUTPUT_BASE}/kernels/${VERSION}"
     mkdir -p "${OUTPUT_DIR}"
+    mkdir -p "${WORK_DIR}"
 
-    # Clean and build the module using the target build directory which has all artifacts
-    # For PowerPC, create symlinks to make crtsavres.o available where the linker expects it
-    if [[ "$TARGET" == powerpc* ]]; then
-        # Create symlinks in multiple possible locations where the linker might look
-        CROSS_COMPILER_PREFIX="$(get_cc $TARGET $VERSION)"
-        CROSS_COMPILER_DIR=$(dirname "${CROSS_COMPILER_PREFIX}gcc")
-        CROSS_LIB_BASE="${CROSS_COMPILER_DIR}/../lib/gcc/powerpc64-linux-musl"
-        
-        echo "Debug: Looking for GCC lib directories in ${CROSS_LIB_BASE}"
-        # Find all possible gcc lib directories and create symlinks
-        find "${CROSS_LIB_BASE}" -type d 2>/dev/null | while read lib_dir; do
-            if [ -d "$lib_dir" ]; then
-                echo "Debug: Creating symlink in $lib_dir"
-                mkdir -p "$lib_dir/arch/powerpc/lib" 2>/dev/null || true
-                ln -sf "${TARGET_BUILD_DIR}/arch/powerpc/lib/crtsavres.o" "$lib_dir/arch/powerpc/lib/crtsavres.o" 2>/dev/null || true
-                # Also try creating it in the 32-bit subdirectory
-                if [ -d "$lib_dir/32" ]; then
-                    mkdir -p "$lib_dir/32/arch/powerpc/lib" 2>/dev/null || true
-                    ln -sf "${TARGET_BUILD_DIR}/arch/powerpc/lib/crtsavres.o" "$lib_dir/32/arch/powerpc/lib/crtsavres.o" 2>/dev/null || true
-                fi
-            fi
-        done
-        
-        # Also try creating symlinks in common relative paths from the build directory
-        mkdir -p "${MODULE_DIR}/arch/powerpc/lib" 2>/dev/null || true
-        ln -sf "${TARGET_BUILD_DIR}/arch/powerpc/lib/crtsavres.o" "${MODULE_DIR}/arch/powerpc/lib/crtsavres.o" 2>/dev/null || true
-        
-        # Create in current working directory as well
-        mkdir -p "arch/powerpc/lib" 2>/dev/null || true  
-        ln -sf "${TARGET_BUILD_DIR}/arch/powerpc/lib/crtsavres.o" "arch/powerpc/lib/crtsavres.o" 2>/dev/null || true
+    # Delete stale artifacts so a previously cached successful build
+    # doesn't falsely signal success if the current compilation fails.
+    rm -f "${WORK_DIR}/igloo.ko" "${OUTPUT_DIR}/igloo.ko.${TARGET}"
 
-        if [[ "$VERSION" == 4.* ]] && [[  "$TARGET" == "powerpc64"*  ]]; then
-            PPC_KCFLAGS="-mabi=elfv1 -mcall-aixdesc"
-        else
-            PPC_KCFLAGS=""
+    echo ">>> Starting build for $TARGET ($VERSION). Logging to logs/build_${TARGET}_${VERSION}.log"
+    
+    local STATUS=0
+
+    # Wrap the build logic in a strict subshell.
+    # If any command fails, 'set -e' safely halts the subshell, and STATUS catches the failure.
+    (
+        set -e 
+
+        if [ ! -f "${TARGET_BUILD_DIR}/.config" ]; then
+            echo "SKIPPED_NO_CONFIG"
+            exit 0
         fi
-        
+
+        cp -a -u "${MODULE_DIR}/." "${WORK_DIR}/"
+
+        local CROSS_COMPILER_PREFIX="$(get_cc $TARGET $VERSION)"
+        local EXTRA_LDFLAGS=""
+        local PPC_KCFLAGS=""
+
+        if [[ "$TARGET" == powerpc* ]]; then
+            mkdir -p "${WORK_DIR}/arch/powerpc/lib"
+            ln -sf "${TARGET_BUILD_DIR}/arch/powerpc/lib/crtsavres.o" "${WORK_DIR}/arch/powerpc/lib/crtsavres.o"
+            
+            EXTRA_LDFLAGS="-L${TARGET_BUILD_DIR}/arch/powerpc/lib"
+            if [[ "$VERSION" == 4.* ]] && [[ "$TARGET" == "powerpc64"* ]]; then
+                PPC_KCFLAGS="-mabi=elfv1 -mcall-aixdesc"
+            fi
+        fi
         # Build with additional library search path
-        make -C "${MODULE_DIR}" \
+        make -j${CORES_PER_BUILD} -C "${WORK_DIR}" \
             KDIR="${TARGET_BUILD_DIR}" \
             ARCH="${short_arch}" \
-            CROSS_COMPILE="$(get_cc $TARGET $VERSION)" \
-            EXTRA_LDFLAGS="-L${TARGET_BUILD_DIR}/arch/powerpc/lib" \
+            CROSS_COMPILE="${CROSS_COMPILER_PREFIX}" \
+            EXTRA_LDFLAGS="${EXTRA_LDFLAGS}" \
             KCFLAGS="${PPC_KCFLAGS}" \
             all
-    else
-        make -C "${MODULE_DIR}" \
-            KDIR="${TARGET_BUILD_DIR}" \
-            ARCH="${short_arch}" \
-            CROSS_COMPILE="$(get_cc $TARGET $VERSION)" \
-            all
-    fi
 
-    # Copy built module to output directory with new naming
-    if [ -f "${MODULE_DIR}/igloo.ko" ]; then
-        cp "${MODULE_DIR}/igloo.ko" "${OUTPUT_DIR}/igloo.ko.${TARGET}"
-    fi
-    
-    # Clean the module
-    make -C "${MODULE_DIR}" \
-        KDIR="${TARGET_BUILD_DIR}" \
-        ARCH="${short_arch}" \
-        CROSS_COMPILE="$(get_cc $TARGET $VERSION)" \
-        clean
+        if [ ! -f "${WORK_DIR}/igloo.ko" ]; then
+            echo "ERROR: igloo.ko not produced for ${TARGET}."
+            exit 1
+        fi
 
-    # Generate symbols from the built kernel module using dwarf2json
-    if [ -f "${OUTPUT_DIR}/igloo.ko.${TARGET}" ] && command -v dwarf2json >/dev/null 2>&1; then
-        echo "Generating symbols with dwarf2json for $TARGET..."
-        dwarf2json linux --elf "${OUTPUT_DIR}/igloo.ko.${TARGET}" | xz -c > "${OUTPUT_DIR}/igloo.ko.${TARGET}.json.xz"
-    else
-        echo "Warning: igloo.ko.${TARGET} or dwarf2json not found, skipping symbol generation for $TARGET."
-    fi
+        cp "${WORK_DIR}/igloo.ko" "${OUTPUT_DIR}/igloo.ko.${TARGET}"
 
-    # If release mode is enabled, attempt to strip the module to reduce size.
-    # Try cross-toolchain strip first, then objcopy --strip-debug, then local strip.
-    if [ "${RELEASE:-0}" = "1" ] && [ -f "${OUTPUT_DIR}/igloo.ko.${TARGET}" ]; then
-        echo "Release mode: stripping ${OUTPUT_DIR}/igloo.ko.${TARGET}"
-        CROSS_PREFIX="$(get_cc $TARGET $VERSION)"
-        STRIP_BIN="${CROSS_PREFIX}strip"
-        OBJCOPY_BIN="${CROSS_PREFIX}objcopy"
+        if command -v dwarf2json >/dev/null 2>&1; then
+            dwarf2json linux --elf "${OUTPUT_DIR}/igloo.ko.${TARGET}" | xz -c > "${OUTPUT_DIR}/igloo.ko.${TARGET}.json.xz"
+        fi
 
-        if command -v "${STRIP_BIN}" >/dev/null 2>&1; then
-            "${STRIP_BIN}" --strip-unneeded "${OUTPUT_DIR}/igloo.ko.${TARGET}" || true
-        elif command -v "${OBJCOPY_BIN}" >/dev/null 2>&1; then
-            "${OBJCOPY_BIN}" --strip-debug "${OUTPUT_DIR}/igloo.ko.${TARGET}" || true
-        else
-            # Fallback to host strip if available
-            if command -v strip >/dev/null 2>&1; then
+        if [ "$RELEASE" = "1" ]; then
+            local STRIP_BIN="${CROSS_COMPILER_PREFIX}strip"
+            local OBJCOPY_BIN="${CROSS_COMPILER_PREFIX}objcopy"
+            if command -v "${STRIP_BIN}" >/dev/null 2>&1; then
+                "${STRIP_BIN}" --strip-unneeded "${OUTPUT_DIR}/igloo.ko.${TARGET}" || true
+            elif command -v "${OBJCOPY_BIN}" >/dev/null 2>&1; then
+                "${OBJCOPY_BIN}" --strip-debug "${OUTPUT_DIR}/igloo.ko.${TARGET}" || true
+            elif command -v strip >/dev/null 2>&1; then
                 strip --strip-unneeded "${OUTPUT_DIR}/igloo.ko.${TARGET}" || true
-            else
-                echo "Warning: no strip/objcopy available to strip module; skipping."
             fi
         fi
+
+    ) > "$LOG_FILE" 2>&1 || STATUS=$?
+
+    # Outside the subshell, interpret the result
+    if [ $STATUS -ne 0 ]; then
+        echo "--- FAILED: $TARGET $VERSION (See logs/build_${TARGET}_${VERSION}.log for details)"
+    elif grep -q "SKIPPED_NO_CONFIG" "$LOG_FILE"; then
+        echo "--- SKIPPED: $TARGET $VERSION (No kernel config)"
+    else
+        echo "+++ SUCCESS: $TARGET $VERSION"
     fi
 
+    # Always return 0 to xargs. This ensures a failure in one worker doesn't kill the whole queue
+    return 0
+}
+export -f build_module
 
-    chmod -R o+rw "${OUTPUT_DIR}"
-    echo "IGLOO module for $TARGET built successfully"
-done
-done
+echo "Parallelizing with $MAX_PARALLEL_BUILDS concurrent workers ($CORES_PER_BUILD CPU threads per worker)."
 
-# End of build loop
-echo "Completed module build for all versions and targets"
-echo "All builds completed successfully."
+for VERSION in $VERSIONS; do
+    for TARGET in $TARGETS; do
+        echo "$TARGET $VERSION $KERNEL_DEVEL_BASE $MODULE_DIR $OUTPUT_BASE"
+    done
+done | xargs -n 5 -P "$MAX_PARALLEL_BUILDS" bash -c 'build_module "$@"' _
 
-# Create the archive in the output directory
+echo "Completed module builds for all targets."
+
 echo "Creating igloo_driver.tar.gz archive in output directory..."
-tar --use-compress-program=pigz -cf "/app/igloo_driver.tar.gz" -C "${OUTPUT_BASE}" kernels
+cd "${OUTPUT_BASE}"
+tar --use-compress-program=pigz -cf "/app/igloo_driver.tar.gz" kernels
 echo "Archive created at /app/igloo_driver.tar.gz"

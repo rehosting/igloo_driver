@@ -109,9 +109,10 @@ else
     KERNEL_DEVEL_MOUNT_DIR="$KERNEL_DEVEL_PATH"
 fi
 
-# Set build output directory in cache
+# Set build output directory in cache & initialize subfolders
 BUILD_OUTPUT_DIR="$(pwd)/cache/build"
-mkdir -p "$BUILD_OUTPUT_DIR"
+mkdir -p "$BUILD_OUTPUT_DIR/kernels"
+mkdir -p "$BUILD_OUTPUT_DIR/logs"
 
 # Run the container with proper environment variables and mounts
 docker run ${INTERACTIVE} --rm \
