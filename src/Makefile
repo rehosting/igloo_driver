@@ -1,4 +1,5 @@
 EXTRA_CFLAGS += -g -fno-reorder-functions
+src ?= $(PWD)
 
 obj-m := igloo.o
 
@@ -8,7 +9,7 @@ obj-m := igloo.o
 # PORTAL_SRCS := $(filter-out portal/portal_tramp_gen.c, $(wildcard portal/*.c))
 # PORTAL_OBJS := $(PORTAL_SRCS:.c=.o)
 
-# NEW: use $(src) so wildcard works when Makefile is parsed from kernel tree (Linux 4.x compatibility)
+# Use $(src) so wildcard works when Makefile is parsed from isolated out-of-tree builds
 PORTAL_SRCS := $(filter-out $(src)/portal/portal_tramp_gen.c, $(wildcard $(src)/portal/*.c))
 PORTAL_OBJS := $(patsubst $(src)/%.c,%.o,$(PORTAL_SRCS))
 
@@ -28,19 +29,19 @@ EXTRA_CFLAGS += -I$(srctree)/drivers/igloobase \
 			 -I$(PWD)/portal \
 			 -I$(PWD)/hyperfs \
 			 -I$(PWD)/hooks
-PORTAL_TRAMP_GEN := portal/portal_tramp_gen.h
 
-$(PORTAL_TRAMP_GEN): ../scripts/gen_portal_tramp.py
+PORTAL_TRAMP_GEN := $(src)/portal/portal_tramp_gen.h
+PORTAL_FFI_GEN := $(src)/portal/ffi_stubs_generated.h
+
+$(PORTAL_TRAMP_GEN): $(src)/../scripts/gen_portal_tramp.py
 	python3 $< > $@
 
-PORTAL_FFI_GEN := portal/ffi_stubs_generated.h
-
-$(PORTAL_FFI_GEN): ../scripts/gen_ffi_stubs.py
+$(PORTAL_FFI_GEN): $(src)/../scripts/gen_ffi_stubs.py
 	python3 $< $@
 
 all: $(PORTAL_TRAMP_GEN) $(PORTAL_FFI_GEN)
-	make -j$(nproc) -C $(KDIR) M=$(PWD) ARCH=$(ARCH) EXTRA_CFLAGS="$(EXTRA_CFLAGS)" \
+	$(MAKE) -C $(KDIR) M=$(PWD) ARCH=$(ARCH) EXTRA_CFLAGS="$(EXTRA_CFLAGS)" \
 		CROSS_COMPILE=$(CROSS_COMPILE) modules
 
 clean:
-	make -C $(KDIR) M=$(PWD) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) clean
+	$(MAKE) -C $(KDIR) M=$(PWD) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) clean
