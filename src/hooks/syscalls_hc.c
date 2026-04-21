@@ -523,13 +523,13 @@ static long syscall_ret_handler(const char *syscall_name, long orig_ret, int arg
 int syscalls_hc_init(void) {
     igloo_syscall_enter_t *enter_hook_ptr;
     igloo_syscall_return_t *ret_hook_ptr;
-    printk(KERN_EMERG "IGLOO: Initializing syscall hypercalls\n");
+    // printk(KERN_EMERG "IGLOO: Initializing syscall hypercalls\n");
     // Dynamically look up and set igloo_syscall_enter_hook
 
     enter_hook_ptr = (igloo_syscall_enter_t *)kallsyms_lookup_name("igloo_syscall_enter_hook");
     if (enter_hook_ptr) {
         *enter_hook_ptr = syscall_entry_handler;
-        printk(KERN_INFO "IGLOO: Set igloo_syscall_enter_hook via kallsyms\n");
+        // printk(KERN_INFO "IGLOO: Set igloo_syscall_enter_hook via kallsyms\n");
     } else {
         printk(KERN_ERR "IGLOO: Failed to find igloo_syscall_enter_hook symbol via kallsyms\n");
     }
@@ -538,7 +538,7 @@ int syscalls_hc_init(void) {
     ret_hook_ptr = (igloo_syscall_return_t *)kallsyms_lookup_name("igloo_syscall_return_hook");
     if (ret_hook_ptr) {
         *ret_hook_ptr = syscall_ret_handler;
-        printk(KERN_INFO "IGLOO: Set igloo_syscall_return_hook via kallsyms\n");
+        // printk(KERN_INFO "IGLOO: Set igloo_syscall_return_hook via kallsyms\n");
     } else {
         printk(KERN_ERR "IGLOO: Failed to find igloo_syscall_return_hook symbol via kallsyms\n");
     }

@@ -106,7 +106,7 @@ static void unregister_syscall_deferred(struct work_struct *work)
     // 4. Free memory safely using RCU
     kfree_rcu(hook_ptr, rcu);
 
-    printk(KERN_INFO "IGLOO: Unregistered syscall hook %p (deferred)\n", hook_ptr);
+    // printk(KERN_INFO "IGLOO: Unregistered syscall hook %p (deferred)\n", hook_ptr);
 }
 
 void handle_op_unregister_syscall_hook(portal_region *mem_region)

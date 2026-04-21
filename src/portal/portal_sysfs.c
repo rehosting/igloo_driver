@@ -161,7 +161,7 @@ void handle_op_sysfs_create_file(portal_region *mem_region)
     char *entry_name;
     int ret;
 
-    printk(KERN_EMERG "portal_sysfs: handle_op_sysfs_create_file called\n");
+    // printk(KERN_EMERG "portal_sysfs: handle_op_sysfs_create_file called\n");
 
     req->path[PROCFS_MAX_PATH - 1] = '\0';
     entry_name = req->path;
@@ -235,7 +235,7 @@ void handle_op_sysfs_create_file(portal_region *mem_region)
     list_add(&pe->list, &sysfs_entry_list);
     spin_unlock(&sysfs_entry_lock);
 
-    printk(KERN_EMERG "portal_sysfs: Created entry '%s' [id:%d] [mode:%o]\n", entry_name, id, req->mode);
+    // printk(KERN_EMERG "portal_sysfs: Created entry '%s' [id:%d] [mode:%o]\n", entry_name, id, req->mode);
     mem_region->header.size = id;
     mem_region->header.op = HYPER_RESP_READ_NUM;
 }
