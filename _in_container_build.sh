@@ -152,12 +152,14 @@ build_module() {
         echo "--- FAILED: $TARGET $VERSION (See logs/build_${TARGET}_${VERSION}.log for details)"
     elif grep -q "SKIPPED_NO_CONFIG" "$LOG_FILE"; then
         echo "--- SKIPPED: $TARGET $VERSION (No kernel config)"
+        STATUS=0
     else
         echo "+++ SUCCESS: $TARGET $VERSION"
     fi
 
-    # Always return 0 to xargs. This ensures a failure in one worker doesn't kill the whole queue
-    return 0
+    # Return the actual status so xargs knows a job failed
+    # (Returning 1-125 tells xargs a job failed but won't halt the queue)
+    return $STATUS
 }
 export -f build_module
 
@@ -168,6 +170,7 @@ for VERSION in $VERSIONS; do
         echo "$TARGET $VERSION $KERNEL_DEVEL_BASE $MODULE_DIR $OUTPUT_BASE"
     done
 done | xargs -n 5 -P "$MAX_PARALLEL_BUILDS" bash -c 'build_module "$@"' _
+BUILD_EXIT_CODE=$?
 
 echo "Completed module builds for all targets."
 
@@ -175,3 +178,7 @@ echo "Creating igloo_driver.tar.gz archive in output directory..."
 cd "${OUTPUT_BASE}"
 tar --use-compress-program=pigz -cf "/app/igloo_driver.tar.gz" kernels
 echo "Archive created at /app/igloo_driver.tar.gz"
+
+echo "Build process finished with exit code $BUILD_EXIT_CODE."
+
+exit $BUILD_EXIT_CODE
