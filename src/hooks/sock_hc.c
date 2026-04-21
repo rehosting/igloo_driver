@@ -121,18 +121,18 @@ void igloo_sock_release(struct socket *sock){
 int sock_hc_init(void){
     void (**release_mod_ptr)(struct socket *);
     void (**bind_mod_ptr)(struct socket *, struct sockaddr_storage *);
-    printk(KERN_EMERG "IGLOO: Initializing sock hypercalls\n");
+    // printk(KERN_EMERG "IGLOO: Initializing sock hypercalls\n");
     release_mod_ptr = (void (**)(struct socket *))kallsyms_lookup_name("igloo_sock_release_module");
     if (release_mod_ptr) {
         *release_mod_ptr = igloo_sock_release;
-        printk(KERN_INFO "IGLOO: Set igloo_sock_release_module via kallsyms\n");
+        // printk(KERN_INFO "IGLOO: Set igloo_sock_release_module via kallsyms\n");
     } else {
         printk(KERN_ERR "IGLOO: Failed to find igloo_sock_release_module symbol via kallsyms\n");
     }
     bind_mod_ptr = (void (**)(struct socket *, struct sockaddr_storage *))kallsyms_lookup_name("igloo_sock_bind_module");
     if (bind_mod_ptr) {
         *bind_mod_ptr = igloo_sock_bind;
-        printk(KERN_INFO "IGLOO: Set igloo_sock_bind_module via kallsyms\n");
+        // printk(KERN_INFO "IGLOO: Set igloo_sock_bind_module via kallsyms\n");
     } else {
         printk(KERN_ERR "IGLOO: Failed to find igloo_sock_bind_module symbol via kallsyms\n");
     }

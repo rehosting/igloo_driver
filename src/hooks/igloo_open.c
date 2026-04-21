@@ -75,11 +75,11 @@ void igloo_hc_open(int dfd, struct filename *tmp, int fd)
 int igloo_open_init(void);
 int igloo_open_init(void){
     void (**open_mod_ptr)(int, struct filename *, int);
-    printk(KERN_EMERG "IGLOO: Initializing igloo_open hypercalls\n");
+    // printk(KERN_EMERG "IGLOO: Initializing igloo_open hypercalls\n");
     open_mod_ptr = (void (**)(int, struct filename *, int))kallsyms_lookup_name("igloo_hc_open_module");
     if (open_mod_ptr) {
         *open_mod_ptr = igloo_hc_open;
-        printk(KERN_INFO "IGLOO: Set igloo_hc_open_module via kallsyms\n");
+        // printk(KERN_INFO "IGLOO: Set igloo_hc_open_module via kallsyms\n");
     } else {
         printk(KERN_ERR "IGLOO: Failed to find igloo_hc_open_module symbol via kallsyms\n");
     }

@@ -140,11 +140,11 @@ void handle_op_mtd_nuke(portal_region *mem_region)
         err = mtd_device_unregister(mtd);
         
         if (!err) {
-            printk(KERN_INFO "portal_mtd: Nuked mtd%d (%s)\n", i, mtd->name);
+            printk(KERN_INFO "portal_mtd: Removed mtd%d (%s)\n", i, mtd->name);
             count++;
         } else {
             // This happens if the device is mounted or held by another driver
-            printk(KERN_INFO "portal_mtd: Failed to nuke mtd%d (Still Busy)\n", i);
+            printk(KERN_INFO "portal_mtd: Failed to remove mtd%d (Still Busy)\n", i);
         }
     }
 
