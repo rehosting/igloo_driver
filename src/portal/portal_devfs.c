@@ -657,8 +657,8 @@ void handle_op_devfs_create_device(portal_region *mem_region)
     list_add(&pe->list, &devfs_entry_list);
     spin_unlock(&devfs_entry_lock);
 
-    printk(KERN_INFO "portal_devfs: Registered %s '%s' (%d:%d) id=%d\n", 
-           pe->is_block ? "blkdev" : "chrdev", final_device_name, MAJOR(devt), MINOR(devt), id);
+    // printk(KERN_INFO "portal_devfs: Registered %s '%s' (%d:%d) id=%d\n", 
+        //    pe->is_block ? "blkdev" : "chrdev", final_device_name, MAJOR(devt), MINOR(devt), id);
 
     kfree(final_device_name);
     mem_region->header.size = id;

@@ -122,7 +122,7 @@ void handle_op_mtd_nuke(portal_region *mem_region)
     int i, err, count = 0;
     int limit = (req->max_scan_index > 0) ? req->max_scan_index : 64;
 
-    printk(KERN_INFO "portal_mtd: Scorched Earth - Nuking up to %d devices...\n", limit);
+    // printk(KERN_INFO "portal_mtd: Scorched Earth - Nuking up to %d devices...\n", limit);
 
     for (i = 0; i < limit; i++) {
         // 1. Get a handle (Increments refcount to 1)
