@@ -197,34 +197,17 @@ static void igloonet_setup(struct net_device *dev)
 
 static void igloonet_dellink(struct net_device *dev, struct list_head *head)
 {
-    pr_info("igloonet: preventing deletion of %s\n", dev->name);
-    return;
+    pr_info("igloonet: interface %s is being deleted by userspace as allowed on setup\n", dev->name);
+    unregister_netdevice_queue(dev, head);
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
-static int igloonet_validate(struct nlattr *tb[], struct nlattr *data[],
-			  struct netlink_ext_ack *extack)
-#else
-static int igloonet_validate(struct nlattr *tb[], struct nlattr *data[])
-#endif
-{
-	if (tb[IFLA_ADDRESS]) {
-		if (nla_len(tb[IFLA_ADDRESS]) != ETH_ALEN)
-			return -EINVAL;
-		if (!is_valid_ether_addr(nla_data(tb[IFLA_ADDRESS])))
-			return -EADDRNOTAVAIL;
-	}
-	return 0;
-}
 
 static struct rtnl_link_ops igloonet_link_ops __read_mostly = {
 	.kind		= "igloonet",
-	.setup		= igloonet_setup,
-	.validate	= igloonet_validate,
     .dellink    = igloonet_dellink,
 };
 
-struct net_device* igloonet_init_one(const char *devname)
+struct net_device* igloonet_init_one(const char *devname, bool allow_delete)
 {
 	struct net_device *dev_igloonet;
 	struct igloonet_priv *priv;
@@ -249,8 +232,10 @@ struct net_device* igloonet_init_one(const char *devname)
 	strlcpy(dev_igloonet->name, devname, IFNAMSIZ);
 #endif
 
-	/* Assign the dynamically copied ops, NOT the static global one */
-	dev_igloonet->rtnl_link_ops = &priv->link_ops;
+    // Conditionally apply the link ops so userspace can delete it
+	if (allow_delete) {
+		dev_igloonet->rtnl_link_ops = &priv->link_ops;
+	}
 	err = register_netdev(dev_igloonet);
 	if (err < 0)
 		goto err;

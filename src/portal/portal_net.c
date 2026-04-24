@@ -9,16 +9,18 @@ void handle_op_register_netdev(portal_region *mem_region)
     struct net_device *ndev;
     char *devname = (char *)PORTAL_DATA(mem_region);
     char safe_name[IFNAMSIZ];
+    
+    // Read the boolean flag sent from the Python side
+    bool allow_delete = (bool)mem_region->header.size;
 
     // Truncate to maximum allowed kernel netdev name length (15 chars)
     strncpy(safe_name, devname, IFNAMSIZ - 1);
     safe_name[IFNAMSIZ - 1] = '\0';
 
-    // printk(KERN_EMERG "igloo: register_netdev request for '%s' (using '%s')\n", devname, safe_name);
-
-    ndev = igloonet_init_one(safe_name);
+    // Pass the flag down to igloonet_init_one
+    ndev = igloonet_init_one(safe_name, allow_delete);
+    
     if (ndev) {
-        // printk(KERN_EMERG "igloo: registered netdev '%s' returned %p\n", safe_name, ndev);
         mem_region->header.op = HYPER_RESP_READ_NUM;
         mem_region->header.size = (uintptr_t)ndev;
     } else {
