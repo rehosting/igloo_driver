@@ -3,6 +3,7 @@
 
 #include <linux/netdevice.h>
 #include <linux/ethtool.h>
+#include <linux/types.h>
 
 struct igloonet_priv {
     struct rtnl_link_ops link_ops;
@@ -10,5 +11,5 @@ struct igloonet_priv {
     struct ethtool_ops ethtool_ops;
 };
 
-struct net_device* igloonet_init_one(const char *devname);
+struct net_device* igloonet_init_one(const char *devname, bool allow_delete);
 #endif
