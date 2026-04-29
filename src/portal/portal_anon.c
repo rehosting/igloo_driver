@@ -165,10 +165,10 @@ void handle_op_sockfs_create_socket(portal_region *mem_region) {
 
     fd_install(fd, sfile);
 
-    mem_region->header.size = cpu_to_le64(fd);
-    mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_NUM);
+    mem_region->header.size = fd;
+    mem_region->header.op = HYPER_RESP_READ_NUM;
     return;
 
 fail:
-    mem_region->header.op = cpu_to_le64(HYPER_RESP_WRITE_FAIL);
+    mem_region->header.op = HYPER_RESP_WRITE_FAIL;
 }
