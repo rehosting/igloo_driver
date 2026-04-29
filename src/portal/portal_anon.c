@@ -44,7 +44,7 @@ void handle_op_anonfs_create_file(portal_region *mem_region) {
 
     pe = kzalloc(sizeof(*pe), GFP_KERNEL);
     if (!pe) {
-        mem_region->header.op = cpu_to_le64(HYPER_RESP_WRITE_FAIL);
+        mem_region->header.op = HYPER_RESP_WRITE_FAIL;
         return;
     }
 
@@ -62,12 +62,12 @@ void handle_op_anonfs_create_file(portal_region *mem_region) {
     
     if (fd < 0) {
         kfree(pe);
-        mem_region->header.op = cpu_to_le64(HYPER_RESP_WRITE_FAIL);
+        mem_region->header.op = HYPER_RESP_WRITE_FAIL;
         return;
     }
 
-    mem_region->header.size = cpu_to_le64(fd);
-    mem_region->header.op = cpu_to_le64(HYPER_RESP_READ_NUM);
+    mem_region->header.size = fd;
+    mem_region->header.op = HYPER_RESP_READ_NUM;
 }
 
 /* =========================================================================
