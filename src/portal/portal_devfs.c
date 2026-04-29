@@ -17,33 +17,8 @@
 #include <linux/genhd.h>
 #endif
 #include <linux/blk-mq.h>
-/* * -------------------------------------------------------------------------
- * Data Structures
- * -------------------------------------------------------------------------
- */
 
-// Comprehensive Operations Structure
-struct igloo_dev_ops {
-    int     (*open)(struct inode *, struct file *);
-    ssize_t (*read)(struct file *, char __user *, size_t, loff_t *);
-    ssize_t (*read_iter)(struct kiocb *, struct iov_iter *);
-    ssize_t (*write)(struct file *, const char __user *, size_t, loff_t *);
-    ssize_t (*write_iter)(struct kiocb *, struct iov_iter *);
-    loff_t  (*lseek)(struct file *, loff_t, int);
-    int     (*release)(struct inode *, struct file *);
-    unsigned int (*poll)(struct file *, struct poll_table_struct *);
-    long     (*ioctl)(struct file *, unsigned int, unsigned long);
-#ifdef CONFIG_COMPAT
-    long     (*compat_ioctl)(struct file *, unsigned int, unsigned long);
-#endif
-    int      (*mmap)(struct file *, struct vm_area_struct *);
-    unsigned long (*get_unmapped_area)(struct file *, unsigned long, unsigned long, unsigned long, unsigned long);
-    
-    int     (*flush)(struct file *, fl_owner_t id);
-    int     (*fsync)(struct file *, loff_t, loff_t, int datasync);
-    int     (*fasync)(int, struct file *, int);
-    int     (*lock)(struct file *, int, struct file_lock *);
-};
+#include "portal_devfs.h"
 
 // Request to create a directory in devfs
 struct portal_devfs_dir_req {
@@ -268,7 +243,7 @@ static int igloo_devfs_proxy_mmap(struct file *file, struct vm_area_struct *vma)
     return ret;
 }
 
-static void igloo_convert_ops_to_fops(const struct igloo_dev_ops *ops, struct file_operations *out, bool enable_default_mmap)
+void igloo_convert_ops_to_fops(const struct igloo_dev_ops *ops, struct file_operations *out, bool enable_default_mmap)
 {
     memset(out, 0, sizeof(*out));
     out->owner = THIS_MODULE;
