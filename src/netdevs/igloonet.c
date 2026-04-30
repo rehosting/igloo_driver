@@ -238,10 +238,11 @@ struct net_device* igloonet_init_one(const char *devname, bool allow_delete)
 	}
 	err = register_netdev(dev_igloonet);
 	if (err < 0)
-		goto err;
+		goto netdev_error;
 	return dev_igloonet;
 
-err:
+netdev_error:
+	rcu_barrier(); /* Wait for asynchronous network un-registration callbacks to finish */
 	free_netdev(dev_igloonet);
 	return NULL;
 }
