@@ -81,6 +81,7 @@ struct igloo_proto_ops {
     int (*sendmsg)(struct socket *sock, struct msghdr *m, size_t total_len);
     int (*recvmsg)(struct socket *sock, struct msghdr *m, size_t total_len, int flags);
     int (*release)(struct socket *sock);
+    unsigned int (*poll)(struct file *file, struct socket *sock, struct poll_table_struct *wait);
 };
 
 struct portal_sockfs_create_req {
@@ -95,7 +96,20 @@ struct portal_sockfs_entry {
     int hf_id;
     struct proto_ops pops;
     int (*python_release)(struct socket *);
+    unsigned int (*python_poll)(struct file *, struct socket *, struct poll_table_struct *);
 };
+
+static unsigned int igloo_sockfs_proxy_poll(struct file *file, struct socket *sock, struct poll_table_struct *wait) {
+    struct portal_sockfs_entry *pe = sock->sk ? sock->sk->sk_user_data : NULL;
+    
+    if (pe && pe->python_poll) {
+        return pe->python_poll(file, sock, wait);
+    }
+    
+    // Fallback: If python doesn't define poll, return immediately readable/writable 
+    // to prevent the guest daemon from permanently hanging in select().
+    return POLLIN | POLLOUT | POLLRDNORM | POLLWRNORM;
+}
 
 static int igloo_sockfs_proxy_release(struct socket *sock) {
     struct portal_sockfs_entry *pe = sock->sk ? sock->sk->sk_user_data : NULL;
@@ -130,6 +144,7 @@ void handle_op_sockfs_create_socket(portal_region *mem_region) {
     pe->pops.sendmsg = req->ops.sendmsg;
     pe->pops.recvmsg = req->ops.recvmsg;
     pe->pops.release = igloo_sockfs_proxy_release;
+    pe->pops.poll = igloo_sockfs_proxy_poll;
     
     // 2. Allocate a true kernel socket object
     sock = sock_alloc();
