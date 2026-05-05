@@ -37,15 +37,6 @@ void handle_op_register_netdev(portal_region *mem_region)
         return;
     }
 
-    ndev = dev_get_by_name(&init_net, safe_name);
-    if (ndev) {
-        // Device already exists, return it instead of trying to register again
-        dev_put(ndev);
-        mem_region->header.op = HYPER_RESP_READ_NUM;
-        mem_region->header.size = (uintptr_t)ndev;
-        return;
-    }
-
     // Pass the flag down to igloonet_init_one
     ndev = igloonet_init_one(safe_name, allow_delete);
     
