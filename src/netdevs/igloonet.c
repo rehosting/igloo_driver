@@ -136,8 +136,8 @@ static const struct ethtool_ops igloonet_ethtool_ops = {
 static void igloonet_get_drvinfo(struct net_device *dev,
 			      struct ethtool_drvinfo *info)
 {
-	strlcpy(info->driver, "igloonet", sizeof(info->driver));
-	strlcpy(info->version, "1.0", sizeof(info->version));
+	snprintf(info->driver, sizeof(info->driver), "igloonet");
+	snprintf(info->version, sizeof(info->version), "1.0");
 }
 static const struct ethtool_ops igloonet_ethtool_ops = {
 	.get_drvinfo            = igloonet_get_drvinfo,
@@ -157,6 +157,8 @@ static void igloonet_setup(struct net_device *dev)
 	/* Point this device to its OWN private copies */
 	dev->netdev_ops = &priv->netdev_ops;
 	dev->ethtool_ops = &priv->ethtool_ops;
+
+	/* Destructor assignment intentionally removed from here to prevent Use-After-Free */
 
 	dev->flags |= IFF_NOARP;
 	dev->flags &= ~IFF_MULTICAST;
@@ -178,7 +180,10 @@ static void igloonet_setup(struct net_device *dev)
 	dev->max_mtu = 0;
 #else
 	dev->features	|= NETIF_F_SG | NETIF_F_FRAGLIST;
-	dev->features	|= NETIF_F_ALL_TSO | NETIF_F_UFO;
+	dev->features	|= NETIF_F_ALL_TSO;
+#ifdef NETIF_F_UFO
+	dev->features	|= NETIF_F_UFO;
+#endif
 	dev->features	|= NETIF_F_HW_CSUM | NETIF_F_HIGHDMA | NETIF_F_LLTX;
 	dev->features	|= NETIF_F_GSO_ENCAP_ALL;
 	dev->hw_features |= dev->features;
@@ -194,7 +199,6 @@ static void igloonet_dellink(struct net_device *dev, struct list_head *head)
     pr_info("igloonet: interface %s is being deleted by userspace as allowed on setup\n", dev->name);
     unregister_netdevice_queue(dev, head);
 }
-
 
 static struct rtnl_link_ops igloonet_link_ops __read_mostly = {
 	.kind		= "igloonet",
@@ -223,7 +227,7 @@ struct net_device* igloonet_init_one(const char *devname, bool allow_delete)
 	memcpy(dev_igloonet->name, devname, IFNAMSIZ - 1);
 	dev_igloonet->name[IFNAMSIZ - 1] = '\0';
 #else
-	strlcpy(dev_igloonet->name, devname, IFNAMSIZ);
+	snprintf(dev_igloonet->name, IFNAMSIZ, "%s", devname);
 #endif
 
     // Conditionally apply the link ops so userspace can delete it
@@ -234,9 +238,10 @@ struct net_device* igloonet_init_one(const char *devname, bool allow_delete)
 	if (err < 0)
 		goto netdev_error;
 
+	/* Destructor is safely assigned ONLY after successful registration */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
 	dev_igloonet->needs_free_netdev = true;
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(6,13,0)
+#else
 	dev_igloonet->destructor = free_netdev;
 #endif
 
@@ -247,3 +252,4 @@ netdev_error:
 	free_netdev(dev_igloonet);
 	return NULL;
 }
+
