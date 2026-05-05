@@ -4,6 +4,17 @@
 #include <linux/version.h>
 #include "../netdevs/igloonet.h"
 
+#include <linux/ctype.h>
+
+static void trim_name(char *s)
+{
+    char *p = s;
+    int l = strlen(p);
+    while (l > 0 && isspace(p[l - 1])) p[--l] = 0;
+    while (*p && isspace(*p)) p++, l--;
+    memmove(s, p, l + 1);
+}
+
 void handle_op_register_netdev(portal_region *mem_region)
 {
     struct net_device *ndev;
@@ -16,6 +27,24 @@ void handle_op_register_netdev(portal_region *mem_region)
     // Truncate to maximum allowed kernel netdev name length (15 chars)
     strncpy(safe_name, devname, IFNAMSIZ - 1);
     safe_name[IFNAMSIZ - 1] = '\0';
+    
+    trim_name(safe_name);
+
+    if (!dev_valid_name(safe_name)) {
+        printk(KERN_EMERG "igloo: invalid netdev name '%s'\n", safe_name);
+        mem_region->header.op = HYPER_RESP_READ_FAIL;
+        mem_region->header.size = 0;
+        return;
+    }
+
+    ndev = dev_get_by_name(&init_net, safe_name);
+    if (ndev) {
+        // Device already exists, return it instead of trying to register again
+        dev_put(ndev);
+        mem_region->header.op = HYPER_RESP_READ_NUM;
+        mem_region->header.size = (uintptr_t)ndev;
+        return;
+    }
 
     // Pass the flag down to igloonet_init_one
     ndev = igloonet_init_one(safe_name, allow_delete);
