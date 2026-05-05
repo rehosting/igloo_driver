@@ -172,11 +172,20 @@ static struct ctl_table *igloo_find_sysctl_leaf(const char *dir_path, const char
     struct ctl_table_header *head = NULL;
     char path_copy[256];
     char *token, *rest;
+    bool is_net = (strncmp(dir_path, "net/", 4) == 0 || strcmp(dir_path, "net") == 0);
 
-    sysctl_root = (struct igloo_ctl_table_root *)kallsyms_lookup_name("sysctl_table_root");
-    if (!sysctl_root) return NULL;
-
-    dir = &sysctl_root->default_set.dir;
+    if (is_net) {
+#ifdef CONFIG_SYSCTL
+        struct igloo_ctl_table_set *net_set = (struct igloo_ctl_table_set *)&init_net.sysctls;
+        dir = &net_set->dir;
+#else
+        return NULL;
+#endif
+    } else {
+        sysctl_root = (struct igloo_ctl_table_root *)kallsyms_lookup_name("sysctl_table_root");
+        if (!sysctl_root) return NULL;
+        dir = &sysctl_root->default_set.dir;
+    }
 
     if (dir_path && dir_path[0]) {
         strncpy(path_copy, dir_path, sizeof(path_copy) - 1);
