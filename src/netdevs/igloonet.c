@@ -158,12 +158,6 @@ static void igloonet_setup(struct net_device *dev)
 	dev->netdev_ops = &priv->netdev_ops;
 	dev->ethtool_ops = &priv->ethtool_ops;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
-	dev->needs_free_netdev = true;
-#else
-	dev->destructor = free_netdev;
-#endif
-
 	dev->flags |= IFF_NOARP;
 	dev->flags &= ~IFF_MULTICAST;
 	
@@ -239,6 +233,13 @@ struct net_device* igloonet_init_one(const char *devname, bool allow_delete)
 	err = register_netdev(dev_igloonet);
 	if (err < 0)
 		goto netdev_error;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
+	dev_igloonet->needs_free_netdev = true;
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(6,13,0)
+	dev_igloonet->destructor = free_netdev;
+#endif
+
 	return dev_igloonet;
 
 netdev_error:
