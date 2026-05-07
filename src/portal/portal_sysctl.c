@@ -5,6 +5,7 @@
 #include <linux/kallsyms.h>
 #include <linux/uaccess.h>
 #include <linux/rbtree.h>
+#include <linux/stat.h>
 #include <net/net_namespace.h>
 #include "portal_internal.h"
 
@@ -167,24 +168,26 @@ static struct ctl_table *igloo_find_entry_in_dir(struct rb_root *root, const cha
 static struct ctl_table *igloo_find_sysctl_leaf(const char *dir_path, const char *entry_name)
 {
     struct igloo_ctl_table_root *sysctl_root;
-    struct igloo_ctl_dir *dir;
+    struct igloo_ctl_dir *curr_dir = NULL;
+    struct ctl_table *curr_table = NULL;
     struct ctl_table *entry = NULL;
     struct ctl_table_header *head = NULL;
-    char path_copy[256];
+    char path_copy[SYSCTL_MAX_PATH];
     char *token, *rest;
+
     bool is_net = (strncmp(dir_path, "net/", 4) == 0 || strcmp(dir_path, "net") == 0);
 
     if (is_net) {
 #ifdef CONFIG_SYSCTL
         struct igloo_ctl_table_set *net_set = (struct igloo_ctl_table_set *)&init_net.sysctls;
-        dir = &net_set->dir;
+        curr_dir = &net_set->dir;
 #else
         return NULL;
 #endif
     } else {
         sysctl_root = (struct igloo_ctl_table_root *)kallsyms_lookup_name("sysctl_table_root");
         if (!sysctl_root) return NULL;
-        dir = &sysctl_root->default_set.dir;
+        curr_dir = &sysctl_root->default_set.dir;
     }
 
     if (dir_path && dir_path[0]) {
@@ -195,14 +198,70 @@ static struct ctl_table *igloo_find_sysctl_leaf(const char *dir_path, const char
         while ((token = strsep(&rest, "/")) != NULL) {
             if (*token == '\0') continue;
             
-            entry = igloo_find_entry_in_dir(&dir->root, token, &head);
+            entry = NULL;
+            head = NULL;
+            if (curr_dir) {
+                entry = igloo_find_entry_in_dir(&curr_dir->root, token, &head);
+            } else if (curr_table) {
+                struct ctl_table *t_ptr;
+                int i;
+                for (i = 0; ; i++) {
+                    const char *pname;
+                    t_ptr = &curr_table[i];
+                    if (!igloo_safe_read_ptr(&t_ptr->procname, (void **)&pname)) break;
+                    if (!pname) break;
+                    if (igloo_namecmp(pname, strlen(pname), token, strlen(token)) == 0) {
+                        entry = t_ptr;
+                        break;
+                    }
+                }
+            }
+
             if (!entry) return NULL;
             
-            dir = container_of(head, struct igloo_ctl_dir, header);
+            if (S_ISDIR(entry->mode)) {
+                bool descended = false;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+                // In older or static tables, child points to the sub-table.
+                // This member was removed in more recent kernels.
+                if (entry->child) {
+                    curr_table = entry->child;
+                    curr_dir = NULL;
+                    descended = true;
+                }
+#endif
+                if (!descended && head) {
+                    // For mergable directories, the header that contains the entry
+                    // IS the ctl_dir for that directory.
+                    curr_dir = (struct igloo_ctl_dir *)head;
+                    curr_table = NULL;
+                    descended = true;
+                }
+
+                if (!descended) return NULL;
+            } else {
+                return NULL;
+            }
         }
     }
 
-    return igloo_find_entry_in_dir(&dir->root, entry_name, &head);
+    if (curr_dir) {
+        return igloo_find_entry_in_dir(&curr_dir->root, entry_name, &head);
+    } else if (curr_table) {
+        struct ctl_table *t_ptr;
+        int i;
+        for (i = 0; ; i++) {
+            const char *pname;
+            t_ptr = &curr_table[i];
+            if (!igloo_safe_read_ptr(&t_ptr->procname, (void **)&pname)) break;
+            if (!pname) break;
+            if (igloo_namecmp(pname, strlen(pname), entry_name, strlen(entry_name)) == 0) {
+                return t_ptr;
+            }
+        }
+    }
+
+    return NULL;
 }
 
 
