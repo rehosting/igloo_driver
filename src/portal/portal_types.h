@@ -186,7 +186,7 @@ struct portal_sysctl_create_req {
     char initial_value[SYSCTL_MAX_VAL];
     umode_t mode;
     int maxlen;
-    void *handler; 
+    proc_handler *handler;
 };
 
 #endif /* __PORTAL_TYPES_H__ */
