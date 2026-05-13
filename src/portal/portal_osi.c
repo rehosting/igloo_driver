@@ -639,6 +639,7 @@ void handle_op_read_procargs(portal_region *mem_region)
     buf[len] = '\0';
 
     mem_region->header.size = (len);
+    mem_region->header.pid = (task->pid);
     mem_region->header.op = (HYPER_RESP_READ_OK);
     igloo_debug_osi("igloo: Read procargs: len=%zu\n", len);
     return;
