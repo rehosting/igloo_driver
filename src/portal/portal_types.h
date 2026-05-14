@@ -181,12 +181,14 @@ struct portal_procfs_dir {
 #define SYSCTL_MAX_VAL  256
 
 struct portal_sysctl_create_req {
-    char dir_path[SYSCTL_MAX_PATH]; 
-    char entry_name[SYSCTL_MAX_NAME]; 
+    char dir_path[SYSCTL_MAX_PATH];
+    char entry_name[SYSCTL_MAX_NAME];
     char initial_value[SYSCTL_MAX_VAL];
-    umode_t mode;
+    int mode;
     int maxlen;
-    proc_handler *handler;
+    uint64_t handler;
+    int sysctl_entry_offset; // Offset of sysctl_entry in proc_inode relative to vfs_inode
 };
+
 
 #endif /* __PORTAL_TYPES_H__ */
