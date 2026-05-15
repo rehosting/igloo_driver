@@ -6,9 +6,6 @@
 #include <linux/uaccess.h>
 #include <linux/rbtree.h>
 #include <linux/stat.h>
-#include <linux/namei.h>
-#include <linux/path.h>
-#include <linux/fs.h>
 #include <net/net_namespace.h>
 #include "portal_internal.h"
 
@@ -44,51 +41,227 @@ static int default_sysctl_handler(IGLOO_CTL_CONST struct ctl_table *ctl, int wri
 }
 
 // -----------------------------------------------------------------------------
-// VFS-based Sysctl Lookup
+// Safe Memory Accessors (Bypass EXPORT_SYMBOL limits)
 // -----------------------------------------------------------------------------
-static struct ctl_table *igloo_find_sysctl_leaf(const char *dir_path, const char *entry_name, int offset)
+static long igloo_safe_strncpy(char *dst, const char *unsafe_addr, long count)
 {
-    struct path path;
-    char *full_path;
-    int err;
-    struct ctl_table *table = NULL;
+    typedef long (*strncpy_nofault_t)(char *, const void *, long);
+    static strncpy_nofault_t fn = NULL;
+    static bool init = false;
 
-    if (offset == 0) return NULL; // Offset required for VFS lookup safety
+    if (!init) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+        fn = (strncpy_nofault_t)kallsyms_lookup_name("strncpy_from_kernel_nofault");
+#else
+        fn = (strncpy_nofault_t)kallsyms_lookup_name("strncpy_from_unsafe");
+#endif
+        init = true;
+    }
 
-    full_path = kasprintf(GFP_KERNEL, "/proc/sys/%s/%s", dir_path, entry_name);
-    if (!full_path) return NULL;
+    if (fn) return fn(dst, unsafe_addr, count);
+    if ((unsigned long)unsafe_addr < PAGE_OFFSET) return -EFAULT;
+    
+    strncpy(dst, unsafe_addr, count - 1);
+    dst[count - 1] = '\0';
+    return strlen(dst);
+}
 
-    // Remove any double slashes from normalization
-    // (Simplistic cleanup: replace // with /)
-    {
-        char *p = full_path;
-        while ((p = strstr(p, "//")) != NULL) {
-            memmove(p, p + 1, strlen(p));
+static bool igloo_safe_read_ptr(void *src, void **dst) 
+{
+    typedef long (*copy_nofault_t)(void *, const void *, size_t);
+    static copy_nofault_t fn = NULL;
+    static bool init = false;
+
+    if (!init) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+        fn = (copy_nofault_t)kallsyms_lookup_name("copy_from_kernel_nofault");
+#else
+        fn = (copy_nofault_t)kallsyms_lookup_name("probe_kernel_read");
+#endif
+        init = true;
+    }
+
+    if (fn) return fn(dst, src, sizeof(void *)) == 0;
+    if ((unsigned long)src < PAGE_OFFSET) return false;
+    
+    *dst = *(void **)src;
+    return true;
+}
+
+// -----------------------------------------------------------------------------
+// Internal Kernel Struct Recreations for RB-Tree Walking 
+// -----------------------------------------------------------------------------
+struct igloo_ctl_dir {
+    struct ctl_table_header header;
+    struct rb_root root;
+};
+
+struct igloo_ctl_table_set {
+    int (*is_seen)(struct ctl_table_set *);
+    struct igloo_ctl_dir dir;
+};
+
+struct igloo_ctl_table_root {
+    struct igloo_ctl_table_set default_set;
+};
+
+struct igloo_ctl_node {
+    struct rb_node node;
+    struct ctl_table_header *header;
+};
+
+static int igloo_namecmp(const char *name1, int len1, const char *name2, int len2)
+{
+    int cmp = memcmp(name1, name2, min(len1, len2));
+    if (cmp == 0)
+        cmp = len1 - len2;
+    return cmp;
+}
+
+// Generic RB-Tree Node Resolver
+static struct ctl_table *igloo_find_entry_in_dir(struct rb_root *root, const char *name, struct ctl_table_header **out_head)
+{
+    struct rb_node *node;
+    int namelen;
+    
+    if (!root) return NULL;
+    node = root->rb_node;
+    namelen = strlen(name);
+
+    while (node) {
+        struct igloo_ctl_node *ctl_node = rb_entry(node, struct igloo_ctl_node, node);
+        struct ctl_table_header *head;
+        struct igloo_ctl_node *node_array;
+        struct ctl_table *table_base;
+        struct ctl_table *entry;
+        const char *procname;
+        char name_buf[64];
+        int cmp;
+
+        if (!igloo_safe_read_ptr(&ctl_node->header, (void **)&head)) break;
+        if (!igloo_safe_read_ptr(&head->node, (void **)&node_array)) break;
+        if (!igloo_safe_read_ptr(&head->ctl_table, (void **)&table_base)) break;
+
+        long offset = (char *)ctl_node - (char *)node_array;
+        int index = offset / sizeof(struct igloo_ctl_node);
+        
+        entry = &table_base[index];
+        
+        if (!igloo_safe_read_ptr(&entry->procname, (void **)&procname)) break;
+        if (igloo_safe_strncpy(name_buf, procname, sizeof(name_buf)) <= 0) break;
+
+        cmp = igloo_namecmp(name, namelen, name_buf, strlen(name_buf));
+        
+        if (cmp < 0)
+            node = node->rb_left;
+        else if (cmp > 0)
+            node = node->rb_right;
+        else {
+            if (out_head) *out_head = head;
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+// Main Sysctl Intercept Lookup
+static struct ctl_table *igloo_find_sysctl_leaf(const char *dir_path, const char *entry_name)
+{
+    struct igloo_ctl_table_root *sysctl_root;
+    struct igloo_ctl_dir *curr_dir = NULL;
+    struct ctl_table *curr_table = NULL;
+    struct ctl_table *entry = NULL;
+    struct ctl_table_header *head = NULL;
+    char path_copy[SYSCTL_MAX_PATH];
+    char *token, *rest;
+
+    bool is_net = (strncmp(dir_path, "net/", 4) == 0 || strcmp(dir_path, "net") == 0);
+
+    if (is_net) {
+#ifdef CONFIG_SYSCTL
+        struct igloo_ctl_table_set *net_set = (struct igloo_ctl_table_set *)&init_net.sysctls;
+        curr_dir = &net_set->dir;
+#else
+        return NULL;
+#endif
+    } else {
+        sysctl_root = (struct igloo_ctl_table_root *)kallsyms_lookup_name("sysctl_table_root");
+        if (!sysctl_root) return NULL;
+        curr_dir = &sysctl_root->default_set.dir;
+    }
+
+    if (dir_path && dir_path[0]) {
+        strncpy(path_copy, dir_path, sizeof(path_copy) - 1);
+        path_copy[sizeof(path_copy) - 1] = '\0';
+        rest = path_copy;
+
+        while ((token = strsep(&rest, "/")) != NULL) {
+            if (*token == '\0') continue;
+            
+            entry = NULL;
+            head = NULL;
+            if (curr_dir) {
+                entry = igloo_find_entry_in_dir(&curr_dir->root, token, &head);
+            } else if (curr_table) {
+                struct ctl_table *t_ptr;
+                int i;
+                for (i = 0; ; i++) {
+                    const char *pname;
+                    t_ptr = &curr_table[i];
+                    if (!igloo_safe_read_ptr(&t_ptr->procname, (void **)&pname)) break;
+                    if (!pname) break;
+                    if (igloo_namecmp(pname, strlen(pname), token, strlen(token)) == 0) {
+                        entry = t_ptr;
+                        break;
+                    }
+                }
+            }
+
+            if (!entry) return NULL;
+            
+            if (S_ISDIR(entry->mode)) {
+                bool descended = false;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+                // In older or static tables, child points to the sub-table.
+                // This member was removed in more recent kernels.
+                if (entry->child) {
+                    curr_table = entry->child;
+                    curr_dir = NULL;
+                    descended = true;
+                }
+#endif
+                if (!descended && head) {
+                    // For mergable directories, the header that contains the entry
+                    // IS the ctl_dir for that directory.
+                    curr_dir = (struct igloo_ctl_dir *)head;
+                    curr_table = NULL;
+                    descended = true;
+                }
+
+                if (!descended) return NULL;
+            } else {
+                return NULL;
+            }
         }
     }
 
-    err = kern_path(full_path, LOOKUP_FOLLOW, &path);
-    kfree(full_path);
-
-    if (err == 0) {
-        struct inode *inode = d_backing_inode(path.dentry);
-        if (inode) {
-            // proc_inode contains both ctl_table_header and ctl_table *
-            // We use the provided offset relative to vfs_inode.
-            // Note: sysctl_entry is usually at a negative offset from vfs_inode.
-            void **ptr_addr = (void **)((char *)inode + offset);
-            
-            // Safety: Verify we are actually in a proc_sysctl inode
-            // (Heuristic: inode operations should be proc_sys_inode_operations)
-            // But checking magic is easier if we had superblock.
-            
-            // For now, trust the offset provided by the trusted hypervisor/python layer.
-            table = (struct ctl_table *)(*ptr_addr);
+    if (curr_dir) {
+        return igloo_find_entry_in_dir(&curr_dir->root, entry_name, &head);
+    } else if (curr_table) {
+        struct ctl_table *t_ptr;
+        int i;
+        for (i = 0; ; i++) {
+            const char *pname;
+            t_ptr = &curr_table[i];
+            if (!igloo_safe_read_ptr(&t_ptr->procname, (void **)&pname)) break;
+            if (!pname) break;
+            if (igloo_namecmp(pname, strlen(pname), entry_name, strlen(entry_name)) == 0) {
+                return t_ptr;
+            }
         }
-        path_put(&path);
     }
 
-    return table;
+    return NULL;
 }
 
 
@@ -139,14 +312,18 @@ void handle_op_sysctl_create_file(portal_region *mem_region)
     strncpy(entry->data_buffer, req->initial_value, 
             req->maxlen > 0 ? req->maxlen - 1 : SYSCTL_MAX_VAL - 1);
 
-    // Attempt Mutation first
-    existing_leaf = igloo_find_sysctl_leaf(clean_dir, clean_name, req->sysctl_entry_offset);
+    existing_leaf = igloo_find_sysctl_leaf(clean_dir, clean_name);
 
     if (existing_leaf) {
-        // Mutation path
+        printk(KERN_EMERG "portal_sysctl: Mutating existing internal entry %s/%s\n", clean_dir, clean_name);
+        
         existing_leaf->data = entry->data_buffer;
         existing_leaf->maxlen = req->maxlen > 0 ? req->maxlen : SYSCTL_MAX_VAL;
-        existing_leaf->mode = req->mode ? req->mode : 0666; // Force override
+        
+        // FORCED READ/WRITE OVERRIDE
+        // Overrides original kernel properties (e.g. 0200) and ignores python-side 
+        // serializations to guarantee our intercepted hypercall receives read and write requests.
+        existing_leaf->mode = 0666; 
         
         if (req->handler) {
             existing_leaf->proc_handler = (proc_handler *)req->handler;
@@ -160,7 +337,6 @@ void handle_op_sysctl_create_file(portal_region *mem_region)
         goto success;
     }
 
-    // Fallback: Shadowing path
     table = kzalloc(sizeof(struct ctl_table) * 2, GFP_KERNEL);
     if (!table) {
         kfree(entry->data_buffer);
