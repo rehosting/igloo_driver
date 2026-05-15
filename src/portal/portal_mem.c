@@ -4,6 +4,7 @@
 #include <linux/thread_info.h>  /* For test_thread_flag */
 #include <linux/compat.h>        /* For CONFIG_COMPAT */
 #include <linux/version.h>
+#include <linux/pid_namespace.h>  /* For init_pid_ns / find_pid_ns */
 
 /* Helper function to determine if an address is in kernel space */
 bool igloo_is_kernel_addr(unsigned long addr)
@@ -74,9 +75,17 @@ struct task_struct *get_target_task_by_id(portal_region* mem_region)
         task = current;
     } else {
         igloo_pr_debug("igloo: Looking for task with pid=%d\n", target_pid);
-        // Find task by PID
+        /*
+         * Look up in init_pid_ns (the global / "root" PID namespace), not in
+         * `current`'s namespace via find_vpid(). Callers pass us pid values
+         * sourced from task_struct.pid (e.g. handle_op_osi_proc emits
+         * real_parent->pid as proc.ppid), which are always init-namespace
+         * (global) PIDs. find_vpid() interprets the number as a *virtual*
+         * pid in current's NS, which silently fails when current is in a
+         * child PID NS
+         */
         rcu_read_lock();
-        task = pid_task(find_vpid(target_pid), PIDTYPE_PID);
+        task = pid_task(find_pid_ns(target_pid, &init_pid_ns), PIDTYPE_PID);
         rcu_read_unlock();
     }
     return task;
