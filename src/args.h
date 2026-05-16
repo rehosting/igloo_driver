@@ -102,6 +102,13 @@ static inline void syscall_set_argument(struct task_struct *task,
 }
 
 #elif defined(__aarch64__)
+static inline unsigned long regs_get_argument(struct pt_regs *regs, unsigned int n)
+{
+    if (n < 6)
+        return regs->regs[n];
+    return 0;
+}
+
 static inline void syscall_set_argument(struct task_struct *task,
                                        struct pt_regs *regs,
                                        int i, unsigned long arg)
@@ -172,6 +179,19 @@ static inline void syscall_set_argument(struct task_struct *task,
 }
 
 #elif defined(__i386__)
+static inline unsigned long regs_get_argument(struct pt_regs *regs, unsigned int n)
+{
+    switch (n) {
+    case 0: return regs->bx;
+    case 1: return regs->cx;
+    case 2: return regs->dx;
+    case 3: return regs->si;
+    case 4: return regs->di;
+    case 5: return regs->bp;
+    }
+    return 0;
+}
+
 static inline void syscall_set_argument(struct task_struct *task,
                                        struct pt_regs *regs,
                                        int i, unsigned long arg)
@@ -201,6 +221,13 @@ static inline void syscall_set_argument(struct task_struct *task,
 }
 
 #elif defined(__loongarch__)
+static inline unsigned long regs_get_argument(struct pt_regs *regs, unsigned int n)
+{
+    if (n < 6)
+        return regs->regs[4 + n];
+    return 0;
+}
+
 static inline void syscall_set_argument(struct task_struct *task,
                                        struct pt_regs *regs,
                                        int i, unsigned long arg)
@@ -230,6 +257,19 @@ static inline void syscall_set_argument(struct task_struct *task,
 }
 
 #elif defined(__riscv)
+static inline unsigned long regs_get_argument(struct pt_regs *regs, unsigned int n)
+{
+    switch (n) {
+    case 0: return regs->a0;
+    case 1: return regs->a1;
+    case 2: return regs->a2;
+    case 3: return regs->a3;
+    case 4: return regs->a4;
+    case 5: return regs->a5;
+    }
+    return 0;
+}
+
 static inline void syscall_set_argument(struct task_struct *task,
                                        struct pt_regs *regs,
                                        int i, unsigned long arg)
@@ -259,6 +299,13 @@ static inline void syscall_set_argument(struct task_struct *task,
 }
 
 #elif defined(__powerpc__) || defined(__PPC__)
+static inline unsigned long regs_get_argument(struct pt_regs *regs, unsigned int n)
+{
+    if (n < 6)
+        return regs->gpr[3 + n];
+    return 0;
+}
+
 static inline void syscall_set_argument(struct task_struct *task,
                                        struct pt_regs *regs,
                                        int i, unsigned long arg)
