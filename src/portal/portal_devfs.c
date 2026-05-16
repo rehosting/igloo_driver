@@ -31,6 +31,7 @@ struct portal_devfs_dir_req {
 struct portal_devfs_create_req {
     char name[64];
     uint64_t size;
+    uint64_t mmap_phys_addr;
     int support_mmap;
     int is_block;
     int logical_block_size;
@@ -60,6 +61,7 @@ struct portal_devfs_entry {
     // MMAP / Release support
     struct mutex shm_lock;
     struct file *shm_file;
+    uint64_t mmap_phys_addr;
     int (*python_release)(struct inode *, struct file *);
     char *name;
 };
@@ -176,12 +178,19 @@ static int igloo_devfs_proxy_mmap(struct file *file, struct vm_area_struct *vma)
 
     if (!inode || !inode->i_cdev) return -ENODEV;
     
-    // Resolve tracking struct from cdev
+    // resolve tracking struct from cdev
     pe = container_of(inode->i_cdev, struct portal_devfs_entry, cdev);
 
     if (!pe) {
         printk(KERN_ERR "igloo_mmap: No portal tracking data found for devfs inode\n");
         return -ENODEV;
+    }
+
+    if (pe->mmap_phys_addr) {
+        // NATIVE QEMU MMAP: Directly map the physical address assigned by Penguin
+        vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+        return remap_pfn_range(vma, vma->vm_start, pe->mmap_phys_addr >> PAGE_SHIFT,
+                               size, vma->vm_page_prot);
     }
 
     mutex_lock(&pe->shm_lock);
@@ -504,6 +513,7 @@ void handle_op_devfs_create_device(portal_region *mem_region)
 
     mutex_init(&pe->shm_lock);
     pe->name = kstrdup(req->name, GFP_KERNEL);
+    pe->mmap_phys_addr = req->mmap_phys_addr;
     pe->python_release = req->ops.release;
     pe->is_block = req->is_block;
 
