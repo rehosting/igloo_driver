@@ -9,11 +9,13 @@
 struct portal_anonfs_create_req {
     char name[32];
     int hf_id;
+    uint64_t mmap_phys_addr;
     struct igloo_dev_ops ops;
 };
 
 struct portal_anonfs_entry {
     int hf_id;
+    uint64_t mmap_phys_addr;
     struct file_operations fops;
     int (*python_release)(struct inode *, struct file *);
 };
@@ -37,6 +39,18 @@ static int igloo_anonfs_proxy_release(struct inode *inode, struct file *file) {
     return ret;
 }
 
+static int igloo_anonfs_proxy_mmap(struct file *file, struct vm_area_struct *vma) {
+    struct portal_anonfs_entry *pe = file->private_data;
+    size_t size = vma->vm_end - vma->vm_start;
+
+    if (pe && pe->mmap_phys_addr) {
+        vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+        return remap_pfn_range(vma, vma->vm_start, pe->mmap_phys_addr >> PAGE_SHIFT,
+                               size, vma->vm_page_prot);
+    }
+    return -ENODEV;
+}
+
 void handle_op_anonfs_create_file(portal_region *mem_region) {
     struct portal_anonfs_create_req *req = (void *)PORTAL_DATA(mem_region);
     struct portal_anonfs_entry *pe;
@@ -50,6 +64,7 @@ void handle_op_anonfs_create_file(portal_region *mem_region) {
 
     req->name[31] = '\0';
     pe->hf_id = req->hf_id;
+    pe->mmap_phys_addr = req->mmap_phys_addr;
     pe->python_release = req->ops.release;
 
     // Use the shared converter to wire up Python trampolines
@@ -57,6 +72,10 @@ void handle_op_anonfs_create_file(portal_region *mem_region) {
     
     // Route release through our cleanup proxy
     pe->fops.release = igloo_anonfs_proxy_release;
+
+    if (pe->mmap_phys_addr) {
+        pe->fops.mmap = igloo_anonfs_proxy_mmap;
+    }
 
     fd = anon_inode_getfd(req->name, &pe->fops, pe, O_RDWR);
     

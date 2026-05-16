@@ -69,6 +69,7 @@ struct igloo_sysfs_ops {
 struct portal_sysfs_create_req {
     char path[PROCFS_MAX_PATH];
     struct igloo_sysfs_ops ops; // Ops passed from hypervisor
+    uint64_t mmap_phys_addr;
     int parent_id;
     int replace;
     umode_t mode; 

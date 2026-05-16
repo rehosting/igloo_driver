@@ -80,6 +80,13 @@ int igloo_proxy_mmap(struct file *file, struct vm_area_struct *vma)
         return -ENODEV;
     }
 
+    if (pe->mmap_phys_addr) {
+        // NATIVE QEMU MMAP: Directly map the physical address assigned by Penguin
+        vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+        return remap_pfn_range(vma, vma->vm_start, pe->mmap_phys_addr >> PAGE_SHIFT,
+                               size, vma->vm_page_prot);
+    }
+
     // Lock to ensure only the first mmap call triggers the hypervisor fetch
     mutex_lock(&pe->shm_lock);
     
@@ -578,6 +585,7 @@ void handle_op_procfs_create_file(portal_region *mem_region)
 
     mutex_init(&pe->shm_lock); // Now this is safe
     pe->name = kstrdup(entry_name, GFP_KERNEL);
+    pe->mmap_phys_addr = req->mmap_phys_addr;
     pe->python_release = req->fops.release;
 
     // Evaluate if we should fall back to the default mmap proxy
