@@ -4,6 +4,13 @@
 #if defined(__mips__)
 #include <asm/syscall.h>
 
+static inline unsigned long regs_get_argument(struct pt_regs *regs, unsigned int n)
+{
+    if (n < 4)
+        return regs->regs[4 + n];
+    return 0;
+}
+
 static inline bool local_mips_syscall_is_indirect(struct task_struct *task,
 					    struct pt_regs *regs)
 {
@@ -61,6 +68,16 @@ static inline void syscall_set_argument(struct task_struct *task,
 }
 
 #elif defined(__arm__)
+static inline unsigned long regs_get_argument(struct pt_regs *regs, unsigned int n)
+{
+    switch (n) {
+    case 0: return regs->ARM_r0;
+    case 1: return regs->ARM_r1;
+    case 2: return regs->ARM_r2;
+    case 3: return regs->ARM_r3;
+    }
+    return 0;
+}
 static inline void syscall_set_argument(struct task_struct *task,
 					 struct pt_regs *regs,
 					 int i, unsigned long arg)
@@ -114,6 +131,18 @@ static inline void syscall_set_argument(struct task_struct *task,
 }
 
 #elif defined(__x86_64__)
+static inline unsigned long regs_get_argument(struct pt_regs *regs, unsigned int n)
+{
+    switch (n) {
+    case 0: return regs->di;
+    case 1: return regs->si;
+    case 2: return regs->dx;
+    case 3: return regs->cx;
+    case 4: return regs->r8;
+    case 5: return regs->r9;
+    }
+    return 0;
+}
 static inline void syscall_set_argument(struct task_struct *task,
                                        struct pt_regs *regs,
                                        int i, unsigned long arg)

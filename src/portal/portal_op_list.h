@@ -21,6 +21,8 @@
     X(unregister_uprobe, UNREGISTER_UPROBE) \
     X(register_syscall_hook, REGISTER_SYSCALL_HOOK) \
     X(unregister_syscall_hook, UNREGISTER_SYSCALL_HOOK) \
+    X(register_signal_hook, REGISTER_SIGNAL_HOOK) \
+    X(unregister_signal_hook, UNREGISTER_SIGNAL_HOOK) \
     X(ffi_exec, FFI_EXEC) \
     X(kallsyms_lookup, KALLSYMS_LOOKUP) \
     X(tramp_generate, TRAMP_GENERATE) \
