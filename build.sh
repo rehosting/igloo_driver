@@ -76,6 +76,29 @@ done
 
 echo "Building modules for kernel versions: ${VERSIONS}, targets: ${TARGETS}..."
 
+kernel_devel_cache_complete() {
+    local base_dir=$1
+    local package=$2
+    local target
+    local version
+    local manifest="${base_dir}/.kernel_devel_pkg_configs"
+
+    [ -f "$base_dir/.kernel_devel_pkg_hash" ] || return 1
+    if [ ! -f "$manifest" ]; then
+        tar -tzf "$package" | sed -n 's#^\./\([^/]*\)/\.config$#\1#p' > "$manifest"
+    fi
+
+    for version in $VERSIONS; do
+        for target in $TARGETS; do
+            if grep -Fxq "${target}.${version}" "$manifest"; then
+                [ -f "$base_dir/${target}.${version}/.config" ] || return 1
+            fi
+        done
+    done
+
+    return 0
+}
+
 # Extract kernel-devel package if not using custom path
 if [ -z "$KERNEL_DEVEL_PATH" ]; then
     PKG=local_packages/kernel-devel-all.tar.gz
@@ -90,11 +113,12 @@ if [ -z "$KERNEL_DEVEL_PATH" ]; then
             OLD_HASH="$(cat "$HASHFILE")" || OLD_HASH=""
         fi
 
-        if [ "$PKG_HASH" = "$OLD_HASH" ] && [ -n "$(ls -A cache/kernel-devel-extract 2>/dev/null)" ]; then
+        if [ "$PKG_HASH" = "$OLD_HASH" ] && kernel_devel_cache_complete cache/kernel-devel-extract "$PKG"; then
             echo "Using cached kernel-devel-extract (hash unchanged)"
         else
             echo "Extracting kernel-devel package (hash changed or no cache)"
             rm -rf cache/kernel-devel-extract/*
+            rm -f cache/kernel-devel-extract/.kernel_devel_pkg_configs
             pigz -dc "$PKG" | tar -xf - -C cache/kernel-devel-extract
             # Update hash atomically
             printf '%s' "$PKG_HASH" > "${HASHFILE}.tmp" && mv "${HASHFILE}.tmp" "$HASHFILE"
@@ -106,7 +130,11 @@ if [ -z "$KERNEL_DEVEL_PATH" ]; then
         exit 1
     fi
 else
-    KERNEL_DEVEL_MOUNT_DIR="$KERNEL_DEVEL_PATH"
+    if [[ "$KERNEL_DEVEL_PATH" = /* ]]; then
+        KERNEL_DEVEL_MOUNT_DIR="$KERNEL_DEVEL_PATH"
+    else
+        KERNEL_DEVEL_MOUNT_DIR="$(pwd)/$KERNEL_DEVEL_PATH"
+    fi
 fi
 
 # Set build output directory in cache & initialize subfolders
