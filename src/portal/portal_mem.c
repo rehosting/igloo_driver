@@ -73,6 +73,7 @@ struct task_struct *get_target_task_by_id(portal_region* mem_region)
     if (target_pid == CURRENT_PID_NUM) {
         igloo_pr_debug("igloo: Using current task (pid=%d)\n", current->pid);
         task = current;
+        get_task_struct(task);
     } else {
         igloo_pr_debug("igloo: Looking for task with pid=%d\n", target_pid);
         /*
@@ -86,6 +87,8 @@ struct task_struct *get_target_task_by_id(portal_region* mem_region)
          */
         rcu_read_lock();
         task = pid_task(find_pid_ns(target_pid, &init_pid_ns), PIDTYPE_PID);
+        if (task)
+            get_task_struct(task);
         rcu_read_unlock();
     }
     return task;
