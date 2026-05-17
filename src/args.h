@@ -1,3 +1,6 @@
+#ifndef IGLOO_ARGS_H
+#define IGLOO_ARGS_H
+
 #define MAX_PROBES 20
 #define MAX_ARGS 7
 
@@ -9,6 +12,16 @@ static inline unsigned long regs_get_argument(struct pt_regs *regs, unsigned int
     if (n < 4)
         return regs->regs[4 + n];
     return 0;
+}
+
+static inline unsigned long igloo_regs_get_return_value(struct pt_regs *regs)
+{
+    return regs->regs[2];
+}
+
+static inline void igloo_regs_set_return_value(struct pt_regs *regs, unsigned long val)
+{
+    regs->regs[2] = val;
 }
 
 static inline bool local_mips_syscall_is_indirect(struct task_struct *task,
@@ -78,6 +91,17 @@ static inline unsigned long regs_get_argument(struct pt_regs *regs, unsigned int
     }
     return 0;
 }
+
+static inline unsigned long igloo_regs_get_return_value(struct pt_regs *regs)
+{
+    return regs->ARM_r0;
+}
+
+static inline void igloo_regs_set_return_value(struct pt_regs *regs, unsigned long val)
+{
+    regs->ARM_r0 = val;
+}
+
 static inline void syscall_set_argument(struct task_struct *task,
 					 struct pt_regs *regs,
 					 int i, unsigned long arg)
@@ -107,6 +131,16 @@ static inline unsigned long regs_get_argument(struct pt_regs *regs, unsigned int
     if (n < 6)
         return regs->regs[n];
     return 0;
+}
+
+static inline unsigned long igloo_regs_get_return_value(struct pt_regs *regs)
+{
+    return regs->regs[0];
+}
+
+static inline void igloo_regs_set_return_value(struct pt_regs *regs, unsigned long val)
+{
+    regs->regs[0] = val;
 }
 
 static inline void syscall_set_argument(struct task_struct *task,
@@ -150,6 +184,17 @@ static inline unsigned long regs_get_argument(struct pt_regs *regs, unsigned int
     }
     return 0;
 }
+
+static inline unsigned long igloo_regs_get_return_value(struct pt_regs *regs)
+{
+    return regs->ax;
+}
+
+static inline void igloo_regs_set_return_value(struct pt_regs *regs, unsigned long val)
+{
+    regs->ax = val;
+}
+
 static inline void syscall_set_argument(struct task_struct *task,
                                        struct pt_regs *regs,
                                        int i, unsigned long arg)
@@ -181,15 +226,17 @@ static inline void syscall_set_argument(struct task_struct *task,
 #elif defined(__i386__)
 static inline unsigned long regs_get_argument(struct pt_regs *regs, unsigned int n)
 {
-    switch (n) {
-    case 0: return regs->bx;
-    case 1: return regs->cx;
-    case 2: return regs->dx;
-    case 3: return regs->si;
-    case 4: return regs->di;
-    case 5: return regs->bp;
-    }
-    return 0;
+    return regs_get_kernel_stack_nth(regs, n + 1);
+}
+
+static inline unsigned long igloo_regs_get_return_value(struct pt_regs *regs)
+{
+    return regs->ax;
+}
+
+static inline void igloo_regs_set_return_value(struct pt_regs *regs, unsigned long val)
+{
+    regs->ax = val;
 }
 
 static inline void syscall_set_argument(struct task_struct *task,
@@ -226,6 +273,16 @@ static inline unsigned long regs_get_argument(struct pt_regs *regs, unsigned int
     if (n < 6)
         return regs->regs[4 + n];
     return 0;
+}
+
+static inline unsigned long igloo_regs_get_return_value(struct pt_regs *regs)
+{
+    return regs->regs[4];
+}
+
+static inline void igloo_regs_set_return_value(struct pt_regs *regs, unsigned long val)
+{
+    regs->regs[4] = val;
 }
 
 static inline void syscall_set_argument(struct task_struct *task,
@@ -270,6 +327,16 @@ static inline unsigned long regs_get_argument(struct pt_regs *regs, unsigned int
     return 0;
 }
 
+static inline unsigned long igloo_regs_get_return_value(struct pt_regs *regs)
+{
+    return regs->a0;
+}
+
+static inline void igloo_regs_set_return_value(struct pt_regs *regs, unsigned long val)
+{
+    regs->a0 = val;
+}
+
 static inline void syscall_set_argument(struct task_struct *task,
                                        struct pt_regs *regs,
                                        int i, unsigned long arg)
@@ -306,6 +373,16 @@ static inline unsigned long regs_get_argument(struct pt_regs *regs, unsigned int
     return 0;
 }
 
+static inline unsigned long igloo_regs_get_return_value(struct pt_regs *regs)
+{
+    return regs->gpr[3];
+}
+
+static inline void igloo_regs_set_return_value(struct pt_regs *regs, unsigned long val)
+{
+    regs->gpr[3] = val;
+}
+
 static inline void syscall_set_argument(struct task_struct *task,
                                        struct pt_regs *regs,
                                        int i, unsigned long arg)
@@ -335,4 +412,6 @@ static inline void syscall_set_argument(struct task_struct *task,
 }
 #else
 #error "Architecture not supported"
+#endif
+
 #endif
