@@ -5,7 +5,7 @@
 #include <linux/version.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
-#include "hypercall.h"
+#include "igloo_hypercall.h"
 #include "igloo.h"
 #include "signal_hc.h"
 #include "portal/portal.h"

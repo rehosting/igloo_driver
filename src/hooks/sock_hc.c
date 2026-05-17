@@ -4,7 +4,7 @@
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
-#include "hypercall.h"
+#include "igloo_hypercall.h"
 #include <linux/unistd.h>
 #include <linux/socket.h>
 #include <linux/ipv6.h>

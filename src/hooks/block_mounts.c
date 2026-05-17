@@ -6,7 +6,7 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/binfmts.h>
-#include "hypercall.h"
+#include "igloo_hypercall.h"
 #include "igloo.h"
 
 bool igloo_should_block_mount(struct path *path);

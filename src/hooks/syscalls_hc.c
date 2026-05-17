@@ -7,7 +7,7 @@
 #include <linux/slab.h>
 #include <linux/ftrace.h>
 #include <asm/ftrace.h>
-#include "hypercall.h" // Content is now included directly below
+#include "igloo_hypercall.h" // Content is now included directly below
 #include "igloo.h"
 #include <linux/binfmts.h>
 #include <linux/ptrace.h>
