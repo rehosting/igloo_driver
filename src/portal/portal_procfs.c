@@ -357,24 +357,6 @@ static struct proc_dir_entry *igloo_proc_create_data(const char *name, umode_t m
 #endif
 }
 
-static struct proc_dir_entry *igloo_proc_create_pid_file_data(const char *name, umode_t mode,
-                        struct igloo_proc_ops *uops,
-                        void *data,
-                        bool enable_default_mmap)
-{
-    struct file_operations *fops;
-
-    if (enable_default_mmap && uops->mmap == NULL) {
-        uops->mmap = igloo_proxy_mmap;
-    }
-
-    fops = kmalloc(sizeof(struct file_operations), GFP_KERNEL);
-    if (!fops)
-        return NULL;
-    igloo_convert_ops_to_fops(uops, fops);
-    return igloo_proc_create_pid_data(name, mode, fops, data);
-}
-
 /* =========================================================================
  * 1. INTERNAL PROCFS SYMBOL RESOLUTION
  * ========================================================================= */
@@ -617,6 +599,18 @@ static struct portal_procfs_entry *find_pid_template(const char *parent, const c
         }
     }
     spin_unlock(&procfs_pid_template_lock);
+    if (entry)
+        return entry;
+
+    spin_lock(&procfs_pid_template_lock);
+    list_for_each_entry(tmpl, &procfs_pid_template_list, list) {
+        if (!strcmp(tmpl->parent, "*") &&
+            strlen(tmpl->name) == len && !memcmp(tmpl->name, name, len)) {
+            entry = tmpl->entry;
+            break;
+        }
+    }
+    spin_unlock(&procfs_pid_template_lock);
     return entry;
 }
 
@@ -787,6 +781,7 @@ void handle_op_procfs_create_file(portal_region *mem_region)
     int id;
     char *entry_name;
     bool exists, enable_default_mmap, synthetic_pid_parent = false;
+    const char *pid_template_key = NULL;
 
     req->path[PROCFS_MAX_PATH - 1] = '\0';
     entry_name = req->path;
@@ -801,7 +796,14 @@ void handle_op_procfs_create_file(portal_region *mem_region)
     // Parent must be provided (0 means root, PROCFS_PID_PARENT_ID means /proc/<pid>)
     if (req->parent_id) {
         if (req->parent_id == PROCFS_PID_PARENT_ID) {
-            parent = NULL;
+            parent = ensure_pid_template_parent();
+            if (!parent) {
+                printk(KERN_EMERG "portal_procfs: Failed to create pid template parent for '%s'\n", entry_name);
+                mem_region->header.op = HYPER_RESP_WRITE_FAIL;
+                goto out;
+            }
+            synthetic_pid_parent = true;
+            pid_template_key = "*";
         } else {
             parent_dir_struct = find_proc_dir_struct_by_id(req->parent_id);
             if (!parent_dir_struct) {
@@ -825,6 +827,8 @@ void handle_op_procfs_create_file(portal_region *mem_region)
                     goto out;
                 }
             }
+            if (synthetic_pid_parent)
+                pid_template_key = parent_dir_struct->path;
         }
     }
 
@@ -880,10 +884,7 @@ void handle_op_procfs_create_file(portal_region *mem_region)
     enable_default_mmap = (req->size > 0 || req->support_mmap);
 
     // Create the file and bind the tracker
-    if (req->parent_id == PROCFS_PID_PARENT_ID)
-        file = igloo_proc_create_pid_file_data(entry_name, file_mode, &req->fops, pe, enable_default_mmap);
-    else
-        file = igloo_proc_create_data(entry_name, file_mode, parent, &req->fops, pe, enable_default_mmap);
+    file = igloo_proc_create_data(entry_name, file_mode, parent, &req->fops, pe, enable_default_mmap);
     if (!file) {
         printk(KERN_EMERG "portal_procfs: Failed to create proc entry: %s\n", entry_name);
         kfree(pe->name);
@@ -903,8 +904,8 @@ void handle_op_procfs_create_file(portal_region *mem_region)
     list_add(&pe->list, &procfs_entry_list);
     spin_unlock(&procfs_entry_lock);
 
-    if (synthetic_pid_parent)
-        remember_pid_template(parent_dir_struct->path, entry_name, pe);
+    if (synthetic_pid_parent && pid_template_key)
+        remember_pid_template(pid_template_key, entry_name, pe);
 
     // printk(KERN_EMERG "portal_procfs: Created procfs entry '%s' with id %d\n", entry_name, id);
 
