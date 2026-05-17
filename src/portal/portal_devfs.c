@@ -109,7 +109,11 @@ static struct portal_devfs_entry *find_devfs_entry_by_devt(dev_t devt)
     return found;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+static char *portal_devnode(const struct device *dev, umode_t *mode)
+#else
 static char *portal_devnode(struct device *dev, umode_t *mode)
+#endif
 {
     struct portal_devfs_entry *entry;
 
