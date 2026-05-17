@@ -176,6 +176,7 @@ struct portal_procfs_dir {
     struct proc_dir_entry *entry;
     char *path;
     int id;
+    uint8_t synthetic_pid;
 };
 
 #define SYSCTL_MAX_PATH 256

@@ -32,6 +32,7 @@ struct portal_devfs_create_req {
     char name[64];
     uint64_t size;
     uint64_t mmap_phys_addr;
+    umode_t mode;
     int support_mmap;
     int is_block;
     int logical_block_size;
@@ -47,6 +48,7 @@ struct portal_devfs_entry {
     int id;
     dev_t devt;
     uint8_t is_block;
+    umode_t mode;
 
     struct cdev cdev;
     struct device *device;
@@ -90,6 +92,36 @@ static struct class *portal_class = NULL;
 
 // --- Forward declaration for the hypercall bridge (defined in portal_procfs.c) ---
 extern ssize_t igloo_fetch_mmap_page(struct file *file, void *buffer, loff_t offset, size_t size);
+
+static struct portal_devfs_entry *find_devfs_entry_by_devt(dev_t devt)
+{
+    struct portal_devfs_entry *entry;
+    struct portal_devfs_entry *found = NULL;
+
+    spin_lock(&devfs_entry_lock);
+    list_for_each_entry(entry, &devfs_entry_list, list) {
+        if (entry->devt == devt) {
+            found = entry;
+            break;
+        }
+    }
+    spin_unlock(&devfs_entry_lock);
+    return found;
+}
+
+static char *portal_devnode(struct device *dev, umode_t *mode)
+{
+    struct portal_devfs_entry *entry;
+
+    if (!mode)
+        return NULL;
+
+    entry = find_devfs_entry_by_devt(dev->devt);
+    if (entry && entry->mode)
+        *mode = entry->mode;
+
+    return NULL;
+}
 
 static void igloo_devfs_flush_shm_to_hypervisor(struct file *file, struct portal_devfs_entry *pe)
 {
@@ -393,6 +425,8 @@ static void ensure_portal_class(void)
     if (IS_ERR(portal_class)) {
         printk(KERN_ERR "portal_devfs: Failed to create portal class\n");
         portal_class = NULL;
+    } else {
+        portal_class->devnode = portal_devnode;
     }
 }
 
@@ -516,6 +550,7 @@ void handle_op_devfs_create_device(portal_region *mem_region)
     pe->mmap_phys_addr = req->mmap_phys_addr;
     pe->python_release = req->ops.release;
     pe->is_block = req->is_block;
+    pe->mode = req->mode ? req->mode : 0666;
 
     /* =====================================================================
      * BLOCK DEVICE REGISTRATION
@@ -626,8 +661,18 @@ void handle_op_devfs_create_device(portal_region *mem_region)
             goto fail_alloc;
         }
 
+        id = atomic_inc_return(&devfs_entry_id);
+        pe->id = id;
+
+        spin_lock(&devfs_entry_lock);
+        list_add(&pe->list, &devfs_entry_list);
+        spin_unlock(&devfs_entry_lock);
+
         pe->device = device_create(portal_class, NULL, devt, NULL, "%s", final_device_name);
         if (IS_ERR(pe->device)) {
+            spin_lock(&devfs_entry_lock);
+            list_del(&pe->list);
+            spin_unlock(&devfs_entry_lock);
             cdev_del(&pe->cdev);
             unregister_chrdev_region(devt, 1);
             goto fail_alloc;
@@ -635,12 +680,14 @@ void handle_op_devfs_create_device(portal_region *mem_region)
     }
 
     /* Track it */
-    id = atomic_inc_return(&devfs_entry_id);
-    pe->id = id;
+    if (pe->is_block) {
+        id = atomic_inc_return(&devfs_entry_id);
+        pe->id = id;
 
-    spin_lock(&devfs_entry_lock);
-    list_add(&pe->list, &devfs_entry_list);
-    spin_unlock(&devfs_entry_lock);
+        spin_lock(&devfs_entry_lock);
+        list_add(&pe->list, &devfs_entry_list);
+        spin_unlock(&devfs_entry_lock);
+    }
 
     // printk(KERN_INFO "portal_devfs: Registered %s '%s' (%d:%d) id=%d\n", 
         //    pe->is_block ? "blkdev" : "chrdev", final_device_name, MAJOR(devt), MINOR(devt), id);

@@ -13,6 +13,8 @@
 #include <linux/file.h>        // Required for fput()
 #include <linux/shmem_fs.h>    // Required for shmem_file_setup()
 #include <linux/vmalloc.h>     // Required for vzalloc()
+#include <linux/err.h>
+#include <linux/kprobes.h>
 
 #include "portal_procfs.h"
 
@@ -29,6 +31,26 @@ static DEFINE_SPINLOCK(procfs_entry_lock);
 static LIST_HEAD(procfs_dir_list);
 static atomic_t procfs_dir_id = ATOMIC_INIT(1);
 static DEFINE_SPINLOCK(procfs_dir_lock);
+
+struct portal_procfs_pid_template {
+    struct list_head list;
+    char *parent;
+    char *name;
+    struct portal_procfs_entry *entry;
+};
+
+static LIST_HEAD(procfs_pid_template_list);
+static DEFINE_SPINLOCK(procfs_pid_template_lock);
+static struct proc_dir_entry *pid_template_parent;
+
+#if defined(CONFIG_X86_64)
+struct procfs_lookup_ctx {
+    struct inode *dir;
+    struct dentry *dentry;
+};
+
+static struct kretprobe proc_tgid_base_lookup_probe;
+#endif
 
 static void igloo_remove_proc_entry(const char *name, struct proc_dir_entry *parent);
 int igloo_proxy_mmap(struct file *file, struct vm_area_struct *vma);
@@ -340,9 +362,11 @@ static struct proc_dir_entry *igloo_proc_create_data(const char *name, umode_t m
  * 1. INTERNAL PROCFS SYMBOL RESOLUTION
  * ========================================================================= */
 typedef struct proc_dir_entry *(*pde_subdir_find_t)(struct proc_dir_entry *dir, const char *name, unsigned int len);
+typedef struct inode *(*proc_get_inode_t)(struct super_block *sb, struct proc_dir_entry *de);
 
 static struct proc_dir_entry *internal_proc_root = NULL;
 static pde_subdir_find_t internal_pde_subdir_find = NULL;
+static proc_get_inode_t internal_proc_get_inode = NULL;
 
 #if IGLOO_NEEDS_PROC_PERMANENT_CLEAR
 #if defined(PROC_ENTRY_PERMANENT) && (PROC_ENTRY_PERMANENT != 0U)
@@ -388,7 +412,7 @@ static struct proc_dir_entry *igloo_fallback_pde_subdir_find(struct proc_dir_ent
 
 static int resolve_proc_symbols(void)
 {
-    if (internal_proc_root && internal_pde_subdir_find)
+    if (internal_proc_root && internal_pde_subdir_find && internal_proc_get_inode)
         return 0;
 
     internal_proc_root = (struct proc_dir_entry *)kallsyms_lookup_name("proc_root");
@@ -402,6 +426,12 @@ static int resolve_proc_symbols(void)
         printk(KERN_INFO "portal_procfs: pde_subdir_find missing. Using structural RB-tree fallback.\n");
         // Seamlessly route to your manual structural traverser
         internal_pde_subdir_find = igloo_fallback_pde_subdir_find; 
+    }
+
+    internal_proc_get_inode = (proc_get_inode_t)kallsyms_lookup_name("proc_get_inode");
+    if (!internal_proc_get_inode) {
+        printk(KERN_ERR "portal_procfs: Failed to lookup symbol: proc_get_inode\n");
+        return -ENOENT;
     }
 
     return 0;
@@ -444,6 +474,226 @@ static void igloo_remove_proc_entry(const char *name, struct proc_dir_entry *par
 
     clear_permanent_flag_if_needed(entry, name);
     remove_proc_entry(name, parent);
+}
+
+static bool is_pid_compat_dir_name(const char *name)
+{
+    const char *p;
+
+    if (!strcmp(name, "self"))
+        return true;
+
+    for (p = name; *p; p++) {
+        if (*p < '0' || *p > '9')
+            return false;
+    }
+
+    return name[0] != '\0';
+}
+
+static struct portal_procfs_dir *find_proc_dir_struct_by_id(int id)
+{
+    struct portal_procfs_dir *dir;
+    struct portal_procfs_dir *found = NULL;
+
+    spin_lock(&procfs_dir_lock);
+    list_for_each_entry(dir, &procfs_dir_list, list) {
+        if (dir->id == id) {
+            found = dir;
+            break;
+        }
+    }
+    spin_unlock(&procfs_dir_lock);
+    return found;
+}
+
+static struct portal_procfs_dir *create_pid_compat_dir(const char *full_path)
+{
+    struct portal_procfs_dir *dir;
+
+    spin_lock(&procfs_dir_lock);
+    list_for_each_entry(dir, &procfs_dir_list, list) {
+        if (dir->synthetic_pid && strcmp(dir->path, full_path) == 0) {
+            spin_unlock(&procfs_dir_lock);
+            return dir;
+        }
+    }
+    spin_unlock(&procfs_dir_lock);
+
+    dir = kzalloc(sizeof(*dir), GFP_KERNEL);
+    if (!dir)
+        return NULL;
+
+    dir->path = kstrdup(full_path, GFP_KERNEL);
+    if (!dir->path) {
+        kfree(dir);
+        return NULL;
+    }
+
+    dir->id = atomic_inc_return(&procfs_dir_id);
+    dir->entry = NULL;
+    dir->synthetic_pid = 1;
+
+    spin_lock(&procfs_dir_lock);
+    list_add(&dir->list, &procfs_dir_list);
+    spin_unlock(&procfs_dir_lock);
+    return dir;
+}
+
+static struct proc_dir_entry *ensure_pid_template_parent(void)
+{
+    if (pid_template_parent)
+        return pid_template_parent;
+
+    pid_template_parent = find_proc_subdir_entry(NULL, ".igloo-pid-compat");
+    if (pid_template_parent)
+        return pid_template_parent;
+
+    pid_template_parent = proc_mkdir(".igloo-pid-compat", NULL);
+    return pid_template_parent;
+}
+
+static void remember_pid_template(const char *parent, const char *name, struct portal_procfs_entry *entry)
+{
+    struct portal_procfs_pid_template *tmpl;
+
+    spin_lock(&procfs_pid_template_lock);
+    list_for_each_entry(tmpl, &procfs_pid_template_list, list) {
+        if (!strcmp(tmpl->parent, parent) && !strcmp(tmpl->name, name)) {
+            tmpl->entry = entry;
+            spin_unlock(&procfs_pid_template_lock);
+            return;
+        }
+    }
+    spin_unlock(&procfs_pid_template_lock);
+
+    tmpl = kzalloc(sizeof(*tmpl), GFP_KERNEL);
+    if (!tmpl)
+        return;
+
+    tmpl->parent = kstrdup(parent, GFP_KERNEL);
+    tmpl->name = kstrdup(name, GFP_KERNEL);
+    if (!tmpl->parent || !tmpl->name) {
+        kfree(tmpl->parent);
+        kfree(tmpl->name);
+        kfree(tmpl);
+        return;
+    }
+    tmpl->entry = entry;
+
+    spin_lock(&procfs_pid_template_lock);
+    list_add(&tmpl->list, &procfs_pid_template_list);
+    spin_unlock(&procfs_pid_template_lock);
+}
+
+static struct portal_procfs_entry *find_pid_template(const char *parent, const char *name, unsigned int len)
+{
+    struct portal_procfs_pid_template *tmpl;
+    struct portal_procfs_entry *entry = NULL;
+
+    spin_lock(&procfs_pid_template_lock);
+    list_for_each_entry(tmpl, &procfs_pid_template_list, list) {
+        if (!strcmp(tmpl->parent, parent) &&
+            strlen(tmpl->name) == len && !memcmp(tmpl->name, name, len)) {
+            entry = tmpl->entry;
+            break;
+        }
+    }
+    spin_unlock(&procfs_pid_template_lock);
+    return entry;
+}
+
+static struct dentry *instantiate_pid_template(struct inode *dir, struct dentry *dentry)
+{
+    struct portal_procfs_entry *pe;
+    struct inode *inode;
+    const char *parent_name;
+    char self_pid[16];
+
+    if (resolve_proc_symbols() < 0)
+        return ERR_PTR(-ENOENT);
+
+    if (!dentry->d_parent)
+        return ERR_PTR(-ENOENT);
+
+    parent_name = dentry->d_parent->d_name.name;
+    snprintf(self_pid, sizeof(self_pid), "%d", current->tgid);
+
+    pe = NULL;
+    if (!strcmp(parent_name, self_pid))
+        pe = find_pid_template("self", dentry->d_name.name, dentry->d_name.len);
+    if (!pe)
+        pe = find_pid_template(parent_name, dentry->d_name.name, dentry->d_name.len);
+    if (!pe || !pe->entry)
+        return ERR_PTR(-ENOENT);
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
+    refcount_inc(&pe->entry->refcnt);
+#else
+    atomic_inc(&pe->entry->count);
+#endif
+    inode = internal_proc_get_inode(dir->i_sb, pe->entry);
+    if (!inode)
+        return ERR_PTR(-ENOMEM);
+
+    d_set_d_op(dentry, &simple_dentry_operations);
+    d_add(dentry, inode);
+    return NULL;
+}
+
+#if defined(CONFIG_X86_64)
+static int proc_tgid_base_lookup_entry(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+    struct procfs_lookup_ctx *ctx = (struct procfs_lookup_ctx *)ri->data;
+
+    ctx->dir = (struct inode *)regs->di;
+    ctx->dentry = (struct dentry *)regs->si;
+    return 0;
+}
+
+static int proc_tgid_base_lookup_ret(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+    struct procfs_lookup_ctx *ctx = (struct procfs_lookup_ctx *)ri->data;
+    struct dentry *ret = (struct dentry *)regs->ax;
+    struct dentry *replacement;
+
+    if (!IS_ERR(ret) || PTR_ERR(ret) != -ENOENT)
+        return 0;
+
+    if (!ctx->dir || !ctx->dentry)
+        return 0;
+
+    replacement = instantiate_pid_template(ctx->dir, ctx->dentry);
+    if (replacement == NULL || IS_ERR(replacement))
+        regs->ax = (unsigned long)replacement;
+
+    return 0;
+}
+#endif
+
+int igloo_procfs_compat_init(void)
+{
+#if defined(CONFIG_X86_64)
+    int ret;
+
+    memset(&proc_tgid_base_lookup_probe, 0, sizeof(proc_tgid_base_lookup_probe));
+    proc_tgid_base_lookup_probe.kp.symbol_name = "proc_tgid_base_lookup";
+    proc_tgid_base_lookup_probe.entry_handler = proc_tgid_base_lookup_entry;
+    proc_tgid_base_lookup_probe.handler = proc_tgid_base_lookup_ret;
+    proc_tgid_base_lookup_probe.data_size = sizeof(struct procfs_lookup_ctx);
+    proc_tgid_base_lookup_probe.maxactive = 32;
+
+    ret = register_kretprobe(&proc_tgid_base_lookup_probe);
+    if (ret) {
+        printk(KERN_ERR "portal_procfs: Failed to register proc_tgid_base_lookup kretprobe: %d\n", ret);
+        return ret;
+    }
+
+    printk(KERN_INFO "portal_procfs: Registered proc pid lookup compatibility hook\n");
+#else
+    printk(KERN_INFO "portal_procfs: Proc pid lookup compatibility hook disabled on this architecture\n");
+#endif
+    return 0;
 }
 
 /* =========================================================================
@@ -520,11 +770,12 @@ void handle_op_procfs_create_file(portal_region *mem_region)
     struct portal_procfs_create_req *req = (struct portal_procfs_create_req *)PORTAL_DATA(mem_region);
     struct proc_dir_entry *parent = NULL, *file;
     struct proc_dir_entry *existing = NULL;
+    struct portal_procfs_dir *parent_dir_struct = NULL;
     struct portal_procfs_entry *pe;
     umode_t file_mode;
     int id;
     char *entry_name;
-    bool exists, enable_default_mmap;
+    bool exists, enable_default_mmap, synthetic_pid_parent = false;
 
     req->path[PROCFS_MAX_PATH - 1] = '\0';
     entry_name = req->path;
@@ -538,11 +789,27 @@ void handle_op_procfs_create_file(portal_region *mem_region)
 
     // Parent must be provided (0 means root)
     if (req->parent_id) {
-        parent = find_proc_dir_by_id(req->parent_id);
-        if (!parent) {
+        parent_dir_struct = find_proc_dir_struct_by_id(req->parent_id);
+        if (!parent_dir_struct) {
             printk(KERN_EMERG "portal_procfs: Invalid parent_id=%d for file '%s'\n", req->parent_id, entry_name);
             mem_region->header.op = HYPER_RESP_WRITE_FAIL;
             goto out;
+        }
+        synthetic_pid_parent = parent_dir_struct->synthetic_pid;
+        if (synthetic_pid_parent) {
+            parent = ensure_pid_template_parent();
+            if (!parent) {
+                printk(KERN_EMERG "portal_procfs: Failed to create pid template parent for '%s'\n", entry_name);
+                mem_region->header.op = HYPER_RESP_WRITE_FAIL;
+                goto out;
+            }
+        } else {
+            parent = parent_dir_struct->entry;
+            if (!parent) {
+                printk(KERN_EMERG "portal_procfs: Invalid empty parent_id=%d for file '%s'\n", req->parent_id, entry_name);
+                mem_region->header.op = HYPER_RESP_WRITE_FAIL;
+                goto out;
+            }
         }
     }
 
@@ -611,6 +878,9 @@ void handle_op_procfs_create_file(portal_region *mem_region)
     spin_lock(&procfs_entry_lock);
     list_add(&pe->list, &procfs_entry_list);
     spin_unlock(&procfs_entry_lock);
+
+    if (synthetic_pid_parent)
+        remember_pid_template(parent_dir_struct->path, entry_name, pe);
 
     // printk(KERN_EMERG "portal_procfs: Created procfs entry '%s' with id %d\n", entry_name, id);
 
@@ -683,6 +953,20 @@ void handle_op_procfs_create_or_lookup_dir(portal_region *mem_region)
         snprintf(full_path, sizeof(full_path), "%s", dir_name);
     }
 
+    if (!req->parent_id && is_pid_compat_dir_name(dir_name)) {
+        struct portal_procfs_dir *dir = create_pid_compat_dir(full_path);
+
+        if (!dir) {
+            printk(KERN_EMERG "portal_procfs: Failed to create synthetic pid dir: %s\n", full_path);
+            mem_region->header.op = HYPER_RESP_WRITE_FAIL;
+            return;
+        }
+
+        mem_region->header.size = dir->id;
+        mem_region->header.op = HYPER_RESP_READ_NUM;
+        return;
+    }
+
     entry = get_or_create_proc_dir(dir_name, parent, full_path, &dir_id);
 
     if (!entry) {
@@ -695,4 +979,3 @@ void handle_op_procfs_create_or_lookup_dir(portal_region *mem_region)
     mem_region->header.size = dir_id;
     mem_region->header.op = HYPER_RESP_READ_NUM;
 }
-
