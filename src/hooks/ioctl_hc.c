@@ -5,7 +5,7 @@
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
-#include "hypercall.h"
+#include "igloo_hypercall.h"
 #include "igloo.h"
 #include <linux/binfmts.h>
 #include <trace/syscall.h>

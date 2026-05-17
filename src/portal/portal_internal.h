@@ -18,7 +18,7 @@
 #include <trace/syscall.h>
 #include <asm/syscall.h>
 #include <linux/printk.h>
-#include "hypercall.h"
+#include "igloo_hypercall.h"
 #include "igloo.h"
 #include "syscalls_hc.h"
 #include "igloo_debug.h"

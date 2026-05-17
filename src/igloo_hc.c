@@ -11,7 +11,7 @@
 #include <linux/unistd.h>
 #include "syscalls_hc.h"
 #include "portal/portal.h"
-#include "hypercall.h"
+#include "igloo_hypercall.h"
 #include "igloo_hypercall_consts.h"
 #include "hyperfs/hyperfs.h"
 

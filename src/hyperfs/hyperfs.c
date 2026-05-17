@@ -6,7 +6,7 @@
 #include <linux/parser.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
-#include "hypercall.h"
+#include "igloo_hypercall.h"
 #include "portal/portal.h"
 // #include "../internal.h"
 #include "ioctl_hc.h"
