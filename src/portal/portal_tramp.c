@@ -13,11 +13,22 @@
 /* We ALWAYS include kprobes as the universal fallback */
 #include <linux/kprobes.h>
 
+/*
+ * The Python trampoline path consumes the second hypercall argument as a real
+ * struct pt_regs *. On riscv64, fprobe/ftrace on modern kernels passes an
+ * ftrace_regs object through this callback path, which is not layout-compatible
+ * with struct pt_regs and causes null/shifted callback arguments. Use kprobes
+ * there until we add a native ftrace_regs payload decoder.
+ */
+#if defined(CONFIG_RISCV)
+    #define USE_KPROBE_TRAMPOLINES
+#endif
+
 /* Try to include high-speed tracing mechanisms if the kernel version allows */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) && !defined(USE_KPROBE_TRAMPOLINES)
     #define USE_FPROBE
     #include <linux/fprobe.h>
-#elif defined(CONFIG_DYNAMIC_FTRACE_WITH_REGS)
+#elif defined(CONFIG_DYNAMIC_FTRACE_WITH_REGS) && !defined(USE_KPROBE_TRAMPOLINES)
     #define USE_FTRACE
     #include <linux/ftrace.h>
 #endif

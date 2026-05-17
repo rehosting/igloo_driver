@@ -20,16 +20,12 @@ bool igloo_is_kernel_addr(unsigned long addr)
     return (addr >= PAGE_OFFSET);
     
 #elif defined(CONFIG_RISCV)
-    /* RISC-V kernel virtual address space check */
-    #if defined(CONFIG_64BIT)
-        /* For RISC-V 64-bit, kernel addresses are in the upper half */
-        /* Check if address is in kernel virtual address space */
-        /* RISC-V uses canonical addresses where kernel space starts high */
-        return (addr >= KERNEL_LINK_ADDR) || (addr >= PAGE_OFFSET);
-    #else
-        /* RISC-V 32-bit */
-        return (addr >= PAGE_OFFSET);
-    #endif
+    /*
+     * RISC-V has multiple kernel virtual ranges. Kernel stacks can live below
+     * PAGE_OFFSET/KERNEL_LINK_ADDR (for example ff20... on the 6.13 virt
+     * kernels), so classify against the user/kernel split instead.
+     */
+    return addr >= TASK_SIZE;
     
 #elif defined(CONFIG_PPC)
     return is_kernel_addr(addr);
@@ -62,6 +58,24 @@ bool igloo_is_kernel_addr(unsigned long addr)
     #else
         return !(access_ok(((void __user *)(uintptr_t)addr), 1));
     #endif
+#endif
+}
+
+static long igloo_kernel_read_nofault(void *dst, const void *src, size_t size)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+    return copy_from_kernel_nofault(dst, src, size);
+#else
+    return probe_kernel_read(dst, src, size);
+#endif
+}
+
+static long igloo_kernel_write_nofault(void *dst, const void *src, size_t size)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+    return copy_to_kernel_nofault(dst, src, size);
+#else
+    return probe_kernel_write(dst, src, size);
 #endif
 }
 
@@ -102,27 +116,21 @@ void handle_op_read(portal_region *mem_region)
         (unsigned long long)addr, (unsigned long long)size);
     
     if (is_kernel_address) {
-        // Handle kernel memory - directly copy with memcpy
+        // Handle kernel memory, including stack/vmalloc/module addresses.
         igloo_pr_debug("igloo: Reading from kernel address %#lx, size %zu\n", addr, size);
         if (size > CHUNK_SIZE) {
             igloo_pr_debug("igloo: Requested size too large, truncating to %zu\n", (size_t)CHUNK_SIZE);
             size = CHUNK_SIZE;
         }
-        
-        // Only access memory we think is valid
-        if (virt_addr_valid((void *)addr)) {
-            // Use memcpy with safety precautions
-            unsigned long flags;
-            local_irq_save(flags);
-            pagefault_disable();
-            memcpy(PORTAL_DATA(mem_region), (void *)addr, size);
-            pagefault_enable();
-            local_irq_restore(flags);
-            
+
+        resp = igloo_kernel_read_nofault(PORTAL_DATA(mem_region), (void *)addr, size);
+        if (resp == 0) {
             mem_region->header.op = HYPER_RESP_READ_OK;
             mem_region->header.size = size;
         } else {
-            igloo_pr_debug("igloo: Invalid kernel address %#lx\n", addr);
+            igloo_pr_debug(
+                "igloo: kernel read failed for addr %#lx, size %zu, resp %d\n",
+                addr, size, resp);
             mem_region->header.op = HYPER_RESP_READ_FAIL;
         }
     } else {
@@ -158,28 +166,22 @@ void handle_op_write(portal_region *mem_region)
         (unsigned long long)addr, (unsigned long long)size);
     
     if (igloo_is_kernel_addr(addr)) {
-        // Handle kernel memory writes - use memcpy, but with caution
+        // Handle kernel memory writes, including stack/vmalloc/module addresses.
         igloo_pr_debug("igloo: Writing to kernel address %#lx, size %zu\n", addr, size);
         
         if (size > CHUNK_SIZE) {
             igloo_pr_debug("igloo: Requested size too large, truncating to %zu\n", (size_t)CHUNK_SIZE);
             size = CHUNK_SIZE;
         }
-        
-        // Only write to memory we think is valid and writable
-        if (virt_addr_valid((void *)addr)) {
-            // Use memcpy with safety precautions
-            unsigned long flags;
-            local_irq_save(flags);
-            pagefault_disable();
-            memcpy((void *)addr, PORTAL_DATA(mem_region), size);
-            pagefault_enable();
-            local_irq_restore(flags);
-            
+
+        resp = igloo_kernel_write_nofault((void *)addr, PORTAL_DATA(mem_region), size);
+        if (resp == 0) {
             igloo_pr_debug("igloo: Successfully wrote to kernel address %#lx\n", addr);
             mem_region->header.op = HYPER_RESP_WRITE_OK;
         } else {
-            igloo_pr_debug("igloo: Invalid kernel address %#lx\n", addr);
+            igloo_pr_debug(
+                "igloo: kernel write failed for addr %#lx, size %zu, resp %d\n",
+                addr, size, resp);
             mem_region->header.op = HYPER_RESP_WRITE_FAIL;
         }
     } else {
