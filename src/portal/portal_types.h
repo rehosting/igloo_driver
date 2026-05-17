@@ -126,6 +126,7 @@ struct portal_hyperfs_add_hyperfile_args {
 
 
 #define PROCFS_MAX_PATH 256
+#define PROCFS_PID_PARENT_ID -1
 
 // Universal proc ops struct
 struct igloo_proc_ops {

@@ -301,7 +301,8 @@ igloo_convert_ops_to_proc_ops(const struct igloo_proc_ops *ops, struct proc_ops 
     out->proc_get_unmapped_area = ops->get_unmapped_area;
     return out;
 }
-#else
+#endif
+
 static inline const struct file_operations *
 igloo_convert_ops_to_fops(const struct igloo_proc_ops *ops, struct file_operations *out)
 {
@@ -325,7 +326,6 @@ igloo_convert_ops_to_fops(const struct igloo_proc_ops *ops, struct file_operatio
     out->get_unmapped_area = ops->get_unmapped_area;
     return out;
 }
-#endif
 
 // Unified proc_create wrapper
 static struct proc_dir_entry *igloo_proc_create_data(const char *name, umode_t mode,
@@ -355,6 +355,24 @@ static struct proc_dir_entry *igloo_proc_create_data(const char *name, umode_t m
     igloo_convert_ops_to_fops(uops, fops);
     return proc_create_data(name, mode, parent, fops, data); // <-- Updated API
 #endif
+}
+
+static struct proc_dir_entry *igloo_proc_create_pid_file_data(const char *name, umode_t mode,
+                        struct igloo_proc_ops *uops,
+                        void *data,
+                        bool enable_default_mmap)
+{
+    struct file_operations *fops;
+
+    if (enable_default_mmap && uops->mmap == NULL) {
+        uops->mmap = igloo_proxy_mmap;
+    }
+
+    fops = kmalloc(sizeof(struct file_operations), GFP_KERNEL);
+    if (!fops)
+        return NULL;
+    igloo_convert_ops_to_fops(uops, fops);
+    return igloo_proc_create_pid_data(name, mode, fops, data);
 }
 
 /* =========================================================================
@@ -780,35 +798,45 @@ void handle_op_procfs_create_file(portal_region *mem_region)
         goto out;
     }
 
-    // Parent must be provided (0 means root)
+    // Parent must be provided (0 means root, PROCFS_PID_PARENT_ID means /proc/<pid>)
     if (req->parent_id) {
-        parent_dir_struct = find_proc_dir_struct_by_id(req->parent_id);
-        if (!parent_dir_struct) {
-            printk(KERN_EMERG "portal_procfs: Invalid parent_id=%d for file '%s'\n", req->parent_id, entry_name);
-            mem_region->header.op = HYPER_RESP_WRITE_FAIL;
-            goto out;
-        }
-        synthetic_pid_parent = parent_dir_struct->synthetic_pid;
-        if (synthetic_pid_parent) {
-            parent = ensure_pid_template_parent();
-            if (!parent) {
-                printk(KERN_EMERG "portal_procfs: Failed to create pid template parent for '%s'\n", entry_name);
+        if (req->parent_id == PROCFS_PID_PARENT_ID) {
+            parent = NULL;
+        } else {
+            parent_dir_struct = find_proc_dir_struct_by_id(req->parent_id);
+            if (!parent_dir_struct) {
+                printk(KERN_EMERG "portal_procfs: Invalid parent_id=%d for file '%s'\n", req->parent_id, entry_name);
                 mem_region->header.op = HYPER_RESP_WRITE_FAIL;
                 goto out;
             }
-        } else {
-            parent = parent_dir_struct->entry;
-            if (!parent) {
-                printk(KERN_EMERG "portal_procfs: Invalid empty parent_id=%d for file '%s'\n", req->parent_id, entry_name);
-                mem_region->header.op = HYPER_RESP_WRITE_FAIL;
-                goto out;
+            synthetic_pid_parent = parent_dir_struct->synthetic_pid;
+            if (synthetic_pid_parent) {
+                parent = ensure_pid_template_parent();
+                if (!parent) {
+                    printk(KERN_EMERG "portal_procfs: Failed to create pid template parent for '%s'\n", entry_name);
+                    mem_region->header.op = HYPER_RESP_WRITE_FAIL;
+                    goto out;
+                }
+            } else {
+                parent = parent_dir_struct->entry;
+                if (!parent) {
+                    printk(KERN_EMERG "portal_procfs: Invalid empty parent_id=%d for file '%s'\n", req->parent_id, entry_name);
+                    mem_region->header.op = HYPER_RESP_WRITE_FAIL;
+                    goto out;
+                }
             }
         }
     }
 
-    // Safety: Fetch the entry to check its type
-    existing = find_proc_subdir_entry(parent, entry_name);
-    exists = (existing != NULL);
+    // Safety: Fetch the entry to check its type. PID-relative entries are
+    // resolved by proc_tgid_base_lookup, not the root procfs rb-tree.
+    if (req->parent_id == PROCFS_PID_PARENT_ID) {
+        existing = NULL;
+        exists = false;
+    } else {
+        existing = find_proc_subdir_entry(parent, entry_name);
+        exists = (existing != NULL);
+    }
 
     // printk(KERN_EMERG "portal_procfs: parent=%p, entry_name='%s'\n", parent, entry_name);
 
@@ -852,7 +880,10 @@ void handle_op_procfs_create_file(portal_region *mem_region)
     enable_default_mmap = (req->size > 0 || req->support_mmap);
 
     // Create the file and bind the tracker
-    file = igloo_proc_create_data(entry_name, file_mode, parent, &req->fops, pe, enable_default_mmap);
+    if (req->parent_id == PROCFS_PID_PARENT_ID)
+        file = igloo_proc_create_pid_file_data(entry_name, file_mode, &req->fops, pe, enable_default_mmap);
+    else
+        file = igloo_proc_create_data(entry_name, file_mode, parent, &req->fops, pe, enable_default_mmap);
     if (!file) {
         printk(KERN_EMERG "portal_procfs: Failed to create proc entry: %s\n", entry_name);
         kfree(pe->name);
