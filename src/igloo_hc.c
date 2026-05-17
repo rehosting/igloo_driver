@@ -74,6 +74,11 @@ int init_module(void) {
         return ret;
     }
 
+    if ((ret = igloo_procfs_compat_init()) != 0) {
+        printk(KERN_ERR "Failed to register procfs compat hooks returning %d\n", ret);
+        return ret;
+    }
+
     if ((ret = block_mounts_init()) != 0) {
         printk(KERN_ERR "Failed to register block_mounts returning %d\n", ret);
         return ret;
