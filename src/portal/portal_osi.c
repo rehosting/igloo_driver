@@ -736,6 +736,7 @@ void handle_op_read_fds(portal_region *mem_region)
     int start_fd = 0;
     int i;
     size_t max_fds;
+    bool reached_end = false;
     char *data_buf = PORTAL_DATA(mem_region);
     struct osi_result_header *header = (struct osi_result_header *)data_buf;
     struct osi_fd_entry *fd_entry;
@@ -844,16 +845,90 @@ void handle_op_read_fds(portal_region *mem_region)
     string_offset = sizeof(struct osi_result_header) + (max_fds * sizeof(struct osi_fd_entry));
     string_buf = data_buf + string_offset;
 
-    // Access the process's file descriptor table
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+    /*
+     * Modern fd tables must be walked through the exported helper. Raw fdtable
+     * entries are RCU-managed and can be stale by the time d_path() consumes
+     * them.
+     */
+    {
+        unsigned int fd_cursor;
+
+        for (fd_cursor = 0; ; fd_cursor++) {
+            file = fget_task_next(task, &fd_cursor);
+            if (!file) {
+                break;
+            }
+            total_count++;
+            fput(file);
+        }
+        header->total_count = total_count;
+
+        for (fd_cursor = (unsigned int)start_fd; ; fd_cursor++) {
+            file = fget_task_next(task, &fd_cursor);
+            if (!file) {
+                reached_end = true;
+                break;
+            }
+            i = (int)fd_cursor;
+
+            if (count >= max_fds || string_offset >= CHUNK_SIZE - PATH_MAX) {
+                mem_region->header.addr = i;
+                fput(file);
+                break;
+            }
+
+            // Fill in fd entry
+            fd_entry->fd = (i);
+            fd_entry->name_offset = (string_offset);
+
+            // Move to temporary string buffer for path
+            path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
+            if (path_buf) {
+                char *path = d_path(&file->f_path, path_buf, PATH_MAX);
+                if (!IS_ERR(path)) {
+                    size_t name_len = strlen(path);
+
+                    // Check if we have enough space for this name
+                    if (string_offset + name_len + 1 <= CHUNK_SIZE) {
+                        // Copy path to string buffer
+                        strncpy(string_buf, path, name_len);
+                        string_buf[name_len] = '\0';
+
+                        // Update string buffer position
+                        string_buf += name_len + 1;
+                        string_offset += name_len + 1;
+
+                        // Increment counts
+                        fd_entry++;
+                        count++;
+
+                        igloo_debug_osi("igloo: Processed fd %d: %s\n", i, path);
+                    } else {
+                        // Not enough space for this entry's name
+                        mem_region->header.addr = (i);
+                        igloo_debug_osi("igloo: Not enough space for fd %d path, will continue from here next time\n", i);
+                        kfree(path_buf);
+                        fput(file);
+                        break;
+                    }
+                }
+                kfree(path_buf);
+                path_buf = NULL;
+            }
+            fput(file);
+        }
+    }
+#else
     task_lock(task);
-    if (!task->files) {
+    files = task->files;
+    if (!files) {
         task_unlock(task);
         mem_region->header.size = (sizeof(struct osi_result_header));
         mem_region->header.op = (HYPER_RESP_READ_OK);
         return;
     }
 
-    files = task->files;
     spin_lock(&files->file_lock);
     fdt = files_fdtable(files);
 
@@ -865,31 +940,56 @@ void handle_op_read_fds(portal_region *mem_region)
 
     // Store total count in header
     header->total_count = (total_count);
+    spin_unlock(&files->file_lock);
+    task_unlock(task);
 
     // Start filling fd entries from start_fd
-    for (i = start_fd; i < fdt->max_fds; i++) {
+    for (i = start_fd; ; i++) {
+        task_lock(task);
+        files = task->files;
+        if (!files) {
+            reached_end = true;
+            task_unlock(task);
+            break;
+        }
+
+        spin_lock(&files->file_lock);
+        fdt = files_fdtable(files);
+        if (i >= fdt->max_fds) {
+            reached_end = true;
+            spin_unlock(&files->file_lock);
+            task_unlock(task);
+            break;
+        }
+
         file = fdt->fd[i];
 
         if (!file){
+            spin_unlock(&files->file_lock);
+            task_unlock(task);
             igloo_debug_osi("igloo: No file for fd %d\n", i);
             continue;
         }
 
         if (count >= max_fds || string_offset >= CHUNK_SIZE - PATH_MAX) {
             // Store the next fd number to start from in the next call
-            mem_region->header.addr = (i + 1);
+            mem_region->header.addr = i;
+            spin_unlock(&files->file_lock);
+            task_unlock(task);
             break;
         }
 
         // Get a reference to the file
         get_file(file);
+        spin_unlock(&files->file_lock);
+        task_unlock(task);
 
         // Fill in fd entry
         fd_entry->fd = (i);
         fd_entry->name_offset = (string_offset);
 
         // Move to temporary string buffer for path
-        path_buf = kmalloc(PATH_MAX, GFP_ATOMIC);
+        path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
         if (path_buf) {
             char *path = d_path(&file->f_path, path_buf, PATH_MAX);
             if (!IS_ERR(path)) {
@@ -923,11 +1023,10 @@ void handle_op_read_fds(portal_region *mem_region)
         // Release the file reference
         fput(file);
     }
-    spin_unlock(&files->file_lock);
-    task_unlock(task);
+#endif
 
     // If we processed all FDs, set next count to 0 to indicate completion
-    if (i >= fdt->max_fds) {
+    if (reached_end) {
         mem_region->header.addr = 0;
     }
 
@@ -981,4 +1080,3 @@ void handle_op_osi_proc_ptregs(portal_region *mem_region)
     igloo_debug_osi("igloo: ptregs pointer returned for current task: %p\n", regs);
     return;
 }
-
