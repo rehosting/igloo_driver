@@ -48,34 +48,27 @@ static inline unsigned long igloo_hypercall4(unsigned long num, unsigned long ar
     return reg0;
 
 #elif defined(CONFIG_X86_64)
-    register unsigned long reg0 asm("rax") = num;
-    register unsigned long reg1 asm("rdi") = arg1;
-    register unsigned long reg2 asm("rsi") = arg2;
-    register unsigned long reg3 asm("rdx") = arg3;
+    unsigned long reg0 = num;
     register unsigned long reg4 asm("r10") = arg4; // r10 used for 4th arg in syscall ABI
 
     asm volatile(
-        "cpuid"
-        : "+r"(reg0)           // hypercall num + return value in rax
-        : "r"(reg1), "r"(reg2), "r"(reg3), "r"(reg4)
-        : "memory", "rbx", "rcx"
+        "outl %%eax, $0x88"
+        : "+a"(reg0)           // hypercall num + return value in rax
+        : "D"(arg1), "S"(arg2), "d"(arg3), "r"(reg4)
+        : "memory"
     );
 
     return reg0;
 
 #elif defined(CONFIG_I386)
     // Matches the "other implementation" (standard Linux Syscall ABI)
-    register unsigned long reg0 asm("eax") = num;
-    register unsigned long reg1 asm("ebx") = arg1;
-    register unsigned long reg2 asm("ecx") = arg2;
-    register unsigned long reg3 asm("edx") = arg3;
-    register unsigned long reg4 asm("esi") = arg4;
+    unsigned long reg0 = num;
 
     asm volatile(
-        "cpuid"
-        : "+r"(reg0)           // hypercall num + return value in eax
-        : "r"(reg1), "r"(reg2), "r"(reg3), "r"(reg4)
-        : "memory"             // No specific register clobbers needed as they are all inputs/outputs
+        "outl %%eax, $0x88"
+        : "+a"(reg0)           // hypercall num + return value in eax
+        : "b"(arg1), "c"(arg2), "d"(arg3), "S"(arg4)
+        : "memory"
     );
 
     return reg0;
