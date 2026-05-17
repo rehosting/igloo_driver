@@ -2,6 +2,7 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/kprobes.h>
+#include <linux/version.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include "hypercall.h"
@@ -17,7 +18,11 @@ static struct hlist_head any_signal_hooks;
 static DEFINE_SPINLOCK(signal_hook_lock);
 static atomic_t global_signal_hook_count = ATOMIC_INIT(0);
 
-static struct kprobe signal_kp;
+struct signal_probe_data {
+    struct task_struct *task;
+};
+
+static struct kretprobe signal_rp;
 
 static void do_signal_hyp(struct signal_event *event) {
     igloo_portal(IGLOO_HYP_SIGNAL_DELIVER, (unsigned long)event, 0);
@@ -36,22 +41,37 @@ static bool hook_matches_signal(struct kernel_signal_hook *hook, int sig, struct
     return true;
 }
 
-static int handler_pre(struct kprobe *p, struct pt_regs *regs) {
+static int handler_entry(struct kretprobe_instance *ri, struct pt_regs *regs) {
+    struct signal_probe_data *data = (struct signal_probe_data *)ri->data;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+    data->task = current;
+#else
+    data->task = (struct task_struct *)regs_get_argument(regs, 0);
+    if (!data->task)
+        data->task = current;
+#endif
+
+    return 0;
+}
+
+static int handler_ret(struct kretprobe_instance *ri, struct pt_regs *regs) {
     int sig;
     struct task_struct *t;
     struct kernel_signal_hook *hook;
     struct signal_event event;
     bool drop = false;
     bool needs_hyp = false;
+    struct signal_probe_data *data = (struct signal_probe_data *)ri->data;
 
     if (atomic_read(&global_signal_hook_count) == 0)
         return 0;
 
-    /* sig is first arg, t is third arg in __send_signal(int sig, struct siginfo *info, struct task_struct *t...) */
-    sig = (int)regs_get_argument(regs, 0);
-    t = (struct task_struct *)regs_get_argument(regs, 2);
+    sig = (int)igloo_regs_get_return_value(regs);
+    if (sig <= 0)
+        return 0;
 
-    if (!t) return 0;
+    t = data->task ? data->task : current;
 
     rcu_read_lock();
     
@@ -95,8 +115,7 @@ static int handler_pre(struct kprobe *p, struct pt_regs *regs) {
     rcu_read_unlock();
 
     if (drop) {
-        /* Set sig to 0 to effectively silence it in __send_signal */
-        syscall_set_argument(current, regs, 0, 0);
+        igloo_regs_set_return_value(regs, 0);
     }
 
     return 0;
@@ -107,14 +126,18 @@ int signal_hc_init(void) {
     hash_init(signal_hook_table);
     INIT_HLIST_HEAD(&any_signal_hooks);
 
-    signal_kp.symbol_name = "__send_signal";
-    signal_kp.pre_handler = handler_pre;
+    memset(&signal_rp, 0, sizeof(signal_rp));
+    signal_rp.kp.symbol_name = "dequeue_signal";
+    signal_rp.entry_handler = handler_entry;
+    signal_rp.handler = handler_ret;
+    signal_rp.data_size = sizeof(struct signal_probe_data);
+    signal_rp.maxactive = 64;
 
-    ret = register_kprobe(&signal_kp);
-    if (ret < 0) {
-        printk(KERN_ERR "IGLOO: Failed to register kprobe on __send_signal: %d\n", ret);
-        return 0;
-    }
+    ret = register_kretprobe(&signal_rp);
+    if (ret < 0)
+        printk(KERN_ERR "IGLOO: Failed to register kretprobe on dequeue_signal: %d\n", ret);
+    else
+        printk(KERN_INFO "IGLOO: Registered signal kretprobe on dequeue_signal\n");
 
     return 0;
 }
