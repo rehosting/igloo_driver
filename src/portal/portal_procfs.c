@@ -16,6 +16,7 @@
 #include <linux/err.h>
 #include <linux/kprobes.h>
 
+#include "../args.h"
 #include "portal_procfs.h"
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
@@ -49,169 +50,6 @@ struct procfs_lookup_ctx {
 };
 
 static struct kretprobe proc_tgid_base_lookup_probe;
-
-/*
- * proc_tgid_base_lookup(struct inode *dir, struct dentry *dentry, ...)
- * is a normal kernel C function, so kprobe argument/return access follows the
- * architecture C ABI rather than the syscall ABI. Keep this local and explicit
- * so /proc/<pid>/... compatibility is available on every Penguin target we
- * ship, instead of only working on x86_64.
- */
-#if defined(CONFIG_X86_64)
-#define IGLOO_PROCFS_LOOKUP_ABI 1
-static unsigned long procfs_lookup_arg(struct pt_regs *regs, unsigned int n)
-{
-    switch (n) {
-    case 0: return regs->di;
-    case 1: return regs->si;
-    case 2: return regs->dx;
-    case 3: return regs->cx;
-    case 4: return regs->r8;
-    case 5: return regs->r9;
-    default: return 0;
-    }
-}
-
-static unsigned long procfs_lookup_retval(struct pt_regs *regs)
-{
-    return regs->ax;
-}
-
-static void procfs_lookup_set_retval(struct pt_regs *regs, unsigned long val)
-{
-    regs->ax = val;
-}
-#elif defined(CONFIG_X86_32) || defined(CONFIG_I386)
-#define IGLOO_PROCFS_LOOKUP_ABI 1
-static unsigned long procfs_lookup_arg(struct pt_regs *regs, unsigned int n)
-{
-    return regs_get_kernel_stack_nth(regs, n + 1);
-}
-
-static unsigned long procfs_lookup_retval(struct pt_regs *regs)
-{
-    return regs->ax;
-}
-
-static void procfs_lookup_set_retval(struct pt_regs *regs, unsigned long val)
-{
-    regs->ax = val;
-}
-#elif defined(CONFIG_ARM64)
-#define IGLOO_PROCFS_LOOKUP_ABI 1
-static unsigned long procfs_lookup_arg(struct pt_regs *regs, unsigned int n)
-{
-    return n < 8 ? regs->regs[n] : 0;
-}
-
-static unsigned long procfs_lookup_retval(struct pt_regs *regs)
-{
-    return regs->regs[0];
-}
-
-static void procfs_lookup_set_retval(struct pt_regs *regs, unsigned long val)
-{
-    regs->regs[0] = val;
-}
-#elif defined(CONFIG_ARM)
-#define IGLOO_PROCFS_LOOKUP_ABI 1
-static unsigned long procfs_lookup_arg(struct pt_regs *regs, unsigned int n)
-{
-    switch (n) {
-    case 0: return regs->ARM_r0;
-    case 1: return regs->ARM_r1;
-    case 2: return regs->ARM_r2;
-    case 3: return regs->ARM_r3;
-    default: return 0;
-    }
-}
-
-static unsigned long procfs_lookup_retval(struct pt_regs *regs)
-{
-    return regs->ARM_r0;
-}
-
-static void procfs_lookup_set_retval(struct pt_regs *regs, unsigned long val)
-{
-    regs->ARM_r0 = val;
-}
-#elif defined(CONFIG_MIPS)
-#define IGLOO_PROCFS_LOOKUP_ABI 1
-static unsigned long procfs_lookup_arg(struct pt_regs *regs, unsigned int n)
-{
-    return n < 8 ? regs->regs[4 + n] : 0;
-}
-
-static unsigned long procfs_lookup_retval(struct pt_regs *regs)
-{
-    return regs->regs[2];
-}
-
-static void procfs_lookup_set_retval(struct pt_regs *regs, unsigned long val)
-{
-    regs->regs[2] = val;
-}
-#elif defined(CONFIG_LOONGARCH)
-#define IGLOO_PROCFS_LOOKUP_ABI 1
-static unsigned long procfs_lookup_arg(struct pt_regs *regs, unsigned int n)
-{
-    return n < 8 ? regs->regs[4 + n] : 0;
-}
-
-static unsigned long procfs_lookup_retval(struct pt_regs *regs)
-{
-    return regs->regs[4];
-}
-
-static void procfs_lookup_set_retval(struct pt_regs *regs, unsigned long val)
-{
-    regs->regs[4] = val;
-}
-#elif defined(CONFIG_RISCV)
-#define IGLOO_PROCFS_LOOKUP_ABI 1
-static unsigned long procfs_lookup_arg(struct pt_regs *regs, unsigned int n)
-{
-    switch (n) {
-    case 0: return regs->a0;
-    case 1: return regs->a1;
-    case 2: return regs->a2;
-    case 3: return regs->a3;
-    case 4: return regs->a4;
-    case 5: return regs->a5;
-    case 6: return regs->a6;
-    case 7: return regs->a7;
-    default: return 0;
-    }
-}
-
-static unsigned long procfs_lookup_retval(struct pt_regs *regs)
-{
-    return regs->a0;
-}
-
-static void procfs_lookup_set_retval(struct pt_regs *regs, unsigned long val)
-{
-    regs->a0 = val;
-}
-#elif defined(CONFIG_PPC) || defined(CONFIG_PPC64)
-#define IGLOO_PROCFS_LOOKUP_ABI 1
-static unsigned long procfs_lookup_arg(struct pt_regs *regs, unsigned int n)
-{
-    return n < 8 ? regs->gpr[3 + n] : 0;
-}
-
-static unsigned long procfs_lookup_retval(struct pt_regs *regs)
-{
-    return regs->gpr[3];
-}
-
-static void procfs_lookup_set_retval(struct pt_regs *regs, unsigned long val)
-{
-    regs->gpr[3] = val;
-}
-#else
-#define IGLOO_PROCFS_LOOKUP_ABI 0
-#endif
 
 static void igloo_remove_proc_entry(const char *name, struct proc_dir_entry *parent);
 int igloo_proxy_mmap(struct file *file, struct vm_area_struct *vma);
@@ -802,20 +640,19 @@ static struct dentry *instantiate_pid_template(struct inode *dir, struct dentry 
     return NULL;
 }
 
-#if IGLOO_PROCFS_LOOKUP_ABI
 static int proc_tgid_base_lookup_entry(struct kretprobe_instance *ri, struct pt_regs *regs)
 {
     struct procfs_lookup_ctx *ctx = (struct procfs_lookup_ctx *)ri->data;
 
-    ctx->dir = (struct inode *)procfs_lookup_arg(regs, 0);
-    ctx->dentry = (struct dentry *)procfs_lookup_arg(regs, 1);
+    ctx->dir = (struct inode *)regs_get_argument(regs, 0);
+    ctx->dentry = (struct dentry *)regs_get_argument(regs, 1);
     return 0;
 }
 
 static int proc_tgid_base_lookup_ret(struct kretprobe_instance *ri, struct pt_regs *regs)
 {
     struct procfs_lookup_ctx *ctx = (struct procfs_lookup_ctx *)ri->data;
-    struct dentry *ret = (struct dentry *)procfs_lookup_retval(regs);
+    struct dentry *ret = (struct dentry *)igloo_regs_get_return_value(regs);
     struct dentry *replacement;
 
     if (!IS_ERR(ret) || PTR_ERR(ret) != -ENOENT)
@@ -826,15 +663,13 @@ static int proc_tgid_base_lookup_ret(struct kretprobe_instance *ri, struct pt_re
 
     replacement = instantiate_pid_template(ctx->dir, ctx->dentry);
     if (replacement == NULL || IS_ERR(replacement))
-        procfs_lookup_set_retval(regs, (unsigned long)replacement);
+        igloo_regs_set_return_value(regs, (unsigned long)replacement);
 
     return 0;
 }
-#endif
 
 int igloo_procfs_compat_init(void)
 {
-#if IGLOO_PROCFS_LOOKUP_ABI
     int ret;
 
     memset(&proc_tgid_base_lookup_probe, 0, sizeof(proc_tgid_base_lookup_probe));
@@ -852,10 +687,6 @@ int igloo_procfs_compat_init(void)
 
     printk(KERN_INFO "portal_procfs: Registered proc pid lookup compatibility hook\n");
     return 0;
-#else
-    printk(KERN_ERR "portal_procfs: unsupported architecture for proc pid lookup compatibility hook\n");
-    return -EOPNOTSUPP;
-#endif
 }
 
 /* =========================================================================
