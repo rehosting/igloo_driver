@@ -12,6 +12,8 @@ extern struct hlist_head syscall_name_table[1024];
 extern struct hlist_head syscall_all_hooks;
 extern spinlock_t syscall_hook_lock;
 extern atomic_t global_syscall_hook_count;
+extern atomic_t global_syscall_enter_hook_count;
+extern atomic_t global_syscall_return_hook_count;
 
 // Using normalize_syscall_name and syscall_name_hash from syscalls_hc.h
 
@@ -71,6 +73,12 @@ void handle_op_register_syscall_hook(portal_region *mem_region)
     
     spin_unlock(&syscall_hook_lock);
     atomic_inc(&global_syscall_hook_count);
+    if (kernel_hook->hook.on_enter) {
+        atomic_inc(&global_syscall_enter_hook_count);
+    }
+    if (kernel_hook->hook.on_return) {
+        atomic_inc(&global_syscall_return_hook_count);
+    }
     
     // Return the hook's memory address in the size field
     mem_region->header.size = (unsigned long)kernel_hook;
@@ -99,6 +107,12 @@ static void unregister_syscall_deferred(struct work_struct *work)
 
     // 3. Decrement global count
     atomic_dec(&global_syscall_hook_count);
+    if (hook_ptr->hook.on_enter) {
+        atomic_dec(&global_syscall_enter_hook_count);
+    }
+    if (hook_ptr->hook.on_return) {
+        atomic_dec(&global_syscall_return_hook_count);
+    }
 
     for (i = 0; i < IGLOO_SYSCALL_MAXARGS; i++) {
         if (hook_ptr->hook.arg_filters[i].pattern) {
