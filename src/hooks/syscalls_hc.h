@@ -84,6 +84,8 @@ struct kernel_syscall_hook {
     bool in_use;                  /* Whether this slot is used */
     struct rcu_head rcu;          /* For RCU freeing */
     char normalized_name[SYSCALL_NAME_MAX_LEN]; /* Cached normalized syscall name */
+    u32 normalized_name_hash;     /* Cached full hash of normalized_name */
+    u16 normalized_name_len;      /* Cached length of normalized_name */
     struct work_struct unregister_work;
 };
 
@@ -91,6 +93,12 @@ struct kernel_syscall_hook {
 extern struct hlist_head syscall_hook_table[1024];
 extern spinlock_t syscall_hook_lock;
 
+bool portalcall_fastpath_register_magic(u32 user_magic);
+void portalcall_fastpath_set_enabled(bool enabled);
+bool portalcall_fastpath_is_enabled(void);
+bool portalcall_fastpath_should_skip(bool is_sendto,
+                                     int argc,
+                                     const unsigned long args[]);
 
 /* Unregister a syscall hook using its pointer */
 int unregister_syscall_hook(struct kernel_syscall_hook *hook_ptr);
