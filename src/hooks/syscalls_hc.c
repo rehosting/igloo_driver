@@ -24,6 +24,8 @@
 
 /* [ADD] Global counter to allow early exit if no hooks exist */
 atomic_t global_syscall_hook_count = ATOMIC_INIT(0);
+atomic_t global_syscall_enter_hook_count = ATOMIC_INIT(0);
+atomic_t global_syscall_return_hook_count = ATOMIC_INIT(0);
 
 /* Global hash tables for organizing hooks */
 struct hlist_head syscall_hook_table[1024];                /* Main table indexed by hook pointer */
@@ -449,7 +451,8 @@ static long process_syscall_hooks(
     u16 name_len;
     int i;
 
-    if (atomic_read(&global_syscall_hook_count) == 0) {
+    if (atomic_read(is_entry ? &global_syscall_enter_hook_count :
+            &global_syscall_return_hook_count) == 0) {
         return is_entry ? 0 : orig_ret;
     }
     if (cached_name_info) {
@@ -617,7 +620,7 @@ static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, 
     if (current->flags & PF_KTHREAD) {
         return 0;
     }
-    if (atomic_read(&global_syscall_hook_count) == 0 &&
+    if (atomic_read(&global_syscall_enter_hook_count) == 0 &&
             !portalcall_fastpath_is_enabled()) {
         return 0;
     }
@@ -641,7 +644,7 @@ static long syscall_ret_handler(const char *syscall_name, long orig_ret, int arg
     if (current->flags & PF_KTHREAD) {
         return orig_ret;
     }
-    if (atomic_read(&global_syscall_hook_count) == 0) {
+    if (atomic_read(&global_syscall_return_hook_count) == 0) {
         return orig_ret;
     }
     return process_syscall_hooks(false, syscall_name, NULL, argc, args, NULL, NULL, orig_ret);
