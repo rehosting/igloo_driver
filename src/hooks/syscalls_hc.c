@@ -49,6 +49,102 @@ EXPORT_SYMBOL(syscall_hook_lock);
 // Replace mutex with spinlock which is safe for atomic contexts
 DEFINE_SPINLOCK(syscall_hc_lock); // Keep commented out unless hypercall needs external locking
 
+struct syscall_name_cache_entry {
+    const char *raw_name;
+    const char *normalized_name;
+    u32 normalized_hash;
+    u16 normalized_len;
+    bool is_sendto;
+    struct hlist_node hlist;
+};
+
+struct syscall_name_info {
+    const char *normalized_name;
+    u32 normalized_hash;
+    u16 normalized_len;
+    bool is_sendto;
+};
+
+#define SYSCALL_NAME_PTR_CACHE_BITS 8
+#define SYSCALL_NAME_PTR_CACHE_MAX 1024
+
+static DEFINE_HASHTABLE(syscall_name_ptr_cache, SYSCALL_NAME_PTR_CACHE_BITS);
+static DEFINE_SPINLOCK(syscall_name_ptr_cache_lock);
+static atomic_t syscall_name_ptr_cache_count = ATOMIC_INIT(0);
+
+static inline struct syscall_name_info get_syscall_name_info(const char *syscall_name)
+{
+    struct syscall_name_cache_entry *entry;
+    struct syscall_name_cache_entry *existing;
+    struct syscall_name_info info = {
+        .normalized_name = NULL,
+        .normalized_hash = 0,
+        .normalized_len = 0,
+        .is_sendto = false,
+    };
+    const char *normalized_name;
+    unsigned long key;
+
+    if (!syscall_name) {
+        return info;
+    }
+
+    key = (unsigned long)syscall_name;
+
+    rcu_read_lock();
+    hash_for_each_possible_rcu(syscall_name_ptr_cache, entry, hlist, key) {
+        if (entry->raw_name == syscall_name) {
+            info.normalized_name = entry->normalized_name;
+            info.normalized_hash = entry->normalized_hash;
+            info.normalized_len = entry->normalized_len;
+            info.is_sendto = entry->is_sendto;
+            rcu_read_unlock();
+            return info;
+        }
+    }
+    rcu_read_unlock();
+
+    normalized_name = normalize_syscall_name(syscall_name);
+    info.normalized_name = normalized_name;
+    info.normalized_hash = syscall_normalized_name_hash(normalized_name);
+    info.normalized_len = normalized_name ? strlen(normalized_name) : 0;
+    info.is_sendto = normalized_name && strcmp(normalized_name, "sendto") == 0;
+
+    if (atomic_read(&syscall_name_ptr_cache_count) >= SYSCALL_NAME_PTR_CACHE_MAX) {
+        return info;
+    }
+
+    entry = kzalloc(sizeof(*entry), GFP_ATOMIC);
+    if (!entry) {
+        return info;
+    }
+
+    entry->raw_name = syscall_name;
+    entry->normalized_name = info.normalized_name;
+    entry->normalized_hash = info.normalized_hash;
+    entry->normalized_len = info.normalized_len;
+    entry->is_sendto = info.is_sendto;
+
+    spin_lock(&syscall_name_ptr_cache_lock);
+    hash_for_each_possible(syscall_name_ptr_cache, existing, hlist, key) {
+        if (existing->raw_name == syscall_name) {
+            spin_unlock(&syscall_name_ptr_cache_lock);
+            kfree(entry);
+            return info;
+        }
+    }
+    if (atomic_read(&syscall_name_ptr_cache_count) >= SYSCALL_NAME_PTR_CACHE_MAX) {
+        spin_unlock(&syscall_name_ptr_cache_lock);
+        kfree(entry);
+        return info;
+    }
+    hash_add_rcu(syscall_name_ptr_cache, &entry->hlist, key);
+    atomic_inc(&syscall_name_ptr_cache_count);
+    spin_unlock(&syscall_name_ptr_cache_lock);
+
+    return info;
+}
+
 /* Function to print syscall information */
 void print_syscall_info(const struct syscall_event *sc, const char *prefix);
 void print_syscall_info(const struct syscall_event *sc, const char *prefix) {
@@ -187,7 +283,9 @@ static inline bool value_matches_filter(long value, const struct value_filter *f
 }
 
 // Change hook_matches_syscall and hook_matches_syscall_return to take struct kernel_syscall_hook *
-static inline bool hook_matches_syscall(struct kernel_syscall_hook *hook, const char *syscall_name,
+static inline bool hook_matches_syscall(struct kernel_syscall_hook *hook,
+                         const char *syscall_name, u32 syscall_name_hash,
+                         u16 syscall_name_len,
                          int argc, const unsigned long args[])
 {
     if (!hook->hook.enabled){
@@ -197,7 +295,13 @@ static inline bool hook_matches_syscall(struct kernel_syscall_hook *hook, const 
         return true;
     }
     if (syscall_name && hook->hook.name[0] != '\0') {
-        if (strcmp(hook->normalized_name, syscall_name) != 0) {
+        if (hook->normalized_name_hash != syscall_name_hash) {
+            return false;
+        }
+        if (hook->normalized_name_len != syscall_name_len) {
+            return false;
+        }
+        if (unlikely(strcmp(hook->normalized_name, syscall_name) != 0)) {
             return false;
         }
     } else if (hook->hook.name[0] != '\0') {
@@ -284,10 +388,11 @@ static inline bool hook_matches_syscall(struct kernel_syscall_hook *hook, const 
 }
 
 static inline bool hook_matches_syscall_return(struct kernel_syscall_hook *hook, const char *syscall_name,
-                                 int argc, const unsigned long args[], long retval)
+                                 u32 syscall_name_hash, u16 syscall_name_len, int argc,
+                                 const unsigned long args[], long retval)
 {
     struct value_filter *f;
-    if (!hook_matches_syscall(hook, syscall_name, argc, args)){
+    if (!hook_matches_syscall(hook, syscall_name, syscall_name_hash, syscall_name_len, argc, args)){
         return false;
     }
     f = &hook->hook.retval_filter;
@@ -319,6 +424,7 @@ static inline void capture_syscall_event(struct syscall_event *dest,
 static long process_syscall_hooks(
     bool is_entry,
     const char *syscall_name,
+    const struct syscall_name_info *cached_name_info,
     int argc,
     const unsigned long args[],
     igloo_syscall_setter_t setter_func,
@@ -337,22 +443,30 @@ static long process_syscall_hooks(
     long modified_ret = orig_ret;
     long skip_ret_val_local = 0;
     bool skip_syscall = false;
+    struct syscall_name_info name_info;
     const char *normsc;
     u32 name_hash;
+    u16 name_len;
     int i;
 
     if (atomic_read(&global_syscall_hook_count) == 0) {
         return is_entry ? 0 : orig_ret;
     }
-    normsc = normalize_syscall_name(syscall_name);
-    name_hash = syscall_normalized_name_hash(normsc);
+    if (cached_name_info) {
+        name_info = *cached_name_info;
+    } else {
+        name_info = get_syscall_name_info(syscall_name);
+    }
+    normsc = name_info.normalized_name;
+    name_hash = name_info.normalized_hash;
+    name_len = name_info.normalized_len;
     rcu_read_lock();
     // 1. Check the "match all syscalls" list first
     if (!hlist_empty(&syscall_all_hooks)) {
         hlist_for_each_entry_rcu(hook, &syscall_all_hooks, name_hlist) {
              bool matches = is_entry ? 
-                (hook->hook.on_enter && hook_matches_syscall(hook, normsc, argc, args)) :
-                (hook->hook.on_return && hook_matches_syscall_return(hook, normsc, argc, args, modified_ret));
+                (hook->hook.on_enter && hook_matches_syscall(hook, normsc, name_hash, name_len, argc, args)) :
+                (hook->hook.on_return && hook_matches_syscall_return(hook, normsc, name_hash, name_len, argc, args, modified_ret));
             if (matches) {
                 if (match_count < IGLOO_STACK_BATCH_SIZE) {
                      if (unlikely(!template_initialized)) {
@@ -370,8 +484,8 @@ static long process_syscall_hooks(
     if (normsc) {
         hash_for_each_possible_rcu(syscall_name_table, hook, name_hlist, name_hash) {
             bool matches = is_entry ? 
-                        (hook->hook.on_enter && hook_matches_syscall(hook, normsc, argc, args)) :
-                        (hook->hook.on_return && hook_matches_syscall_return(hook, normsc, argc, args, modified_ret));
+                        (hook->hook.on_enter && hook_matches_syscall(hook, normsc, name_hash, name_len, argc, args)) :
+                        (hook->hook.on_return && hook_matches_syscall_return(hook, normsc, name_hash, name_len, argc, args, modified_ret));
             if (matches) {
                 if (match_count < IGLOO_STACK_BATCH_SIZE) {
                      if (unlikely(!template_initialized)) {
@@ -412,8 +526,8 @@ static long process_syscall_hooks(
             if (!hlist_empty(&syscall_all_hooks)) {
                 hlist_for_each_entry_rcu(hook, &syscall_all_hooks, name_hlist) {
                     bool matches = is_entry ? 
-                        (hook->hook.on_enter && hook_matches_syscall(hook, syscall_name, argc, args)) :
-                        (hook->hook.on_return && hook_matches_syscall_return(hook, syscall_name, argc, args, modified_ret));
+                        (hook->hook.on_enter && hook_matches_syscall(hook, normsc, name_hash, name_len, argc, args)) :
+                        (hook->hook.on_return && hook_matches_syscall_return(hook, normsc, name_hash, name_len, argc, args, modified_ret));
                     
                     if (matches && match_count < capacity) {
                         capture_syscall_event(&batch[match_count], hook, &template_event, is_entry, modified_ret);
@@ -423,11 +537,11 @@ static long process_syscall_hooks(
             }
             
             // Re-scan named list
-            if (syscall_name) {
+            if (normsc) {
                 hash_for_each_possible_rcu(syscall_name_table, hook, name_hlist, name_hash) {
                     bool matches = is_entry ? 
-                        (hook->hook.on_enter && hook_matches_syscall(hook, normsc, argc, args)) :
-                        (hook->hook.on_return && hook_matches_syscall_return(hook, normsc, argc, args, modified_ret));
+                        (hook->hook.on_enter && hook_matches_syscall(hook, normsc, name_hash, name_len, argc, args)) :
+                        (hook->hook.on_return && hook_matches_syscall_return(hook, normsc, name_hash, name_len, argc, args, modified_ret));
                     
                     if (matches && match_count < capacity) {
                         capture_syscall_event(&batch[match_count], hook, &template_event, is_entry, modified_ret);
@@ -494,7 +608,8 @@ static long process_syscall_hooks(
 static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, int argc, const unsigned long args[], igloo_syscall_setter_t setter_func)
 {
     int i;
-    unsigned long safe_args[IGLOO_SYSCALL_MAXARGS] = {0};
+    unsigned long safe_args[IGLOO_SYSCALL_MAXARGS];
+    struct syscall_name_info name_info;
     check_portal_interrupt();
     if (!args || !skip_ret_val) {
         return 0;
@@ -502,10 +617,19 @@ static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, 
     if (current->flags & PF_KTHREAD) {
         return 0;
     }
+    if (atomic_read(&global_syscall_hook_count) == 0 &&
+            !portalcall_fastpath_is_enabled()) {
+        return 0;
+    }
     for (i = 0; i < IGLOO_SYSCALL_MAXARGS && i < argc; i++) {
         safe_args[i] = args[i];
     }
-    return process_syscall_hooks(true, syscall_name, argc, safe_args, setter_func, skip_ret_val, 0);
+    name_info = get_syscall_name_info(syscall_name);
+    if (portalcall_fastpath_should_skip(name_info.is_sendto, argc, safe_args)) {
+        *skip_ret_val = 0;
+        return 1;
+    }
+    return process_syscall_hooks(true, syscall_name, &name_info, argc, safe_args, setter_func, skip_ret_val, 0);
 }
 
 // Return handler for system calls
@@ -517,7 +641,10 @@ static long syscall_ret_handler(const char *syscall_name, long orig_ret, int arg
     if (current->flags & PF_KTHREAD) {
         return orig_ret;
     }
-    return process_syscall_hooks(false, syscall_name, argc, args, NULL, NULL, orig_ret);
+    if (atomic_read(&global_syscall_hook_count) == 0) {
+        return orig_ret;
+    }
+    return process_syscall_hooks(false, syscall_name, NULL, argc, args, NULL, NULL, orig_ret);
 }
 
 int syscalls_hc_init(void) {

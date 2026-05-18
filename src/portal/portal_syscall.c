@@ -45,8 +45,14 @@ void handle_op_register_syscall_hook(portal_region *mem_region)
                 normalize_syscall_name(kernel_hook->hook.name),
                 SYSCALL_NAME_MAX_LEN - 1);
         kernel_hook->normalized_name[SYSCALL_NAME_MAX_LEN - 1] = '\0';
+        kernel_hook->normalized_name_hash =
+            syscall_normalized_name_hash(kernel_hook->normalized_name);
+        kernel_hook->normalized_name_len =
+            strnlen(kernel_hook->normalized_name, SYSCALL_NAME_MAX_LEN);
     } else {
         kernel_hook->normalized_name[0] = '\0';
+        kernel_hook->normalized_name_hash = 0;
+        kernel_hook->normalized_name_len = 0;
     }
     
     // Add to the main hook table indexed by pointer address

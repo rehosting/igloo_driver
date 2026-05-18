@@ -21,6 +21,8 @@
     X(unregister_uprobe, UNREGISTER_UPROBE) \
     X(register_syscall_hook, REGISTER_SYSCALL_HOOK) \
     X(unregister_syscall_hook, UNREGISTER_SYSCALL_HOOK) \
+    X(register_portalcall_magic, REGISTER_PORTALCALL_MAGIC) \
+    X(set_portalcall_fastpath, SET_PORTALCALL_FASTPATH) \
     X(register_signal_hook, REGISTER_SIGNAL_HOOK) \
     X(unregister_signal_hook, UNREGISTER_SIGNAL_HOOK) \
     X(ffi_exec, FFI_EXEC) \
