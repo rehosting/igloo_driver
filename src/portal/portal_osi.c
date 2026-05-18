@@ -129,7 +129,7 @@ static void portal_get_vma_name(struct vm_area_struct *vma, char *buf, size_t bu
 void handle_op_osi_proc(portal_region *mem_region)
 {
     struct task_struct *task;
-    struct mm_struct *mm;
+    struct mm_struct *mm = NULL;
     struct osi_proc *proc;
     size_t name_len = 0;
     size_t total_size = sizeof(struct osi_proc);
@@ -141,13 +141,13 @@ void handle_op_osi_proc(portal_region *mem_region)
     if (!task) {
         igloo_debug_osi("igloo: Handling HYPER_OP_OSI_PROC for NULL task\n");
         mem_region->header.op = (HYPER_RESP_READ_FAIL);
-        return;
+        goto cleanup;
     }
 
     // Now we can safely use task->pid
     igloo_debug_osi("igloo: Handling HYPER_OP_OSI_PROC for PID %d\n", task->pid);
 
-    mm = task->mm;
+    mm = get_task_mm(task);
 
     // Initialize the OSI proc structure at the beginning of data buffer
     proc = (struct osi_proc *)data_buf;
@@ -174,6 +174,8 @@ void handle_op_osi_proc(portal_region *mem_region)
     } else {
         proc->pgd = 0;
     }
+
+    task_lock(task);
     proc->start_time = (task->start_time);
     proc->pid = (task->pid);
     proc->ppid = (task->real_parent ? task->real_parent->pid : 0);
@@ -191,7 +193,8 @@ void handle_op_osi_proc(portal_region *mem_region)
     }
     strncpy(data_buf + sizeof(struct osi_proc), task->comm, name_len);
     data_buf[sizeof(struct osi_proc) + name_len] = '\0';
-    igloo_debug_osi("igloo: proc name: %s\n", task->comm);
+    task_unlock(task);
+
     igloo_debug_osi("igloo: proc name in buf: %s\n", data_buf + sizeof(struct osi_proc));
 
     total_size += name_len; // do not null terminator
@@ -201,6 +204,10 @@ void handle_op_osi_proc(portal_region *mem_region)
 
     mem_region->header.size = (total_size);
     mem_region->header.op = (HYPER_RESP_READ_OK);
+
+cleanup:
+    if (mm) mmput(mm);
+    if (task) put_task_struct(task);
 }
 
 void handle_op_osi_proc_handles(portal_region *mem_region)
@@ -271,7 +278,7 @@ void handle_op_osi_proc_handles(portal_region *mem_region)
 void handle_op_osi_proc_exe(portal_region *mem_region)
 {
     struct task_struct *task;
-    struct mm_struct *mm;
+    struct mm_struct *mm = NULL;
     char *data_buf = PORTAL_DATA(mem_region);
     char *path;
     size_t pathlen = 0;
@@ -282,19 +289,19 @@ void handle_op_osi_proc_exe(portal_region *mem_region)
     if (!task) {
         igloo_debug_osi("igloo: Handling HYPER_OP_OSI_PROC_EXE for NULL task\n");
         mem_region->header.op = (HYPER_RESP_READ_FAIL);
-        return;
+        goto cleanup;
     }
 
     // Now we can safely use task->pid
     igloo_debug_osi("igloo: Handling HYPER_OP_OSI_PROC_EXE for PID %d\n", task->pid);
 
-    mm = task->mm;
+    mm = get_task_mm(task);
     if(mm && mm->exe_file) {
         char *path_buf = kmalloc(CHUNK_SIZE, GFP_KERNEL);
         if (!path_buf) {
             igloo_debug_osi("igloo: Failed to allocate memory for path buffer!\n");
             mem_region->header.op = (HYPER_RESP_READ_FAIL);
-            return;
+            goto cleanup;
         }
         path = d_path(&mm->exe_file->f_path, path_buf, CHUNK_SIZE);
         if (!IS_ERR(path)) {
@@ -315,12 +322,16 @@ void handle_op_osi_proc_exe(portal_region *mem_region)
     }
 
     mem_region->header.size = pathlen;
+
+cleanup:
+    if (mm) mmput(mm);
+    if (task) put_task_struct(task);
 }
 
 void handle_op_osi_mappings(portal_region *mem_region)
 {
     struct task_struct *task;
-    struct mm_struct *mm;
+    struct mm_struct *mm = NULL;
     struct vm_area_struct *vma;
     struct osi_module *mapping;
     int count = 0;
@@ -342,13 +353,13 @@ void handle_op_osi_mappings(portal_region *mem_region)
         igloo_debug_osi("igloo: Handling HYPER_OP_OSI_MAPPINGS for NULL task\n");
         mem_region->header.size = (sizeof(struct osi_result_header));  // Return at least the header
         mem_region->header.op = (HYPER_RESP_READ_FAIL);
-        return;
+        goto cleanup;
     }
 
     // Now we can safely use task->pid
     igloo_debug_osi("igloo: Handling HYPER_OP_OSI_MAPPINGS for PID %d\n", task->pid);
 
-    mm = task->mm;
+    mm = get_task_mm(task);
 
     // Reserve space for count at beginning (now two counts: returned mappings and total mappings)
     max_mappings = (CHUNK_SIZE / 2) / sizeof(struct osi_module);
@@ -361,7 +372,7 @@ void handle_op_osi_mappings(portal_region *mem_region)
     if (!mm) {
         mem_region->header.size = (sizeof(struct osi_result_header));
         mem_region->header.op = (HYPER_RESP_READ_OK);
-        return;
+        goto cleanup;
     }
 
     // Store total number of VMAs in the process
@@ -384,7 +395,7 @@ void handle_op_osi_mappings(portal_region *mem_region)
     if (mmap_read_lock_killable(mm)) {
         mem_region->header.size = (sizeof(__le64) * 2);
         mem_region->header.op = (HYPER_RESP_READ_FAIL);
-        return;
+        goto cleanup;
     }
     #define IGLOO_MMAP_UNLOCK(mm) mmap_read_unlock(mm)
 #elif defined(down_read_killable)
@@ -392,14 +403,14 @@ void handle_op_osi_mappings(portal_region *mem_region)
         if (down_read_killable(&mm->mmap_lock)) {
             mem_region->header.size = (sizeof(__le64) * 2);
             mem_region->header.op = (HYPER_RESP_READ_FAIL);
-            return;
+            goto cleanup;
         }
         #define IGLOO_MMAP_UNLOCK(mm) up_read(&mm->mmap_lock)
     #else
         if (down_read_killable(&mm->mmap_sem)) {
             mem_region->header.size = (sizeof(__le64) * 2);
             mem_region->header.op = (HYPER_RESP_READ_FAIL);
-            return;
+            goto cleanup;
         }
         #define IGLOO_MMAP_UNLOCK(mm) up_read(&mm->mmap_sem)
     #endif
@@ -507,12 +518,16 @@ void handle_op_osi_mappings(portal_region *mem_region)
 
     igloo_debug_osi("igloo: Returned %d VMA mappings (total VMAs: %d), buffer used: %zu bytes\n",
                   count, mm->map_count, string_offset);
+
+cleanup:
+    if (mm) mmput(mm);
+    if (task) put_task_struct(task);
 }
 
 void handle_op_osi_proc_mem(portal_region *mem_region)
 {
     struct task_struct *task;
-    struct mm_struct *mm;
+    struct mm_struct *mm = NULL;
     struct osi_proc_mem {
         __le64 start_brk;
         __le64 brk;
@@ -528,18 +543,18 @@ void handle_op_osi_proc_mem(portal_region *mem_region)
         proc_mem->start_brk = 0;
         proc_mem->brk = 0;
         mem_region->header.op = (HYPER_RESP_READ_FAIL);
-        return;
+        goto cleanup;
     }
 
     // Now we can safely use task->pid
     igloo_debug_osi("igloo: Handling HYPER_OP_OSI_PROC_MEM for PID %d\n", task->pid);
 
-    mm = task->mm;
+    mm = get_task_mm(task);
 
     // Check if we have enough buffer space for the structure
     if (sizeof(struct osi_proc_mem) > CHUNK_SIZE) {
         mem_region->header.op = (HYPER_RESP_READ_FAIL);
-        return;
+        goto cleanup;
     }
 
     proc_mem = (struct osi_proc_mem *)PORTAL_DATA(mem_region);
@@ -548,7 +563,7 @@ void handle_op_osi_proc_mem(portal_region *mem_region)
         proc_mem->start_brk = 0;
         proc_mem->brk = 0;
         mem_region->header.op = (HYPER_RESP_READ_FAIL);
-        return;
+        goto cleanup;
     }
 
     proc_mem->start_brk = (mm->start_brk);
@@ -556,26 +571,30 @@ void handle_op_osi_proc_mem(portal_region *mem_region)
 
     mem_region->header.size = (sizeof(struct osi_proc_mem));
     mem_region->header.op = (HYPER_RESP_READ_OK);
+
+cleanup:
+    if (mm) mmput(mm);
+    if (task) put_task_struct(task);
 }
 
 void handle_op_read_procargs(portal_region *mem_region)
 {
     struct task_struct *task = get_target_task_by_id(mem_region);
-    struct mm_struct *mm = task ? task->mm : NULL;
+    struct mm_struct *mm = task ? get_task_mm(task) : NULL;
     char *buf = PORTAL_DATA(mem_region);
     unsigned long arg_start, arg_end;
     size_t len = 0;
     int i;
     int ret;
 
-    igloo_debug_osi("igloo: Handling HYPER_OP_READ_PROCARGS (pid=%d, comm='%s')\n",
-                   task ? task->pid : -1, task ? task->comm : "NULL");
-
     if (!task) {
         igloo_debug_osi("igloo: No task found for pid %llu\n",
                      (unsigned long long)(mem_region->header.addr));
         goto fail;
     }
+
+    igloo_debug_osi("igloo: Handling HYPER_OP_READ_PROCARGS (pid=%d, comm='%s')\n",
+                   task->pid, task->comm);
 
     if (!mm || !mm->arg_end || !mm->arg_start || mm->arg_end <= mm->arg_start) {
         igloo_debug_osi("igloo: Invalid memory area for procargs\n");
@@ -641,25 +660,35 @@ void handle_op_read_procargs(portal_region *mem_region)
     mem_region->header.size = (len);
     mem_region->header.op = (HYPER_RESP_READ_OK);
     igloo_debug_osi("igloo: Read procargs: len=%zu\n", len);
-    return;
+    goto cleanup;
 
 fail:
     snprintf(PORTAL_DATA(mem_region), CHUNK_SIZE, "UNKNOWN_PROCARGS");
     mem_region->header.size = (strlen(PORTAL_DATA(mem_region)));
     mem_region->header.op = (HYPER_RESP_READ_FAIL);
     igloo_debug_osi("igloo: procargs failure, returning '%s'\n", PORTAL_DATA(mem_region));
+
+cleanup:
+    if (mm) mmput(mm);
+    if (task) put_task_struct(task);
 }
 
 void handle_op_read_procenv(portal_region *mem_region)
 {
     struct task_struct *task = get_target_task_by_id(mem_region);
-    struct mm_struct *mm = task ? task->mm : NULL;
+    struct mm_struct *mm = task ? get_task_mm(task) : NULL;
     unsigned long env_start, env_end, len;
     char *buf = PORTAL_DATA(mem_region);
     int ret;
 
+    if (!task) {
+        igloo_debug_osi("igloo: No task found for pid %llu\n",
+                     (unsigned long long)(mem_region->header.addr));
+        goto fail;
+    }
+
     igloo_debug_osi("igloo: Handling HYPER_OP_READ_PROCENV (pid=%d, comm='%s')\n",
-                   task ? task->pid : -1, task ? task->comm : "NULL");
+                   task->pid, task->comm);
 
     if (!mm || !mm->env_end || !mm->env_start || mm->env_end <= mm->env_start) {
         goto fail;
@@ -716,13 +745,17 @@ void handle_op_read_procenv(portal_region *mem_region)
     mem_region->header.size = (len);
     mem_region->header.op = (HYPER_RESP_READ_OK);
     igloo_debug_osi("igloo: Read procenv from stack: '%s' (len=%lu)\n", buf, len);
-    return;
+    goto cleanup;
 
 fail:
     snprintf(PORTAL_DATA(mem_region), CHUNK_SIZE, "UNKNOWN_PROCENV");
     mem_region->header.size = (strlen(PORTAL_DATA(mem_region)));
     mem_region->header.op = (HYPER_RESP_READ_FAIL);
     igloo_debug_osi("igloo: procenv failure, returning '%s'\n", PORTAL_DATA(mem_region));
+
+cleanup:
+    if (mm) mmput(mm);
+    if (task) put_task_struct(task);
 }
 
 void handle_op_read_fds(portal_region *mem_region)
@@ -758,29 +791,34 @@ void handle_op_read_fds(portal_region *mem_region)
         header->total_count = 0;
         mem_region->header.size = (sizeof(struct osi_result_header));
         mem_region->header.op = (HYPER_RESP_READ_FAIL);
-        return;
+        goto cleanup;
     }
 
     // -------------------------------------------------------------
     // EDGECASE: Current Working Directory (AT_FDCWD)
     // -------------------------------------------------------------
     if (start_fd == AT_FDCWD) {
+        struct fs_struct *fs;
         igloo_debug_osi("igloo: Resolving AT_FDCWD for task\n");
         
         header->result_count = 0;
         header->total_count = 0;
 
-        if (!task->fs) {
+        task_lock(task);
+        fs = task->fs;
+        if (fs) {
+            spin_lock(&fs->lock);
+            pwd = fs->pwd;
+            path_get(&pwd);
+            spin_unlock(&fs->lock);
+        }
+        task_unlock(task);
+
+        if (!fs) {
             mem_region->header.size = sizeof(struct osi_result_header);
             mem_region->header.op = HYPER_RESP_READ_OK;
-            return;
+            goto cleanup;
         }
-
-        // Safely extract the pwd struct
-        spin_lock(&task->fs->lock);
-        pwd = task->fs->pwd;
-        path_get(&pwd);
-        spin_unlock(&task->fs->lock);
 
         path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
         if (path_buf) {
@@ -818,7 +856,7 @@ void handle_op_read_fds(portal_region *mem_region)
         }
         
         path_put(&pwd);
-        return;
+        goto cleanup;
     }
 
     // -------------------------------------------------------------
@@ -830,7 +868,7 @@ void handle_op_read_fds(portal_region *mem_region)
         header->total_count = 0;
         mem_region->header.size = sizeof(struct osi_result_header);
         mem_region->header.op = HYPER_RESP_READ_FAIL;
-        return;
+        goto cleanup;
     }
 
     // -------------------------------------------------------------
@@ -850,7 +888,7 @@ void handle_op_read_fds(portal_region *mem_region)
         task_unlock(task);
         mem_region->header.size = (sizeof(struct osi_result_header));
         mem_region->header.op = (HYPER_RESP_READ_OK);
-        return;
+        goto cleanup;
     }
 
     files = task->files;
@@ -939,6 +977,9 @@ void handle_op_read_fds(portal_region *mem_region)
 
     igloo_debug_osi("igloo: Returned %d file descriptors (total: %d), buffer used: %zu bytes\n",
                   count, total_count, string_offset);
+
+cleanup:
+    if (task) put_task_struct(task);
 }
 
 void handle_op_read_time(portal_region *mem_region)
@@ -981,4 +1022,3 @@ void handle_op_osi_proc_ptregs(portal_region *mem_region)
     igloo_debug_osi("igloo: ptregs pointer returned for current task: %p\n", regs);
     return;
 }
-
