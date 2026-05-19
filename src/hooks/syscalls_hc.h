@@ -5,6 +5,14 @@
 #include <linux/spinlock.h>
 #include <linux/hashtable.h>
 #include <linux/uaccess.h>
+#include <linux/err.h>
+#include <linux/version.h>
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
+#include <linux/unaligned.h>
+#else
+#include <asm/unaligned.h>
+#endif
 
 #include "igloo_syscall_macros.h"
 
@@ -99,6 +107,23 @@ bool portalcall_fastpath_is_enabled(void);
 bool portalcall_fastpath_should_skip(bool is_sendto,
                                      int argc,
                                      const unsigned long args[]);
+
+static inline unsigned long igloo_syscall_arg_value(const unsigned long args[],
+                                                    int index)
+{
+    unsigned long arg_slot;
+
+    if (!args || index < 0 || index >= IGLOO_SYSCALL_MAXARGS) {
+        return 0;
+    }
+
+    arg_slot = args[index];
+    if (!arg_slot || IS_ERR_VALUE(arg_slot)) {
+        return 0;
+    }
+
+    return get_unaligned((unsigned long *)arg_slot);
+}
 
 /* Unregister a syscall hook using its pointer */
 int unregister_syscall_hook(struct kernel_syscall_hook *hook_ptr);
