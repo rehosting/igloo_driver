@@ -192,14 +192,7 @@ static inline void fill_handler(struct syscall_event *args, int argc, const unsi
     // Copy arguments safely - add proper NULL checks before dereferencing
     for (i = 0; i < IGLOO_SYSCALL_MAXARGS; i++){
         if (i < argc && args_ptrs && args_ptrs[i]) {
-            // Safely copy argument value - verify valid pointer first
-            unsigned long arg_ptr = args_ptrs[i];
-            if (arg_ptr && !IS_ERR_VALUE(arg_ptr)) {
-                args->args[i] = *(unsigned long*)arg_ptr;
-            } else {
-                args->args[i] = 0;
-                DBG_PRINTK("IGLOO: Invalid argument pointer at index %d\n", i);
-            }
+            args->args[i] = igloo_syscall_arg_value(args_ptrs, i);
         } else {
             args->args[i] = 0; // Initialize unused args to 0
         }
@@ -323,7 +316,7 @@ static inline bool hook_matches_syscall(struct kernel_syscall_hook *hook,
     if (argc > 0) {
         struct value_filter *f = &hook->hook.arg_filters[0];
         if (f->enabled) {
-            long arg_val = *(long *)args[0];
+            long arg_val = (long)igloo_syscall_arg_value(args, 0);
             if (f->type == SYSCALLS_HC_FILTER_EXACT) {
                 if (arg_val != f->value) return false;
             } else {
@@ -334,7 +327,7 @@ static inline bool hook_matches_syscall(struct kernel_syscall_hook *hook,
     if (argc > 1) {
         struct value_filter *f = &hook->hook.arg_filters[1];
         if (f->enabled) {
-            long arg_val = *(long *)args[1];
+            long arg_val = (long)igloo_syscall_arg_value(args, 1);
             if (f->type == SYSCALLS_HC_FILTER_EXACT) {
                 if (arg_val != f->value) return false;
             } else {
@@ -345,7 +338,7 @@ static inline bool hook_matches_syscall(struct kernel_syscall_hook *hook,
     if (argc > 2) {
         struct value_filter *f = &hook->hook.arg_filters[2];
         if (f->enabled) {
-            long arg_val = *(long *)args[2];
+            long arg_val = (long)igloo_syscall_arg_value(args, 2);
             if (f->type == SYSCALLS_HC_FILTER_EXACT) {
                 if (arg_val != f->value) return false;
             } else {
@@ -356,7 +349,7 @@ static inline bool hook_matches_syscall(struct kernel_syscall_hook *hook,
     if (argc > 3) {
         struct value_filter *f = &hook->hook.arg_filters[3];
         if (f->enabled) {
-            long arg_val = *(long *)args[3];
+            long arg_val = (long)igloo_syscall_arg_value(args, 3);
             if (f->type == SYSCALLS_HC_FILTER_EXACT) {
                 if (arg_val != f->value) return false;
             } else {
@@ -367,7 +360,7 @@ static inline bool hook_matches_syscall(struct kernel_syscall_hook *hook,
     if (argc > 4) {
         struct value_filter *f = &hook->hook.arg_filters[4];
         if (f->enabled) {
-            long arg_val = *(long *)args[4];
+            long arg_val = (long)igloo_syscall_arg_value(args, 4);
             if (f->type == SYSCALLS_HC_FILTER_EXACT) {
                 if (arg_val != f->value) return false;
             } else {
@@ -378,7 +371,7 @@ static inline bool hook_matches_syscall(struct kernel_syscall_hook *hook,
     if (argc > 5) {
         struct value_filter *f = &hook->hook.arg_filters[5];
         if (f->enabled) {
-            long arg_val = *(long *)args[5];
+            long arg_val = (long)igloo_syscall_arg_value(args, 5);
             if (f->type == SYSCALLS_HC_FILTER_EXACT) {
                 if (arg_val != f->value) return false;
             } else {

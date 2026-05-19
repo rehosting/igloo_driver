@@ -81,12 +81,12 @@ bool portalcall_fastpath_should_skip(bool is_sendto,
         return false;
     }
 
-    magic = *(unsigned long *)args[0];
+    magic = igloo_syscall_arg_value(args, 0);
     if ((magic & 0xffffffffUL) != PORTALCALL_SYSCALL_MAGIC) {
         return false;
     }
 
-    user_magic = *(unsigned long *)args[1];
+    user_magic = igloo_syscall_arg_value(args, 1);
     return !portalcall_magic_is_registered((u32)user_magic);
 }
 EXPORT_SYMBOL(portalcall_fastpath_should_skip);
