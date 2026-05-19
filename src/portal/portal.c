@@ -4,7 +4,6 @@
 #include <linux/wait.h>
 #include <linux/sched.h>
 #include "portal_op_list.h"
-#include "ehypercall.h"
 
 uint64_t portal_interrupt = 0;
 
