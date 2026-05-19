@@ -6,7 +6,7 @@
 #include "portal_op_list.h"
 #include "ehypercall.h"
 
-uint64_t portal_interrupt = 0;
+u32 portal_interrupt = 0;
 
 // Operation handler table
 static const portal_op_handler op_handlers[] = {
@@ -56,8 +56,11 @@ static bool handle_post_memregion(portal_region *mem_region){
 }
 
 void check_portal_interrupt(void){
-    if (unlikely(portal_interrupt != 0)) {
-        // Clear the interrupt flag
+    static u32 last_seen;
+    u32 current = READ_ONCE(portal_interrupt);
+
+    if (unlikely(current != last_seen)) {
+        last_seen = current;
         igloo_portal(IGLOO_HYPER_PORTAL_INTERRUPT, (unsigned long) &portal_interrupt, 0);
     }
 }

@@ -5,10 +5,86 @@
 #include <linux/spinlock.h>
 #include <linux/hashtable.h>
 #include <linux/uaccess.h>
+#include <linux/sched.h>
 
 #include "igloo_syscall_macros.h"
 
 #define SYSCALL_NAME_MAX_LEN 48        // Maximum length for syscall name
+
+#define IGLOO_SYSCALL_LOG_VERSION 1
+#define IGLOO_SYSCALL_LOG_MAX_RECORD_SIZE (64 * 1024)
+#define IGLOO_SYSCALL_LOG_DEFAULT_STRING_LIMIT 4096
+#define IGLOO_SYSCALL_LOG_DEFAULT_RECORD_LIMIT IGLOO_SYSCALL_LOG_MAX_RECORD_SIZE
+#define IGLOO_SYSCALL_LOG_DEFAULT_RING_SLOTS 256
+#define IGLOO_SYSCALL_LOG_MAX_SCHEMAS 256
+
+enum syscall_log_record_type {
+    IGLOO_SYSCALL_LOG_ENTRY = 1,
+    IGLOO_SYSCALL_LOG_RETURN = 2,
+    IGLOO_SYSCALL_LOG_STATS = 3,
+};
+
+enum syscall_log_capture_type {
+    IGLOO_SYSCALL_ARG_IGNORE = 0,
+    IGLOO_SYSCALL_ARG_SCALAR = 1,
+    IGLOO_SYSCALL_ARG_CSTRING = 2,
+    IGLOO_SYSCALL_ARG_STRING_ARRAY = 3,
+    IGLOO_SYSCALL_ARG_SOCKADDR = 4,
+    IGLOO_SYSCALL_ARG_BUFFER = 5,
+    IGLOO_SYSCALL_ARG_BUFFER_OUT = 6,
+};
+
+enum syscall_log_arg_flags {
+    IGLOO_SYSCALL_ARG_F_TRUNCATED = 1U << 0,
+    IGLOO_SYSCALL_ARG_F_FAULT = 1U << 1,
+    IGLOO_SYSCALL_ARG_F_NULL = 1U << 2,
+    IGLOO_SYSCALL_ARG_F_ARRAY_END = 1U << 3,
+};
+
+enum syscall_log_drop_reason {
+    IGLOO_SYSCALL_LOG_DROP_NO_SPACE = 0,
+    IGLOO_SYSCALL_LOG_DROP_STRING_FAULT = 1,
+    IGLOO_SYSCALL_LOG_DROP_OVERSIZED_RECORD = 2,
+    IGLOO_SYSCALL_LOG_DROP_UNSUPPORTED_SCHEMA = 3,
+    IGLOO_SYSCALL_LOG_DROP_MAX,
+};
+
+struct syscall_logger_config {
+    uint32_t enabled;
+    uint32_t string_limit;
+    uint32_t record_limit;
+    uint32_t doorbell_threshold;
+};
+
+struct syscall_logger_schema {
+    char name[SYSCALL_NAME_MAX_LEN];
+    uint8_t argc;
+    uint8_t arg_types[IGLOO_SYSCALL_MAXARGS];
+    uint16_t flags;
+};
+
+struct syscall_log_record_header {
+    uint16_t version;
+    uint16_t type;
+    uint32_t total_len;
+    uint64_t seq;
+    uint64_t pc;
+    int64_t retval;
+    uint32_t pid;
+    uint32_t tgid;
+    uint32_t argc;
+    uint32_t payload_len;
+    uint64_t args[IGLOO_SYSCALL_MAXARGS];
+    char comm[TASK_COMM_LEN];
+    char syscall_name[SYSCALL_NAME_MAX_LEN];
+};
+
+struct syscall_log_tlv_header {
+    uint8_t arg_index;
+    uint8_t capture_type;
+    uint16_t flags;
+    uint32_t len;
+};
 
 /* Value comparison types for filtering */
 enum value_filter_type {
@@ -96,6 +172,11 @@ extern spinlock_t syscall_hook_lock;
 int unregister_syscall_hook(struct kernel_syscall_hook *hook_ptr);
 
 int syscalls_hc_init(void);
+void syscall_logger_configure(const struct syscall_logger_config *cfg);
+void syscall_logger_register_schema(const struct syscall_logger_schema *schema);
+size_t syscall_logger_drain(void *dst, size_t max_len);
+void syscall_logger_capture_entry(const char *syscall_name, int argc, const unsigned long args[]);
+void syscall_logger_capture_return(const char *syscall_name, int argc, const unsigned long args[], long retval);
 
 /* Helper for chunked comparison to avoid large stack buffers */
 #define CMP_CHUNK_SIZE 64

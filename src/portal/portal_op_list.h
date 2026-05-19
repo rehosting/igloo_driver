@@ -21,6 +21,9 @@
     X(unregister_uprobe, UNREGISTER_UPROBE) \
     X(register_syscall_hook, REGISTER_SYSCALL_HOOK) \
     X(unregister_syscall_hook, UNREGISTER_SYSCALL_HOOK) \
+    X(config_syscall_logger, CONFIG_SYSCALL_LOGGER) \
+    X(register_syscall_logger_schema, REGISTER_SYSCALL_LOGGER_SCHEMA) \
+    X(drain_syscall_log, DRAIN_SYSCALL_LOG) \
     X(register_signal_hook, REGISTER_SIGNAL_HOOK) \
     X(unregister_signal_hook, UNREGISTER_SIGNAL_HOOK) \
     X(ffi_exec, FFI_EXEC) \

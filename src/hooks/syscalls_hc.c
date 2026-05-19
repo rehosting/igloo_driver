@@ -21,6 +21,10 @@
 #include <linux/kallsyms.h>
 #include <linux/list.h>
 #include <linux/workqueue.h>
+#include <linux/vmalloc.h>
+#include <linux/mutex.h>
+
+extern u32 portal_interrupt;
 
 /* [ADD] Global counter to allow early exit if no hooks exist */
 atomic_t global_syscall_hook_count = ATOMIC_INIT(0);
@@ -48,6 +52,468 @@ EXPORT_SYMBOL(syscall_hook_lock);
 
 // Replace mutex with spinlock which is safe for atomic contexts
 DEFINE_SPINLOCK(syscall_hc_lock); // Keep commented out unless hypercall needs external locking
+
+struct syscall_log_slot {
+    u32 len;
+    u8 data[IGLOO_SYSCALL_LOG_MAX_RECORD_SIZE];
+};
+
+struct syscall_log_state {
+    bool enabled;
+    u32 string_limit;
+    u32 record_limit;
+    u32 doorbell_threshold;
+    bool doorbell_armed;
+    u32 head;
+    u32 tail;
+    u32 count;
+    u64 dropped[IGLOO_SYSCALL_LOG_DROP_MAX];
+    struct syscall_log_slot *slots;
+    spinlock_t lock;
+};
+
+struct syscall_log_seq_entry {
+    pid_t pid;
+    u64 seq;
+    bool in_use;
+};
+
+#define SYSCALL_LOG_SEQ_SLOTS 2048
+
+static struct syscall_log_state syscall_log = {
+    .enabled = false,
+    .string_limit = IGLOO_SYSCALL_LOG_DEFAULT_STRING_LIMIT,
+    .record_limit = IGLOO_SYSCALL_LOG_DEFAULT_RECORD_LIMIT,
+    .doorbell_threshold = 32,
+    .lock = __SPIN_LOCK_UNLOCKED(syscall_log.lock),
+};
+static struct syscall_logger_schema syscall_log_schemas[IGLOO_SYSCALL_LOG_MAX_SCHEMAS];
+static u32 syscall_log_schema_count;
+static DEFINE_SPINLOCK(syscall_log_schema_lock);
+static DEFINE_SPINLOCK(syscall_log_seq_lock);
+static struct syscall_log_seq_entry syscall_log_seq[SYSCALL_LOG_SEQ_SLOTS];
+static atomic64_t syscall_log_next_seq = ATOMIC64_INIT(1);
+static DEFINE_MUTEX(syscall_log_scratch_lock);
+static u8 syscall_log_scratch[IGLOO_SYSCALL_LOG_MAX_RECORD_SIZE];
+
+static void syscall_log_drop(enum syscall_log_drop_reason reason)
+{
+    unsigned long flags;
+
+    if (reason >= IGLOO_SYSCALL_LOG_DROP_MAX)
+        return;
+    spin_lock_irqsave(&syscall_log.lock, flags);
+    syscall_log.dropped[reason]++;
+    spin_unlock_irqrestore(&syscall_log.lock, flags);
+}
+
+static void syscall_log_ring_doorbell_locked(void)
+{
+    if (syscall_log.doorbell_threshold == 0)
+        return;
+    if (!syscall_log.doorbell_armed &&
+        syscall_log.count >= syscall_log.doorbell_threshold) {
+        WRITE_ONCE(portal_interrupt, READ_ONCE(portal_interrupt) + 1);
+        syscall_log.doorbell_armed = true;
+    }
+}
+
+static void syscall_log_commit(const u8 *record, u32 len)
+{
+    unsigned long flags;
+    struct syscall_log_slot *slot;
+
+    if (!syscall_log.slots || len == 0 ||
+        len > IGLOO_SYSCALL_LOG_MAX_RECORD_SIZE) {
+        syscall_log_drop(IGLOO_SYSCALL_LOG_DROP_OVERSIZED_RECORD);
+        return;
+    }
+
+    spin_lock_irqsave(&syscall_log.lock, flags);
+    if (syscall_log.count >= IGLOO_SYSCALL_LOG_DEFAULT_RING_SLOTS) {
+        syscall_log.dropped[IGLOO_SYSCALL_LOG_DROP_NO_SPACE]++;
+        spin_unlock_irqrestore(&syscall_log.lock, flags);
+        return;
+    }
+
+    slot = &syscall_log.slots[syscall_log.head];
+    memcpy(slot->data, record, len);
+    slot->len = len;
+    syscall_log.head = (syscall_log.head + 1) % IGLOO_SYSCALL_LOG_DEFAULT_RING_SLOTS;
+    syscall_log.count++;
+    syscall_log_ring_doorbell_locked();
+    spin_unlock_irqrestore(&syscall_log.lock, flags);
+}
+
+static void syscall_log_seq_store(pid_t pid, u64 seq)
+{
+    unsigned long flags;
+    u32 idx = (u32)pid % SYSCALL_LOG_SEQ_SLOTS;
+
+    spin_lock_irqsave(&syscall_log_seq_lock, flags);
+    syscall_log_seq[idx].pid = pid;
+    syscall_log_seq[idx].seq = seq;
+    syscall_log_seq[idx].in_use = true;
+    spin_unlock_irqrestore(&syscall_log_seq_lock, flags);
+}
+
+static u64 syscall_log_seq_take(pid_t pid)
+{
+    unsigned long flags;
+    u64 seq = 0;
+    u32 idx = (u32)pid % SYSCALL_LOG_SEQ_SLOTS;
+
+    spin_lock_irqsave(&syscall_log_seq_lock, flags);
+    if (syscall_log_seq[idx].in_use && syscall_log_seq[idx].pid == pid) {
+        seq = syscall_log_seq[idx].seq;
+        syscall_log_seq[idx].in_use = false;
+    }
+    spin_unlock_irqrestore(&syscall_log_seq_lock, flags);
+    return seq;
+}
+
+static bool syscall_log_get_schema(const char *syscall_name,
+                                   struct syscall_logger_schema *out)
+{
+    unsigned long flags;
+    const char *norm;
+    u32 i;
+
+    if (!syscall_name || !out)
+        return false;
+
+    norm = normalize_syscall_name(syscall_name);
+    spin_lock_irqsave(&syscall_log_schema_lock, flags);
+    for (i = 0; i < syscall_log_schema_count; i++) {
+        if (strcmp(syscall_log_schemas[i].name, norm) == 0) {
+            memcpy(out, &syscall_log_schemas[i], sizeof(*out));
+            spin_unlock_irqrestore(&syscall_log_schema_lock, flags);
+            return true;
+        }
+    }
+    spin_unlock_irqrestore(&syscall_log_schema_lock, flags);
+    return false;
+}
+
+static bool syscall_log_append_tlv(u8 *buf, u32 *off, u32 max_len,
+                                   u8 arg_index, u8 capture_type,
+                                   u16 tlv_flags, const void *data, u32 len)
+{
+    struct syscall_log_tlv_header tlv;
+
+    if (*off > max_len || len > max_len - *off ||
+        sizeof(tlv) > max_len - *off - len)
+        return false;
+
+    tlv.arg_index = arg_index;
+    tlv.capture_type = capture_type;
+    tlv.flags = tlv_flags;
+    tlv.len = len;
+    memcpy(buf + *off, &tlv, sizeof(tlv));
+    *off += sizeof(tlv);
+    if (len) {
+        memmove(buf + *off, data, len);
+        *off += len;
+    }
+    return true;
+}
+
+static bool syscall_log_append_cstring(u8 *buf, u32 *off, u32 max_len,
+                                       u8 arg_index, unsigned long user_ptr,
+                                       u8 capture_type)
+{
+    char *dst;
+    long copied;
+    u32 limit = min(syscall_log.string_limit, max_len - *off);
+    u16 flags = 0;
+    u32 len = 0;
+
+    if (!user_ptr) {
+        return syscall_log_append_tlv(buf, off, max_len, arg_index,
+                                      capture_type,
+                                      IGLOO_SYSCALL_ARG_F_NULL, NULL, 0);
+    }
+
+    if (limit <= sizeof(struct syscall_log_tlv_header))
+        return false;
+    limit -= sizeof(struct syscall_log_tlv_header);
+    dst = (char *)(buf + *off + sizeof(struct syscall_log_tlv_header));
+    copied = strncpy_from_user(dst, (const char __user *)user_ptr, limit);
+    if (copied < 0) {
+        syscall_log_append_tlv(buf, off, max_len, arg_index, capture_type,
+                               IGLOO_SYSCALL_ARG_F_FAULT, NULL, 0);
+        syscall_log_drop(IGLOO_SYSCALL_LOG_DROP_STRING_FAULT);
+        return true;
+    }
+    if ((u32)copied >= limit) {
+        flags |= IGLOO_SYSCALL_ARG_F_TRUNCATED;
+        len = limit;
+    } else {
+        len = (u32)copied;
+    }
+    return syscall_log_append_tlv(buf, off, max_len, arg_index, capture_type,
+                                  flags, dst, len);
+}
+
+static bool syscall_log_append_string_array(u8 *buf, u32 *off, u32 max_len,
+                                            u8 arg_index, unsigned long user_ptr)
+{
+    unsigned long elem = 0;
+    int i;
+
+    if (!user_ptr) {
+        return syscall_log_append_tlv(buf, off, max_len, arg_index,
+                                      IGLOO_SYSCALL_ARG_STRING_ARRAY,
+                                      IGLOO_SYSCALL_ARG_F_NULL, NULL, 0);
+    }
+
+    for (i = 0; i < 20; i++) {
+        if (copy_from_user(&elem,
+                           (const void __user *)(user_ptr + i * sizeof(elem)),
+                           sizeof(elem))) {
+            return syscall_log_append_tlv(buf, off, max_len, arg_index,
+                                          IGLOO_SYSCALL_ARG_STRING_ARRAY,
+                                          IGLOO_SYSCALL_ARG_F_FAULT, NULL, 0);
+        }
+        if (!elem) {
+            return syscall_log_append_tlv(buf, off, max_len, arg_index,
+                                          IGLOO_SYSCALL_ARG_STRING_ARRAY,
+                                          IGLOO_SYSCALL_ARG_F_ARRAY_END,
+                                          NULL, 0);
+        }
+        if (!syscall_log_append_cstring(buf, off, max_len, arg_index, elem,
+                                        IGLOO_SYSCALL_ARG_STRING_ARRAY))
+            return false;
+    }
+
+    return syscall_log_append_tlv(buf, off, max_len, arg_index,
+                                  IGLOO_SYSCALL_ARG_STRING_ARRAY,
+                                  IGLOO_SYSCALL_ARG_F_TRUNCATED, NULL, 0);
+}
+
+static bool syscall_log_append_buffer(u8 *buf, u32 *off, u32 max_len,
+                                      u8 arg_index, unsigned long user_ptr,
+                                      unsigned long requested_len,
+                                      u8 capture_type)
+{
+    u32 room;
+    u32 len;
+    u16 flags = 0;
+    char *dst;
+
+    if (!user_ptr) {
+        return syscall_log_append_tlv(buf, off, max_len, arg_index,
+                                      capture_type,
+                                      IGLOO_SYSCALL_ARG_F_NULL, NULL, 0);
+    }
+    if (*off + sizeof(struct syscall_log_tlv_header) >= max_len)
+        return false;
+    room = max_len - *off - sizeof(struct syscall_log_tlv_header);
+    len = min_t(u32, requested_len, min(syscall_log.string_limit, room));
+    if (requested_len > len)
+        flags |= IGLOO_SYSCALL_ARG_F_TRUNCATED;
+    dst = (char *)(buf + *off + sizeof(struct syscall_log_tlv_header));
+    if (copy_from_user(dst, (const void __user *)user_ptr, len)) {
+        syscall_log_append_tlv(buf, off, max_len, arg_index, capture_type,
+                               IGLOO_SYSCALL_ARG_F_FAULT, NULL, 0);
+        syscall_log_drop(IGLOO_SYSCALL_LOG_DROP_STRING_FAULT);
+        return true;
+    }
+    return syscall_log_append_tlv(buf, off, max_len, arg_index, capture_type,
+                                  flags, dst, len);
+}
+
+static void syscall_logger_capture(bool is_entry, const char *syscall_name,
+                                   int argc, const unsigned long args[],
+                                   long retval)
+{
+    struct syscall_logger_schema schema;
+    struct syscall_log_record_header *hdr;
+    u8 *buf = syscall_log_scratch;
+    u32 max_len;
+    u32 off;
+    int i;
+    u64 seq;
+    bool has_schema;
+
+    if (!READ_ONCE(syscall_log.enabled) || current->flags & PF_KTHREAD)
+        return;
+    if (!args)
+        return;
+
+    if (!mutex_trylock(&syscall_log_scratch_lock)) {
+        syscall_log_drop(IGLOO_SYSCALL_LOG_DROP_NO_SPACE);
+        return;
+    }
+
+    max_len = min(syscall_log.record_limit,
+                  (u32)IGLOO_SYSCALL_LOG_MAX_RECORD_SIZE);
+    if (max_len < sizeof(*hdr)) {
+        mutex_unlock(&syscall_log_scratch_lock);
+        syscall_log_drop(IGLOO_SYSCALL_LOG_DROP_OVERSIZED_RECORD);
+        return;
+    }
+
+    memset(buf, 0, sizeof(*hdr));
+    hdr = (struct syscall_log_record_header *)buf;
+    hdr->version = IGLOO_SYSCALL_LOG_VERSION;
+    hdr->type = is_entry ? IGLOO_SYSCALL_LOG_ENTRY : IGLOO_SYSCALL_LOG_RETURN;
+    hdr->pc = 0;
+    hdr->retval = is_entry ? 0 : retval;
+    hdr->pid = task_pid_nr(current);
+    hdr->tgid = task_tgid_nr(current);
+    hdr->argc = min(argc, IGLOO_SYSCALL_MAXARGS);
+    get_task_comm(hdr->comm, current);
+    if (syscall_name) {
+        strncpy(hdr->syscall_name, normalize_syscall_name(syscall_name),
+                sizeof(hdr->syscall_name) - 1);
+        hdr->syscall_name[sizeof(hdr->syscall_name) - 1] = '\0';
+    }
+    for (i = 0; i < hdr->argc; i++)
+        hdr->args[i] = args[i];
+
+    if (is_entry) {
+        seq = atomic64_inc_return(&syscall_log_next_seq);
+        syscall_log_seq_store(current->pid, seq);
+    } else {
+        seq = syscall_log_seq_take(current->pid);
+    }
+    hdr->seq = seq;
+    off = sizeof(*hdr);
+
+    has_schema = syscall_log_get_schema(syscall_name, &schema);
+    if (has_schema) {
+        int schema_argc = min_t(int, schema.argc, IGLOO_SYSCALL_MAXARGS);
+        for (i = 0; i < schema_argc && i < argc; i++) {
+            switch (schema.arg_types[i]) {
+            case IGLOO_SYSCALL_ARG_CSTRING:
+                if (!is_entry)
+                    break;
+                if (!syscall_log_append_cstring(buf, &off, max_len, i,
+                                                args[i],
+                                                IGLOO_SYSCALL_ARG_CSTRING))
+                    goto oversized;
+                break;
+            case IGLOO_SYSCALL_ARG_STRING_ARRAY:
+                if (!is_entry)
+                    break;
+                if (!syscall_log_append_string_array(buf, &off, max_len, i,
+                                                     args[i]))
+                    goto oversized;
+                break;
+            case IGLOO_SYSCALL_ARG_BUFFER:
+                if (is_entry && argc > 2 &&
+                    !syscall_log_append_buffer(buf, &off, max_len, i, args[i],
+                                               args[2],
+                                               IGLOO_SYSCALL_ARG_BUFFER))
+                    goto oversized;
+                break;
+            case IGLOO_SYSCALL_ARG_BUFFER_OUT:
+                if (!is_entry && retval > 0 &&
+                    !syscall_log_append_buffer(buf, &off, max_len, i, args[i],
+                                               min_t(unsigned long, args[2], retval),
+                                               IGLOO_SYSCALL_ARG_BUFFER_OUT))
+                    goto oversized;
+                break;
+            case IGLOO_SYSCALL_ARG_SOCKADDR:
+                syscall_log_drop(IGLOO_SYSCALL_LOG_DROP_UNSUPPORTED_SCHEMA);
+                break;
+            default:
+                break;
+            }
+        }
+    }
+
+    hdr->payload_len = off - sizeof(*hdr);
+    hdr->total_len = off;
+    syscall_log_commit(buf, off);
+    mutex_unlock(&syscall_log_scratch_lock);
+    return;
+
+oversized:
+    mutex_unlock(&syscall_log_scratch_lock);
+    syscall_log_drop(IGLOO_SYSCALL_LOG_DROP_OVERSIZED_RECORD);
+}
+
+void syscall_logger_configure(const struct syscall_logger_config *cfg)
+{
+    unsigned long flags;
+
+    if (!cfg)
+        return;
+    spin_lock_irqsave(&syscall_log.lock, flags);
+    syscall_log.enabled = cfg->enabled != 0;
+    syscall_log.string_limit = cfg->string_limit ?
+        min_t(u32, cfg->string_limit, IGLOO_SYSCALL_LOG_DEFAULT_STRING_LIMIT) :
+        IGLOO_SYSCALL_LOG_DEFAULT_STRING_LIMIT;
+    syscall_log.record_limit = cfg->record_limit ?
+        min_t(u32, cfg->record_limit, IGLOO_SYSCALL_LOG_MAX_RECORD_SIZE) :
+        IGLOO_SYSCALL_LOG_DEFAULT_RECORD_LIMIT;
+    syscall_log.doorbell_threshold = cfg->doorbell_threshold ?
+        cfg->doorbell_threshold : 1;
+    syscall_log.doorbell_armed = false;
+    spin_unlock_irqrestore(&syscall_log.lock, flags);
+}
+
+void syscall_logger_register_schema(const struct syscall_logger_schema *schema)
+{
+    unsigned long flags;
+    u32 i;
+
+    if (!schema || schema->name[0] == '\0')
+        return;
+
+    spin_lock_irqsave(&syscall_log_schema_lock, flags);
+    for (i = 0; i < syscall_log_schema_count; i++) {
+        if (strcmp(syscall_log_schemas[i].name, schema->name) == 0) {
+            memcpy(&syscall_log_schemas[i], schema, sizeof(*schema));
+            spin_unlock_irqrestore(&syscall_log_schema_lock, flags);
+            return;
+        }
+    }
+    if (syscall_log_schema_count < IGLOO_SYSCALL_LOG_MAX_SCHEMAS) {
+        memcpy(&syscall_log_schemas[syscall_log_schema_count], schema,
+               sizeof(*schema));
+        syscall_log_schemas[syscall_log_schema_count].name[SYSCALL_NAME_MAX_LEN - 1] = '\0';
+        syscall_log_schema_count++;
+    }
+    spin_unlock_irqrestore(&syscall_log_schema_lock, flags);
+}
+
+size_t syscall_logger_drain(void *dst, size_t max_len)
+{
+    unsigned long flags;
+    size_t off = 0;
+
+    if (!dst || !syscall_log.slots || max_len == 0)
+        return 0;
+
+    spin_lock_irqsave(&syscall_log.lock, flags);
+    while (syscall_log.count > 0 && off < max_len) {
+        struct syscall_log_slot *slot = &syscall_log.slots[syscall_log.tail];
+        if (slot->len > max_len - off)
+            break;
+        memcpy((u8 *)dst + off, slot->data, slot->len);
+        off += slot->len;
+        slot->len = 0;
+        syscall_log.tail = (syscall_log.tail + 1) % IGLOO_SYSCALL_LOG_DEFAULT_RING_SLOTS;
+        syscall_log.count--;
+    }
+    if (syscall_log.count < syscall_log.doorbell_threshold)
+        syscall_log.doorbell_armed = false;
+    spin_unlock_irqrestore(&syscall_log.lock, flags);
+    return off;
+}
+
+void syscall_logger_capture_entry(const char *syscall_name, int argc, const unsigned long args[])
+{
+    syscall_logger_capture(true, syscall_name, argc, args, 0);
+}
+
+void syscall_logger_capture_return(const char *syscall_name, int argc, const unsigned long args[], long retval)
+{
+    syscall_logger_capture(false, syscall_name, argc, args, retval);
+}
 
 /* Function to print syscall information */
 void print_syscall_info(const struct syscall_event *sc, const char *prefix);
@@ -505,6 +971,7 @@ static bool syscall_entry_handler(const char *syscall_name, long *skip_ret_val, 
     for (i = 0; i < IGLOO_SYSCALL_MAXARGS && i < argc; i++) {
         safe_args[i] = args[i];
     }
+    syscall_logger_capture_entry(syscall_name, argc, safe_args);
     return process_syscall_hooks(true, syscall_name, argc, safe_args, setter_func, skip_ret_val, 0);
 }
 
@@ -517,12 +984,18 @@ static long syscall_ret_handler(const char *syscall_name, long orig_ret, int arg
     if (current->flags & PF_KTHREAD) {
         return orig_ret;
     }
+    syscall_logger_capture_return(syscall_name, argc, args, orig_ret);
     return process_syscall_hooks(false, syscall_name, argc, args, NULL, NULL, orig_ret);
 }
 
 int syscalls_hc_init(void) {
     igloo_syscall_enter_t *enter_hook_ptr;
     igloo_syscall_return_t *ret_hook_ptr;
+    syscall_log.slots = vzalloc(sizeof(*syscall_log.slots) *
+                                IGLOO_SYSCALL_LOG_DEFAULT_RING_SLOTS);
+    if (!syscall_log.slots) {
+        printk(KERN_ERR "IGLOO: Failed to allocate syscall logger ring\n");
+    }
     // printk(KERN_EMERG "IGLOO: Initializing syscall hypercalls\n");
     // Dynamically look up and set igloo_syscall_enter_hook
 
