@@ -18,6 +18,7 @@
 
 #include "../args.h"
 #include "portal_procfs.h"
+#include "portal_mmap.h"
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
 #define IGLOO_NEEDS_PROC_PERMANENT_CLEAR 1
@@ -103,7 +104,7 @@ int igloo_proxy_mmap(struct file *file, struct vm_area_struct *vma)
 
     if (pe->mmap_phys_addr) {
         // NATIVE QEMU MMAP: Directly map the physical address assigned by Penguin
-        vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+        vma->vm_page_prot = igloo_mmap_phys_pgprot(vma->vm_page_prot);
         return remap_pfn_range(vma, vma->vm_start, pe->mmap_phys_addr >> PAGE_SHIFT,
                                size, vma->vm_page_prot);
     }

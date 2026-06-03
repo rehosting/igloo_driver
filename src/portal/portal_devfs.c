@@ -20,6 +20,7 @@
 #include <linux/blk-mq.h>
 
 #include "portal_devfs.h"
+#include "portal_mmap.h"
 
 // Request to create a directory in devfs
 struct portal_devfs_dir_req {
@@ -225,7 +226,7 @@ static int igloo_devfs_proxy_mmap(struct file *file, struct vm_area_struct *vma)
 
     if (pe->mmap_phys_addr) {
         // NATIVE QEMU MMAP: Directly map the physical address assigned by Penguin
-        vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+        vma->vm_page_prot = igloo_mmap_phys_pgprot(vma->vm_page_prot);
         return remap_pfn_range(vma, vma->vm_start, pe->mmap_phys_addr >> PAGE_SHIFT,
                                size, vma->vm_page_prot);
     }
