@@ -86,20 +86,6 @@ static DEFINE_SPINLOCK(devfs_dir_lock);
 // We need a class to trigger devtmpfs to create /dev nodes.
 static struct class *portal_class = NULL;
 
-/*
- * Dynamic devices should share one devtmpfs major. Allocating a new
- * dynamic major for every synthetic device makes /dev state unnecessarily
- * fragmented and differs from how a single virtual driver normally behaves.
- */
-#define PORTAL_DYNAMIC_DEV_MINORS 4096
-static DEFINE_MUTEX(portal_dynamic_chr_lock);
-static dev_t portal_dynamic_chr_devt;
-static atomic_t portal_dynamic_chr_minor = ATOMIC_INIT(0);
-
-static DEFINE_MUTEX(portal_dynamic_blk_lock);
-static int portal_dynamic_blk_major;
-static atomic_t portal_dynamic_blk_minor = ATOMIC_INIT(0);
-
 /* * -------------------------------------------------------------------------
  * Helpers
  * -------------------------------------------------------------------------
@@ -449,59 +435,6 @@ static void ensure_portal_class(void)
     }
 }
 
-static int alloc_portal_dynamic_chrdev(dev_t *devt)
-{
-    int ret;
-    int minor;
-
-    mutex_lock(&portal_dynamic_chr_lock);
-    if (!portal_dynamic_chr_devt) {
-        ret = alloc_chrdev_region(&portal_dynamic_chr_devt, 0,
-                                  PORTAL_DYNAMIC_DEV_MINORS, "portal");
-        if (ret < 0) {
-            mutex_unlock(&portal_dynamic_chr_lock);
-            return ret;
-        }
-    }
-
-    minor = atomic_inc_return(&portal_dynamic_chr_minor) - 1;
-    if (minor >= PORTAL_DYNAMIC_DEV_MINORS) {
-        mutex_unlock(&portal_dynamic_chr_lock);
-        return -ENOSPC;
-    }
-
-    *devt = MKDEV(MAJOR(portal_dynamic_chr_devt), minor);
-    mutex_unlock(&portal_dynamic_chr_lock);
-    return 0;
-}
-
-static int alloc_portal_dynamic_blkdev(int *major, int *minor)
-{
-    int ret;
-    int next_minor;
-
-    mutex_lock(&portal_dynamic_blk_lock);
-    if (!portal_dynamic_blk_major) {
-        ret = register_blkdev(0, "portal");
-        if (ret < 0) {
-            mutex_unlock(&portal_dynamic_blk_lock);
-            return ret;
-        }
-        portal_dynamic_blk_major = ret;
-    }
-
-    next_minor = atomic_inc_return(&portal_dynamic_blk_minor) - 1;
-    if (next_minor >= PORTAL_DYNAMIC_DEV_MINORS) {
-        mutex_unlock(&portal_dynamic_blk_lock);
-        return -ENOSPC;
-    }
-
-    *major = portal_dynamic_blk_major;
-    *minor = next_minor;
-    mutex_unlock(&portal_dynamic_blk_lock);
-    return 0;
-}
-
 /* * -------------------------------------------------------------------------
  * Directory Logic (New)
  * -------------------------------------------------------------------------
@@ -629,14 +562,14 @@ void handle_op_devfs_create_device(portal_region *mem_region)
      * ===================================================================== */
     if (pe->is_block) {
         int major = req->major;
-        int minor = req->minor;
-        bool fixed_blkdev_major = major >= 0;
+        int minor = req->major >= 0 ? req->minor : 0;
         
         // 1. Register Major
-        if (fixed_blkdev_major) {
+        if (major >= 0) {
             ret = register_blkdev(major, final_device_name);
         } else {
-            ret = alloc_portal_dynamic_blkdev(&major, &minor);
+            ret = register_blkdev(0, final_device_name);
+            if (ret >= 0) major = ret;
         }
         if (ret < 0) goto fail_alloc;
 
@@ -664,21 +597,21 @@ void handle_op_devfs_create_device(portal_region *mem_region)
             pe->gd = blk_mq_alloc_disk(&pe->tag_set, &lim, pe);
         }
         if (IS_ERR(pe->gd)) {
-            if (fixed_blkdev_major) unregister_blkdev(major, final_device_name);
+            unregister_blkdev(major, final_device_name);
             goto fail_alloc;
         }
         pe->gd->minors = 1;
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 14, 0)
         pe->gd = blk_mq_alloc_disk(&pe->tag_set, pe);
         if (IS_ERR(pe->gd)) {
-            if (fixed_blkdev_major) unregister_blkdev(major, final_device_name);
+            unregister_blkdev(major, final_device_name);
             goto fail_alloc;
         }
         pe->gd->minors = 1;
 #else
         pe->gd = alloc_disk(1); 
         if (!pe->gd) {
-            if (fixed_blkdev_major) unregister_blkdev(major, final_device_name);
+            unregister_blkdev(major, final_device_name);
             goto fail_alloc;
         }
         pe->gd->queue = blk_mq_init_queue(&pe->tag_set);
@@ -701,7 +634,7 @@ void handle_op_devfs_create_device(portal_region *mem_region)
         ret = add_disk(pe->gd);
         if (ret) {
             put_disk(pe->gd);
-            if (fixed_blkdev_major) unregister_blkdev(major, final_device_name);
+            unregister_blkdev(major, final_device_name);
             goto fail_alloc;
         }
 #else
@@ -713,14 +646,14 @@ void handle_op_devfs_create_device(portal_region *mem_region)
     } else {
         bool enable_default_mmap = (req->size > 0 || req->support_mmap);
 
-        bool fixed_chrdev_region = req->major >= 0;
+        bool dynamic_chrdev_region = req->major < 0;
 
-        if (fixed_chrdev_region) {
+        if (dynamic_chrdev_region) {
+            ret = alloc_chrdev_region(&devt, 0, 1, final_device_name);
+        } else {
             devt = MKDEV(req->major, req->minor);
             if (req->replace) unregister_chrdev_region(devt, 1);
             ret = register_chrdev_region(devt, 1, final_device_name);
-        } else {
-            ret = alloc_portal_dynamic_chrdev(&devt);
         }
 
         if (ret < 0) goto fail_alloc;
@@ -732,7 +665,7 @@ void handle_op_devfs_create_device(portal_region *mem_region)
         pe->cdev.owner = THIS_MODULE;
 
         if (cdev_add(&pe->cdev, devt, 1)) {
-            if (fixed_chrdev_region) unregister_chrdev_region(devt, 1);
+            unregister_chrdev_region(devt, 1);
             goto fail_alloc;
         }
 
@@ -749,7 +682,7 @@ void handle_op_devfs_create_device(portal_region *mem_region)
             list_del(&pe->list);
             spin_unlock(&devfs_entry_lock);
             cdev_del(&pe->cdev);
-            if (fixed_chrdev_region) unregister_chrdev_region(devt, 1);
+            unregister_chrdev_region(devt, 1);
             goto fail_alloc;
         }
     }
