@@ -4,6 +4,7 @@
 #include <linux/net.h>
 #include <linux/file.h>
 #include "portal_devfs.h"
+#include "portal_mmap.h"
 
 
 struct portal_anonfs_create_req {
@@ -44,7 +45,7 @@ static int igloo_anonfs_proxy_mmap(struct file *file, struct vm_area_struct *vma
     size_t size = vma->vm_end - vma->vm_start;
 
     if (pe && pe->mmap_phys_addr) {
-        vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+        vma->vm_page_prot = igloo_mmap_phys_pgprot(vma->vm_page_prot);
         return remap_pfn_range(vma, vma->vm_start, pe->mmap_phys_addr >> PAGE_SHIFT,
                                size, vma->vm_page_prot);
     }
