@@ -9,6 +9,7 @@
 #include <linux/socket.h>
 #include <linux/ipv6.h>
 #include <net/inet_sock.h>
+#include <net/tcp_states.h>
 #include "igloo.h"
 #include <linux/kallsyms.h>
 #include <linux/version.h>
@@ -91,26 +92,32 @@ void igloo_sock_release(struct socket *sock){
 		if (sk->sk_family == AF_INET) {
 			char buffer[23];
 			struct inet_sock *inet = inet_sk(sk);
-			port = ntohs(inet->inet_sport);      
-			if (port != 0){
-				__be32 ip = inet->inet_saddr;          
-				short is_stream = (sk->sk_type == SOCK_STREAM);
+			short is_stream = (sk->sk_type == SOCK_STREAM);
+			port = ntohs(inet->inet_sport);
+			// For TCP, only report listening sockets closing. Accepted and
+			// connected sockets share the listener's local port, so reporting
+			// their teardown would emit spurious release events for a service
+			// that is still listening.
+			if (port != 0 && (!is_stream || sk->sk_state == TCP_LISTEN)){
+				__be32 ip = inet->inet_saddr;
 				snprintf(buffer, sizeof(buffer), "%pI4:%u", &ip, port);
-				e = igloo_hypercall2(IGLOO_IPV4_RELEASE, (unsigned long)&buffer, (unsigned long)is_stream); 
+				e = igloo_hypercall2(IGLOO_IPV4_RELEASE, (unsigned long)&buffer, (unsigned long)is_stream);
 			}
 		}
 		else if (sk->sk_family == AF_INET6) {
 			char buffer[49];
 			struct inet_sock *inet = inet_sk(sk);
 			struct ipv6_pinfo *ipv6_s = inet6_sk(sk);
+			short is_stream = (sk->sk_type == SOCK_STREAM);
 			port = ntohs(inet->inet_sport);
 
-			if (port != 0){
+			// As above: for TCP only report listeners, not accepted/connected
+			// sockets that share the listener's local port.
+			if (port != 0 && (!is_stream || sk->sk_state == TCP_LISTEN)){
 				struct in6_addr *ip6 = &ipv6_s->saddr;
-				short is_stream = (sk->sk_type == SOCK_STREAM);
 
 				snprintf(buffer, sizeof(buffer), "[%pI6c]:%u", ip6, port);
-				
+
 				e = igloo_hypercall2(IGLOO_IPV6_RELEASE, (unsigned long)&buffer, (unsigned long)is_stream);
 			}
 		}
