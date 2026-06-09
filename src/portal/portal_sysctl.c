@@ -265,6 +265,95 @@ static struct ctl_table *igloo_find_sysctl_leaf(const char *dir_path, const char
 }
 
 
+// Returns true if `dir_path` (a sysctl-root-relative directory such as
+// "net/ipv4") already resolves to an existing sysctl directory. The empty path
+// denotes the sysctl root, which always exists.
+//
+// This walks the live sysctl tree using the same safe accessors as
+// igloo_find_sysctl_leaf(). It exists to answer a single question before we ask
+// the kernel to create a *new* sysctl entry: does its parent directory already
+// exist? Asking register_sysctl() to fabricate a brand-new directory hierarchy
+// is the operation that panics on old kernels (see the guard in
+// handle_op_sysctl_create_file), so we only ever do it under a parent we know
+// is real.
+static bool igloo_sysctl_dir_exists(const char *dir_path)
+{
+    struct igloo_ctl_table_root *sysctl_root;
+    struct igloo_ctl_dir *curr_dir = NULL;
+    struct ctl_table *curr_table = NULL;
+    struct ctl_table *entry;
+    struct ctl_table_header *head;
+    char path_copy[SYSCTL_MAX_PATH];
+    char *token, *rest;
+    bool is_net;
+
+    if (!dir_path || !dir_path[0])
+        return true; /* root always exists */
+
+    is_net = (strncmp(dir_path, "net/", 4) == 0 || strcmp(dir_path, "net") == 0);
+    if (is_net) {
+#ifdef CONFIG_SYSCTL
+        struct igloo_ctl_table_set *net_set = (struct igloo_ctl_table_set *)&init_net.sysctls;
+        curr_dir = &net_set->dir;
+#else
+        return false;
+#endif
+    } else {
+        sysctl_root = (struct igloo_ctl_table_root *)kallsyms_lookup_name("sysctl_table_root");
+        if (!sysctl_root) return false;
+        curr_dir = &sysctl_root->default_set.dir;
+    }
+
+    strncpy(path_copy, dir_path, sizeof(path_copy) - 1);
+    path_copy[sizeof(path_copy) - 1] = '\0';
+    rest = path_copy;
+
+    while ((token = strsep(&rest, "/")) != NULL) {
+        bool descended = false;
+
+        if (*token == '\0') continue;
+
+        entry = NULL;
+        head = NULL;
+        if (curr_dir) {
+            entry = igloo_find_entry_in_dir(&curr_dir->root, token, &head);
+        } else if (curr_table) {
+            struct ctl_table *t_ptr;
+            int i;
+            for (i = 0; ; i++) {
+                const char *pname;
+                t_ptr = &curr_table[i];
+                if (!igloo_safe_read_ptr(&t_ptr->procname, (void **)&pname)) break;
+                if (!pname) break;
+                if (igloo_namecmp(pname, strlen(pname), token, strlen(token)) == 0) {
+                    entry = t_ptr;
+                    break;
+                }
+            }
+        }
+
+        if (!entry || !S_ISDIR(entry->mode))
+            return false;
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
+        if (entry->child) {
+            curr_table = entry->child;
+            curr_dir = NULL;
+            descended = true;
+        }
+#endif
+        if (!descended && head) {
+            curr_dir = (struct igloo_ctl_dir *)head;
+            curr_table = NULL;
+            descended = true;
+        }
+        if (!descended)
+            return false;
+    }
+
+    return true;
+}
+
 void handle_op_sysctl_create_file(portal_region *mem_region)
 {
     struct portal_sysctl_create_req *req = (struct portal_sysctl_create_req *)PORTAL_DATA(mem_region);
@@ -294,6 +383,16 @@ void handle_op_sysctl_create_file(portal_region *mem_region)
     while (len > 0 && clean_name[len - 1] == '/') {
         clean_name[len - 1] = '\0';
         len--;
+    }
+
+    // Reject malformed paths before touching the sysctl machinery: a sysctl
+    // needs a non-empty leaf name, and the directory must not contain an empty
+    // component (an embedded "//"), which the kernel cannot turn into a ctl_dir.
+    if (clean_name[0] == '\0' || strstr(clean_dir, "//")) {
+        printk(KERN_WARNING "portal_sysctl: rejecting malformed sysctl path '%s/%s'\n",
+               clean_dir, clean_name);
+        mem_region->header.op = HYPER_RESP_WRITE_FAIL;
+        return;
     }
 
     entry = kzalloc(sizeof(*entry), GFP_KERNEL);
@@ -332,10 +431,30 @@ void handle_op_sysctl_create_file(portal_region *mem_region)
         }
 
         entry->replaced_leaf = existing_leaf;
-        entry->header = NULL; 
-        entry->table = NULL;  
+        entry->header = NULL;
+        entry->table = NULL;
         goto success;
     }
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+    // We are about to create a brand-new sysctl entry. On pre-5.0 kernels
+    // register_sysctl() panics (NULL deref in drop_sysctl_table()->rb_erase())
+    // when it has to create a new directory hierarchy and an intermediate
+    // component cannot be created -- e.g. anything under the filesystem-backed
+    // /proc/sys/fs/binfmt_misc node, which returns -EROFS and then faults in the
+    // cleanup path. Refuse to create an entry whose parent directory does not
+    // already exist instead of handing the kernel a doomed registration.
+    // Newer kernels return NULL from register_sysctl() and are handled by the
+    // !entry->header path below, so this guard is scoped to the affected versions.
+    if (clean_dir[0] && !igloo_sysctl_dir_exists(clean_dir)) {
+        printk(KERN_WARNING "portal_sysctl: refusing to create '%s/%s': parent sysctl directory does not exist\n",
+               clean_dir, clean_name);
+        kfree(entry->data_buffer);
+        kfree(entry);
+        mem_region->header.op = HYPER_RESP_WRITE_FAIL;
+        return;
+    }
+#endif
 
     table = kzalloc(sizeof(struct ctl_table) * 2, GFP_KERNEL);
     if (!table) {
