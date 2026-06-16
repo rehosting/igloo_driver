@@ -11,6 +11,8 @@
 #include <linux/version.h>
 #include <linux/kallsyms.h>
 #include <linux/file.h>        // Required for fput()
+#include <linux/poll.h>        // Required for poll_wait()/poll_table_struct/POLL* (issue #77)
+#include <linux/wait.h>        // Required for wait_queue_head_t/wake_up_interruptible (issue #77)
 #include <linux/shmem_fs.h>    // Required for shmem_kernel_file_setup()
 #include <linux/vmalloc.h>     // Required for kvzalloc/vzalloc()
 #include <linux/blkdev.h>
@@ -67,6 +69,16 @@ struct portal_devfs_entry {
     struct file *shm_file;
     uint64_t mmap_phys_addr;
     int (*python_release)(struct inode *, struct file *);
+
+    // poll() blocking support (issue #77): a poll()/select() reader parks on
+    // poll_wq when the Python-modeled poll reports "not ready"; a write that
+    // queues data on the host side wakes them. python_poll/python_write hold the
+    // Python-modeled fops so the poll/write proxies can forward to them (and the
+    // block queue_rq path can invoke python_write directly with a NULL file).
+    wait_queue_head_t poll_wq;
+    unsigned int (*python_poll)(struct file *, struct poll_table_struct *);
+    ssize_t (*python_write)(struct file *, const char __user *, size_t, loff_t *);
+
     char *name;
 };
 // Internal: Track created directories to reconstruct paths
@@ -290,22 +302,79 @@ static int igloo_devfs_proxy_mmap(struct file *file, struct vm_area_struct *vma)
     return ret;
 }
 
+/*
+ * poll proxy (issue #77): register the opener on the per-device wait queue so a
+ * "not ready" poll can actually block and be woken later, then defer the
+ * readiness mask to the Python-modeled poll. Without this, the f_op->poll fop
+ * was wired straight to the Python poll, which never called poll_wait(): a
+ * data-aware poll reporting "not ready" had no wait queue to sleep on, and a
+ * legacy always-ready poll made poll()->read() readers busy-loop on 0-byte
+ * reads. If no Python poll is modeled, preserve the legacy always-ready mask.
+ */
+static unsigned int igloo_devfs_proxy_poll(struct file *file, struct poll_table_struct *pt)
+{
+    struct inode *inode = file ? file_inode(file) : NULL;
+    struct portal_devfs_entry *pe;
+
+    if (!inode || !inode->i_cdev)
+        return POLLIN | POLLRDNORM | POLLOUT | POLLWRNORM;
+    pe = container_of(inode->i_cdev, struct portal_devfs_entry, cdev);
+    if (!pe)
+        return POLLIN | POLLRDNORM | POLLOUT | POLLWRNORM;
+
+    poll_wait(file, &pe->poll_wq, pt);
+
+    if (pe->python_poll)
+        return pe->python_poll(file, pt);
+    /* No data-aware poll modeled -> legacy always-ready behavior. */
+    return POLLIN | POLLRDNORM | POLLOUT | POLLWRNORM;
+}
+
+/*
+ * write proxy (issue #77): forward to the Python-modeled write, then wake any
+ * pollers blocked on this device. A write commonly queues a response on the
+ * host side (request/response serial-style devices), so after it returns the
+ * data-aware poll above will report the node readable; the wake lets a reader
+ * that was blocked in poll() pick it up promptly instead of waiting for a
+ * poll timeout. (The block queue_rq path calls python_write directly with a
+ * NULL file, so this proxy only runs for the char/VFS path.)
+ */
+static ssize_t igloo_devfs_proxy_write(struct file *file, const char __user *buf,
+                                       size_t len, loff_t *off)
+{
+    struct inode *inode = file ? file_inode(file) : NULL;
+    struct portal_devfs_entry *pe;
+    ssize_t ret;
+
+    if (!inode || !inode->i_cdev)
+        return -ENODEV;
+    pe = container_of(inode->i_cdev, struct portal_devfs_entry, cdev);
+    if (!pe || !pe->python_write)
+        return -ENODEV;
+
+    ret = pe->python_write(file, buf, len, off);
+    wake_up_interruptible(&pe->poll_wq);
+    return ret;
+}
+
 void igloo_convert_ops_to_fops(const struct igloo_dev_ops *ops, struct file_operations *out, bool enable_default_mmap)
 {
     memset(out, 0, sizeof(*out));
     out->owner = THIS_MODULE;
-    
+
     out->open = ops->open;
     out->read = ops->read;
     out->read_iter = ops->read_iter;
-    out->write = ops->write;
+    // Route writes through the proxy so a queued response wakes blocked pollers (issue #77).
+    out->write = igloo_devfs_proxy_write;
     out->write_iter = ops->write_iter;
     out->llseek = ops->lseek;
-    
+
     // NEW: Route release through our writeback proxy
-    out->release = igloo_devfs_proxy_release; 
-    
-    out->poll = ops->poll;
+    out->release = igloo_devfs_proxy_release;
+
+    // Route poll through the proxy so it can poll_wait() before consulting Python (issue #77).
+    out->poll = igloo_devfs_proxy_poll;
     out->unlocked_ioctl = ops->ioctl;
 #ifdef CONFIG_COMPAT
     out->compat_ioctl = ops->compat_ioctl;
@@ -385,8 +454,11 @@ static igloo_blk_status_t igloo_queue_rq(struct blk_mq_hw_ctx *hctx, const struc
         char *kaddr = kmap_atomic(bvec.bv_page) + bvec.bv_offset;
         
         if (rq_data_dir(req) == WRITE) {
-            if (pe->fops.write)
-                pe->fops.write(NULL, (const char __user *)kaddr, bvec.bv_len, &pos);
+            // Call the Python write directly: fops.write now points at the char-only
+            // proxy (issue #77), which dereferences `file` to find its device. The
+            // block path has no struct file, so bypass the proxy here.
+            if (pe->python_write)
+                pe->python_write(NULL, (const char __user *)kaddr, bvec.bv_len, &pos);
         } else {
             if (pe->fops.read)
                 pe->fops.read(NULL, (char __user *)kaddr, bvec.bv_len, &pos);
@@ -555,6 +627,11 @@ void handle_op_devfs_create_device(portal_region *mem_region)
     pe->name = kstrdup(req->name, GFP_KERNEL);
     pe->mmap_phys_addr = req->mmap_phys_addr;
     pe->python_release = req->ops.release;
+    // issue #77: keep the Python-modeled poll/write so the proxies can forward to
+    // them, and a wait queue for poll() blocking + wake-on-write.
+    pe->python_poll = req->ops.poll;
+    pe->python_write = req->ops.write;
+    init_waitqueue_head(&pe->poll_wq);
     pe->is_block = req->is_block;
     pe->mode = req->mode ? req->mode : 0666;
 
