@@ -365,16 +365,23 @@ void igloo_convert_ops_to_fops(const struct igloo_dev_ops *ops, struct file_oper
     out->open = ops->open;
     out->read = ops->read;
     out->read_iter = ops->read_iter;
-    // Route writes through the proxy so a queued response wakes blocked pollers (issue #77).
-    out->write = igloo_devfs_proxy_write;
+    // Default to the Python-modeled write. The char-device create path swaps in
+    // igloo_devfs_proxy_write so a queued response wakes blocked pollers (issue
+    // #77); the proxy resolves its entry via inode->i_cdev, so it must NOT be
+    // installed here — anon/sock files reuse this converter and have no cdev
+    // (i_cdev == NULL), which would make every write return -ENODEV.
+    out->write = ops->write;
     out->write_iter = ops->write_iter;
     out->llseek = ops->lseek;
 
     // NEW: Route release through our writeback proxy
     out->release = igloo_devfs_proxy_release;
 
-    // Route poll through the proxy so it can poll_wait() before consulting Python (issue #77).
-    out->poll = igloo_devfs_proxy_poll;
+    // Default to the Python-modeled poll. The char-device create path swaps in
+    // igloo_devfs_proxy_poll (poll_wait() on the per-device wait queue before
+    // consulting Python, issue #77); like the write proxy it is cdev-only, so it
+    // is installed in the char path rather than this shared converter.
+    out->poll = ops->poll;
     out->unlocked_ioctl = ops->ioctl;
 #ifdef CONFIG_COMPAT
     out->compat_ioctl = ops->compat_ioctl;
@@ -738,7 +745,14 @@ void handle_op_devfs_create_device(portal_region *mem_region)
 
         pe->devt = devt;
         igloo_convert_ops_to_fops(&req->ops, &pe->fops, enable_default_mmap);
-        
+
+        // issue #77: the poll/write proxies resolve their portal_devfs_entry via
+        // inode->i_cdev, so they are only valid for char devices. Install them
+        // here (not in the shared converter) so anon/sock files, which reuse the
+        // converter with no cdev, keep their direct Python write/poll.
+        pe->fops.write = igloo_devfs_proxy_write;
+        pe->fops.poll = igloo_devfs_proxy_poll;
+
         cdev_init(&pe->cdev, &pe->fops);
         pe->cdev.owner = THIS_MODULE;
 
