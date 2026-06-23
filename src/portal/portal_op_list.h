@@ -19,6 +19,8 @@
     X(write_file, WRITE_FILE) \
     X(register_uprobe, REGISTER_UPROBE) \
     X(unregister_uprobe, UNREGISTER_UPROBE) \
+    X(register_kprobe, REGISTER_KPROBE) \
+    X(unregister_kprobe, UNREGISTER_KPROBE) \
     X(register_syscall_hook, REGISTER_SYSCALL_HOOK) \
     X(unregister_syscall_hook, UNREGISTER_SYSCALL_HOOK) \
     X(register_portalcall_magic, REGISTER_PORTALCALL_MAGIC) \

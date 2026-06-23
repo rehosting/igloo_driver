@@ -7,6 +7,7 @@
 struct igloo_debug_config {
     bool portal;       // Enable debug for portal module
     bool uprobe;       // Enable debug for uprobe module
+    bool kprobe;       // Enable debug for kprobe module
     bool vma;          // Enable debug for VMA tracking
     bool syscall;      // Enable debug for syscall tracking
     bool osi;          // Enable debug for OSI features
@@ -21,6 +22,9 @@ extern struct igloo_debug_config igloo_debug;
 
 #define igloo_debug_uprobe(fmt, ...) \
     do { if (igloo_debug.uprobe) pr_emerg("IGLOO-UPROBE: " fmt, ##__VA_ARGS__); } while (0)
+
+#define igloo_debug_kprobe(fmt, ...) \
+    do { if (igloo_debug.kprobe) pr_emerg("IGLOO-KPROBE: " fmt, ##__VA_ARGS__); } while (0)
 
 #define igloo_debug_vma(fmt, ...) \
     do { if (igloo_debug.vma) pr_emerg("IGLOO-VMA: " fmt, ##__VA_ARGS__); } while (0)
