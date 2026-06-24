@@ -145,6 +145,7 @@ mkdir -p "$BUILD_OUTPUT_DIR/logs"
 # Run the container with proper environment variables and mounts
 docker run ${INTERACTIVE} --rm \
     -e RELEASE="${RELEASE}" \
+    -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
     -v $KERNEL_DEVEL_MOUNT_DIR:/kernel-devel:ro \
     -v $PWD:/app \
     -v $BUILD_OUTPUT_DIR:/output \
