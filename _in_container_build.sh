@@ -1,6 +1,19 @@
 #!/bin/bash
 set -eu
 
+# Re-own bind-mounted outputs to the host caller so artifacts/cache aren't left
+# root-owned on the host. Runs as root inside the container via an EXIT trap so
+# it fires on every exit path. Gated on a non-root HOST_UID, so CI (which may run
+# as root / not set these) is unaffected.
+fix_ownership() {
+  if [ -n "${HOST_UID:-}" ] && [ "${HOST_UID}" != "0" ]; then
+    chown -R "${HOST_UID}:${HOST_GID:-$HOST_UID}" \
+      /output \
+      /app/igloo_driver.tar.gz 2>/dev/null || true
+  fi
+}
+trap fix_ownership EXIT
+
 # Input parameters
 TARGETS="$1"         # Target architectures (space-separated)
 VERSIONS="$2"        # Kernel versions (space-separated)
