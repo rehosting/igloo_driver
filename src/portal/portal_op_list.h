@@ -46,4 +46,5 @@
     X(anonfs_create_file, ANONFS_CREATE_FILE) \
     X(sockfs_create_socket, SOCKFS_CREATE_SOCKET) \
     X(mtd_nuke, MTD_NUKE) \
-    X(mtd_create, MTD_CREATE)
+    X(mtd_create, MTD_CREATE) \
+    X(set_scope_enabled, SET_SCOPE_ENABLED)

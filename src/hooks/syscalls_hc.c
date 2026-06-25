@@ -17,6 +17,7 @@
 #include "syscalls_hc.h"
 #include "args.h"
 #include "portal/portal.h"
+#include "portal/scope.h"
 #include "igloo_hypercall_consts.h"
 #include <linux/kallsyms.h>
 #include <linux/list.h>
@@ -311,6 +312,9 @@ static inline bool hook_matches_syscall(struct kernel_syscall_hook *hook,
         if (strncmp(current->comm, hook->hook.comm_filter, TASK_COMM_LEN) != 0){
             return false;
         }
+    }
+    if (hook->hook.scope_filter_enabled && !igloo_in_scope(current)) {
+        return false;
     }
     // Unrolled argument filter checks for IGLOO_SYSCALL_MAXARGS == 6
     if (argc > 0) {

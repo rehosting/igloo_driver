@@ -64,7 +64,14 @@ struct syscall_hook {
     /* Process filtering */
     bool comm_filter_enabled;                       /* Enable process name filtering */
     char comm_filter[TASK_COMM_LEN];               /* Process name to match */
-    
+
+    /* Analysis scoping: when set, this hook only fires for the
+     * firmware-under-analysis process subtree (tasks outside the initial UTS
+     * namespace), skipping Penguin's own infrastructure. Logging (read-only)
+     * hooks set this; intervention hooks leave it clear so they still apply
+     * everywhere. */
+    bool scope_filter_enabled;
+
     /* Argument filtering with complex comparisons */
     struct value_filter arg_filters[IGLOO_SYSCALL_MAXARGS]; /* Argument filters */
     
