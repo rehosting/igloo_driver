@@ -121,25 +121,35 @@ int igloo_proxy_mmap(struct file *file, struct vm_area_struct *vma)
 #endif
         
         if (!IS_ERR(shm_file)) {
-            // kvzalloc introduced in 4.12. Fall back to vzalloc for older kernels.
+            // Seed the sparse shmem backing in bounded chunks. The mmap length is
+            // guest-controlled, so a single (k)vzalloc(size) is unbounded and fails on
+            // 32-bit donor kernels for large device mmaps (issue #79). igloo_fetch_mmap_page()
+            // honors the offset, so a fixed staging buffer suffices regardless of mmap length.
+            size_t stage_sz = (size < IGLOO_DEVFS_STAGE_SZ) ? size : (size_t)IGLOO_DEVFS_STAGE_SZ;
+            void *buffer;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
-            void *buffer = kvzalloc(size, GFP_KERNEL);
+            buffer = kvzalloc(stage_sz, GFP_KERNEL);
 #else
-            void *buffer = vzalloc(size);
+            buffer = vzalloc(stage_sz);
 #endif
             if (buffer) {
-                ssize_t bytes = igloo_fetch_mmap_page(file, buffer, 0, size);
-                if (bytes > 0) {
-                    loff_t pos = 0;
+                size_t off;
+                for (off = 0; off < size; off += stage_sz) {
+                    size_t chunk = (size - off < stage_sz) ? (size - off) : stage_sz;
+                    ssize_t bytes = igloo_fetch_mmap_page(file, buffer, off, chunk);
+                    if (bytes > 0) {
+                        loff_t pos = off;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
-                    kernel_write(shm_file, buffer, bytes, &pos);
+                        kernel_write(shm_file, buffer, bytes, &pos);
 #else
-                    // FIX: Use vfs_write to safely handle the write vs write_iter abstraction
-                    mm_segment_t old_fs = get_fs();
-                    set_fs(KERNEL_DS);
-                    vfs_write(shm_file, (char __user *)buffer, bytes, &pos);
-                    set_fs(old_fs);
+                        // FIX: Use vfs_write to safely handle the write vs write_iter abstraction
+                        mm_segment_t old_fs = get_fs();
+                        set_fs(KERNEL_DS);
+                        vfs_write(shm_file, (char __user *)buffer, bytes, &pos);
+                        set_fs(old_fs);
 #endif
+                    }
+                    if (bytes <= 0) break; // stop on short/failed fetch
                 }
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
                 kvfree(buffer);
