@@ -14,7 +14,6 @@
 #include <linux/kallsyms.h>
 #include <linux/version.h>
 #include "igloo_hypercall_consts.h"
-#include "portal/scope.h"
 
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0)
@@ -38,11 +37,9 @@ void igloo_sock_bind(struct socket *sock, struct sockaddr_storage *address){
 	char buffer[32];
 	int hrv = 1;
 	int i;
-	// Only report binds from the firmware-under-analysis subtree, not from
-	// Penguin infrastructure (vpnguin/console/etc.) that stays in the initial ns.
-	if (!igloo_in_scope(current)) {
-		return;
-	}
+	// netbinds always reports, for every process (including Penguin
+	// infrastructure such as vpnguin/console/gdbserver) -- bind visibility is
+	// not scoped to the firmware subtree.
 	mutex_lock(&bind_mutex);
 
 	if (address->ss_family == AF_INET) {
@@ -89,11 +86,7 @@ void igloo_sock_bind(struct socket *sock, struct sockaddr_storage *address){
  */
 void igloo_sock_release(struct socket *sock){
 	struct sock *sk = sock->sk;
-	// Mirror the bind gate: skip releases outside the firmware subtree so we
-	// don't emit release events for infra binds we never reported.
-	if (!igloo_in_scope(current)) {
-		return;
-	}
+	// Releases always report too, mirroring igloo_sock_bind (no scope gate).
 	mutex_lock(&release_mutex);
 
 	if (sk) {
