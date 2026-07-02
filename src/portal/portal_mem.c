@@ -5,6 +5,10 @@
 #include <linux/compat.h>        /* For CONFIG_COMPAT */
 #include <linux/version.h>
 #include <linux/pid_namespace.h>  /* For init_pid_ns / find_pid_ns */
+#include <linux/sched.h>          /* task_struct; get_task_mm/mmput (<4.11) */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,11,0)
+#include <linux/sched/mm.h>       /* get_task_mm / mmput (>=4.11) */
+#endif
 
 /* Helper function to determine if an address is in kernel space */
 bool igloo_is_kernel_addr(unsigned long addr)
@@ -103,6 +107,38 @@ struct task_struct *get_target_task_by_id(portal_region* mem_region)
         rcu_read_unlock();
     }
     return task;
+}
+
+struct mm_struct *get_target_task_mm(portal_region *mem_region, bool *is_current)
+{
+    pid_t target_pid = (pid_t)(mem_region->header.pid);
+    struct task_struct *task;
+    struct mm_struct *mm = NULL;
+
+    /*
+     * The bare get_target_task_by_id() returns an *unreferenced* task; callers
+     * that then touched task->mm directly and called access_remote_vm() could
+     * fault -- the mm may be a kernel-thread/exiting mm, or get reaped mid
+     * access (observed: access_remote_vm -> down_read on a stale mmap lock ->
+     * kernel Oops that panics init on the kill/signal path). Mirror fs/proc:
+     * hold rcu across both the pid lookup and get_task_mm(), which pins the mm
+     * (mm_users ref) and returns NULL for kernel threads / already-exited tasks.
+     * get_task_mm() only takes task_lock (a spinlock) and does not sleep, so it
+     * is safe inside the rcu read-side critical section. The returned mm stays
+     * live until the caller's mmput().
+     */
+    rcu_read_lock();
+    if (target_pid == CURRENT_PID_NUM)
+        task = current;
+    else
+        task = pid_task(find_pid_ns(target_pid, &init_pid_ns), PIDTYPE_PID);
+    if (task) {
+        if (is_current)
+            *is_current = (task == current);
+        mm = get_task_mm(task);
+    }
+    rcu_read_unlock();
+    return mm;
 }
 
 void handle_op_read(portal_region *mem_region)

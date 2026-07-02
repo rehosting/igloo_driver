@@ -560,22 +560,18 @@ void handle_op_osi_proc_mem(portal_region *mem_region)
 
 void handle_op_read_procargs(portal_region *mem_region)
 {
-    struct task_struct *task = get_target_task_by_id(mem_region);
-    struct mm_struct *mm = task ? task->mm : NULL;
+    bool is_current = false;
+    /* Pin the target's mm (get_task_mm) so access_remote_vm never runs against
+     * a kernel-thread/exiting/reaped mm -- see get_target_task_mm(). */
+    struct mm_struct *mm = get_target_task_mm(mem_region, &is_current);
     char *buf = PORTAL_DATA(mem_region);
     unsigned long arg_start, arg_end;
     size_t len = 0;
     int i;
     int ret;
 
-    igloo_debug_osi("igloo: Handling HYPER_OP_READ_PROCARGS (pid=%d, comm='%s')\n",
-                   task ? task->pid : -1, task ? task->comm : "NULL");
-
-    if (!task) {
-        igloo_debug_osi("igloo: No task found for pid %llu\n",
-                     (unsigned long long)(mem_region->header.addr));
-        goto fail;
-    }
+    igloo_debug_osi("igloo: Handling HYPER_OP_READ_PROCARGS (pid=%llu, is_current=%d)\n",
+                   (unsigned long long)(mem_region->header.pid), is_current);
 
     if (!mm || !mm->arg_end || !mm->arg_start || mm->arg_end <= mm->arg_start) {
         igloo_debug_osi("igloo: Invalid memory area for procargs\n");
@@ -595,9 +591,9 @@ void handle_op_read_procargs(portal_region *mem_region)
     }
 
     /* Read the arguments data - use different methods based on whether it's current task */
-    if (task != current) {
+    if (!is_current) {
         /* For other processes, use access_remote_vm */
-        igloo_debug_osi("igloo: Using access_remote_vm for process %d\n", task->pid);
+        igloo_debug_osi("igloo: Using access_remote_vm for target process\n");
         if (access_remote_vm(mm, arg_start, buf, len, FOLL_FORCE) != len) {
             igloo_debug_osi("igloo: Failed to read arguments area\n");
             goto fail;
@@ -641,9 +637,12 @@ void handle_op_read_procargs(portal_region *mem_region)
     mem_region->header.size = (len);
     mem_region->header.op = (HYPER_RESP_READ_OK);
     igloo_debug_osi("igloo: Read procargs: len=%zu\n", len);
+    mmput(mm);
     return;
 
 fail:
+    if (mm)
+        mmput(mm);
     snprintf(PORTAL_DATA(mem_region), CHUNK_SIZE, "UNKNOWN_PROCARGS");
     mem_region->header.size = (strlen(PORTAL_DATA(mem_region)));
     mem_region->header.op = (HYPER_RESP_READ_FAIL);
@@ -652,14 +651,16 @@ fail:
 
 void handle_op_read_procenv(portal_region *mem_region)
 {
-    struct task_struct *task = get_target_task_by_id(mem_region);
-    struct mm_struct *mm = task ? task->mm : NULL;
+    bool is_current = false;
+    /* Pin the target's mm (get_task_mm) so access_remote_vm never runs against
+     * a kernel-thread/exiting/reaped mm -- see get_target_task_mm(). */
+    struct mm_struct *mm = get_target_task_mm(mem_region, &is_current);
     unsigned long env_start, env_end, len;
     char *buf = PORTAL_DATA(mem_region);
     int ret;
 
-    igloo_debug_osi("igloo: Handling HYPER_OP_READ_PROCENV (pid=%d, comm='%s')\n",
-                   task ? task->pid : -1, task ? task->comm : "NULL");
+    igloo_debug_osi("igloo: Handling HYPER_OP_READ_PROCENV (pid=%llu, is_current=%d)\n",
+                   (unsigned long long)(mem_region->header.pid), is_current);
 
     if (!mm || !mm->env_end || !mm->env_start || mm->env_end <= mm->env_start) {
         goto fail;
@@ -676,9 +677,9 @@ void handle_op_read_procenv(portal_region *mem_region)
     }
 
     // Use different methods based on whether we're accessing current task or another task
-    if (task != current) {
+    if (!is_current) {
         // For other processes, use access_remote_vm
-        igloo_debug_osi("igloo: Using access_remote_vm for process %d\n", task->pid);
+        igloo_debug_osi("igloo: Using access_remote_vm for target process\n");
         ret = 0;
         if (access_remote_vm(mm, env_start, buf, len, FOLL_FORCE) != len) {
             igloo_debug_osi("igloo: access_remote_vm failed for procenv at %#lx (len %lu)\n",
@@ -716,9 +717,12 @@ void handle_op_read_procenv(portal_region *mem_region)
     mem_region->header.size = (len);
     mem_region->header.op = (HYPER_RESP_READ_OK);
     igloo_debug_osi("igloo: Read procenv from stack: '%s' (len=%lu)\n", buf, len);
+    mmput(mm);
     return;
 
 fail:
+    if (mm)
+        mmput(mm);
     snprintf(PORTAL_DATA(mem_region), CHUNK_SIZE, "UNKNOWN_PROCENV");
     mem_region->header.size = (strlen(PORTAL_DATA(mem_region)));
     mem_region->header.op = (HYPER_RESP_READ_FAIL);
