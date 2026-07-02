@@ -44,6 +44,12 @@ typedef void (*portal_op_handler)(portal_region *mem_region);
 // Helper function to get task based on pid from mem_region
 struct task_struct *get_target_task_by_id(portal_region *mem_region);
 
+// Safely acquire the target task's mm for remote memory access. Looks up the
+// task and pins its mm with get_task_mm() under rcu, so the returned mm stays
+// live until mmput(). Returns NULL for no task / kernel thread / exiting task.
+// When non-NULL and is_current is provided, *is_current reflects task==current.
+struct mm_struct *get_target_task_mm(portal_region *mem_region, bool *is_current);
+
 // Generate handler prototypes
 #define X(lower, upper) void handle_op_##lower(portal_region *mem_region);
 PORTAL_OP_LIST
