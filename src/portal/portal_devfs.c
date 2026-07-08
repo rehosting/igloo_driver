@@ -515,6 +515,50 @@ static void ensure_portal_class(void)
     }
 }
 
+/*
+ * Shared dynamic char-device region.
+ *
+ * A device registered with major < 0 wants a kernel-assigned device number.
+ * The naive approach — alloc_chrdev_region() per device — burns one whole
+ * MAJOR each time, and the kernel only has ~234 free majors. Firmware that
+ * models many /dev nodes (e.g. RouterOS opens /dev/log%d and we enumerate
+ * /dev/log0..255) exhausted that pool, so every device past the limit failed
+ * to register with "kernel returned 0".
+ *
+ * Instead, reserve majors in blocks and hand out one MINOR per device. A
+ * single major then covers IGLOO_DYN_MINORS devices, and we allocate a fresh
+ * block only when the current one fills, lifting the effective limit from
+ * ~234 devices to ~234 * IGLOO_DYN_MINORS.
+ */
+#define IGLOO_DYN_MINORS 256
+static DEFINE_MUTEX(igloo_dyn_lock);
+static dev_t igloo_dyn_base;          /* MKDEV(major, 0) of the current block */
+static unsigned int igloo_dyn_count;  /* minors reserved in the current block */
+static unsigned int igloo_dyn_used;   /* minors handed out from the block     */
+
+static int igloo_alloc_dynamic_devt(dev_t *out)
+{
+    int ret = 0;
+
+    mutex_lock(&igloo_dyn_lock);
+    if (igloo_dyn_used >= igloo_dyn_count) {
+        dev_t base;
+
+        ret = alloc_chrdev_region(&base, 0, IGLOO_DYN_MINORS, "igloo_devfs");
+        if (ret < 0) {
+            mutex_unlock(&igloo_dyn_lock);
+            return ret;
+        }
+        igloo_dyn_base = base;
+        igloo_dyn_count = IGLOO_DYN_MINORS;
+        igloo_dyn_used = 0;
+    }
+    *out = MKDEV(MAJOR(igloo_dyn_base), MINOR(igloo_dyn_base) + igloo_dyn_used);
+    igloo_dyn_used++;
+    mutex_unlock(&igloo_dyn_lock);
+    return 0;
+}
+
 /* * -------------------------------------------------------------------------
  * Directory Logic (New)
  * -------------------------------------------------------------------------
@@ -734,7 +778,9 @@ void handle_op_devfs_create_device(portal_region *mem_region)
         bool dynamic_chrdev_region = req->major < 0;
 
         if (dynamic_chrdev_region) {
-            ret = alloc_chrdev_region(&devt, 0, 1, final_device_name);
+            // Hand out a MINOR from a shared major block rather than burning a
+            // whole major per device (see igloo_alloc_dynamic_devt).
+            ret = igloo_alloc_dynamic_devt(&devt);
         } else {
             devt = MKDEV(req->major, req->minor);
             if (req->replace) unregister_chrdev_region(devt, 1);
@@ -757,7 +803,9 @@ void handle_op_devfs_create_device(portal_region *mem_region)
         pe->cdev.owner = THIS_MODULE;
 
         if (cdev_add(&pe->cdev, devt, 1)) {
-            unregister_chrdev_region(devt, 1);
+            // A shared-region minor belongs to a larger reserved block; only
+            // standalone (static-major) registrations own their region.
+            if (!dynamic_chrdev_region) unregister_chrdev_region(devt, 1);
             goto fail_alloc;
         }
 
@@ -774,7 +822,7 @@ void handle_op_devfs_create_device(portal_region *mem_region)
             list_del(&pe->list);
             spin_unlock(&devfs_entry_lock);
             cdev_del(&pe->cdev);
-            unregister_chrdev_region(devt, 1);
+            if (!dynamic_chrdev_region) unregister_chrdev_region(devt, 1);
             goto fail_alloc;
         }
     }
