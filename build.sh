@@ -142,12 +142,41 @@ BUILD_OUTPUT_DIR="$(pwd)/cache/build"
 mkdir -p "$BUILD_OUTPUT_DIR/kernels"
 mkdir -p "$BUILD_OUTPUT_DIR/logs"
 
+# Normally dockerd shares this script's mount namespace, so a bind-mount source
+# path means the same thing to the daemon as to us. Under a shared per-node
+# daemon (e.g. rehosting CI's shared-docker runners) it does NOT: the daemon
+# can't see this runner's per-pod workspace under /home/runner/_work, so
+# "-v $PWD:/app" would mount an empty dir and the build would fail with
+# "/app/_in_container_build.sh: No such file". The runner exports
+# PENGUIN_HOST_MOUNT_FROM / PENGUIN_HOST_MOUNT_TO (the same mechanism penguin's
+# wrapper uses) giving the daemon-visible location of that workspace.
+#
+# rewrite_mount() rewrites a bind source ONLY when BOTH env vars are set and the
+# path is under _FROM. When they're unset — every local build and every
+# GitHub-hosted runner — it returns the path unchanged, so behaviour is
+# identical to before. All three mounts here (kernel-devel extract, $PWD, and
+# the build output) live under this workspace, so all three are rewritten; an
+# absolute --kernel-devel-path outside _FROM is left as-is.
+rewrite_mount() {
+    local path="$1"
+    if [[ -n "$PENGUIN_HOST_MOUNT_FROM" && -n "$PENGUIN_HOST_MOUNT_TO" \
+          && "$path" == "$PENGUIN_HOST_MOUNT_FROM"* ]]; then
+        printf '%s' "${PENGUIN_HOST_MOUNT_TO}${path#"$PENGUIN_HOST_MOUNT_FROM"}"
+    else
+        printf '%s' "$path"
+    fi
+}
+
+KERNEL_DEVEL_MOUNT_SRC="$(rewrite_mount "$KERNEL_DEVEL_MOUNT_DIR")"
+APP_MOUNT_SRC="$(rewrite_mount "$PWD")"
+BUILD_OUTPUT_MOUNT_SRC="$(rewrite_mount "$BUILD_OUTPUT_DIR")"
+
 # Run the container with proper environment variables and mounts
 docker run ${INTERACTIVE} --rm \
     -e RELEASE="${RELEASE}" \
     -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
-    -v $KERNEL_DEVEL_MOUNT_DIR:/kernel-devel:ro \
-    -v $PWD:/app \
-    -v $BUILD_OUTPUT_DIR:/output \
+    -v "$KERNEL_DEVEL_MOUNT_SRC":/kernel-devel:ro \
+    -v "$APP_MOUNT_SRC":/app \
+    -v "$BUILD_OUTPUT_MOUNT_SRC":/output \
     $DOCKER_IMAGE \
     bash -c "/app/_in_container_build.sh \"${TARGETS}\" \"${VERSIONS}\" /kernel-devel /app/src /output"
