@@ -200,6 +200,10 @@ static inline void fill_handler(struct syscall_event *args, int argc, const unsi
     }
 
     args->task = current;
+    // Denormalize identity so host-side hooks (e.g. process-tree exit tracking)
+    // can attribute the event without a separate OSI_PROC portal round-trip.
+    args->pid = task_pid_nr(current);
+    args->create_time = current->start_time;
     args->retval = 0; // Initialize to 0, will be set by hypercall
 
     regs = task_pt_regs(current);

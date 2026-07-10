@@ -268,6 +268,99 @@ void handle_op_osi_proc_handles(portal_region *mem_region)
     mem_region->header.op = (HYPER_RESP_READ_OK);
 }
 
+/*
+ * handle_op_osi_proc_all: kernel-side whole-process-tree walk.
+ *
+ * Returns a slim osi_proc_node (pid, ppid, create_time, ids, inline comm) for
+ * every user process in a single RCU-consistent pass, instead of the host
+ * issuing one HYPER_OP_OSI_PROC per pid. This turns a tree snapshot from 1+N
+ * portal round-trips into ceil(N / nodes-per-page) and, because the walk holds
+ * rcu_read_lock() throughout, yields a single coherent snapshot with no
+ * host-side tear between per-pid reads.
+ *
+ * Response layout: [osi_result_header][osi_proc_node * result_count].
+ * Records are fixed-size with comm inlined (no string pool), so ~72 fit a page.
+ *
+ * Pagination: mem_region->header.addr carries the number of user processes the
+ * host has already consumed (skip); total_count is the true count so the host
+ * knows when to stop. comm comes from task->comm (kernel memory) only -- like
+ * HYPER_OP_OSI_PROC this never touches userspace, so it is safe against
+ * exiting/mm-less contexts. Kernel threads (!mm) are skipped (that is slice 2).
+ */
+void handle_op_osi_proc_all(portal_region *mem_region)
+{
+    struct task_struct *task;
+    int count = 0;         /* nodes filled into this page */
+    int total_count = 0;   /* all user procs (for host pagination) */
+    int skip = 0;          /* procs already consumed by the host */
+    size_t max_nodes;
+    char *data_buf = PORTAL_DATA(mem_region);
+    struct osi_result_header *header = (struct osi_result_header *)data_buf;
+    struct osi_proc_node *node_arr;
+
+    skip = (int)(mem_region->header.addr);
+    if (skip < 0) {
+        skip = 0;
+    }
+
+    igloo_debug_osi("igloo: Handling HYPER_OP_OSI_PROC_ALL skip=%d\n", skip);
+
+    max_nodes = (CHUNK_SIZE - sizeof(struct osi_result_header)) /
+                sizeof(struct osi_proc_node);
+    if (max_nodes == 0) {
+        max_nodes = 1;
+    }
+
+    header->result_count = 0;
+    header->total_count = 0;
+    node_arr = (struct osi_proc_node *)(data_buf + sizeof(struct osi_result_header));
+
+    rcu_read_lock();
+    for_each_process(task) {
+        struct mm_struct *mm = task->mm;
+        struct osi_proc_node *node;
+        size_t name_len;
+        int ord;
+
+        if (!mm) {
+            continue; /* user processes only; kthreads are slice 2 */
+        }
+
+        ord = total_count;   /* 0-based ordinal among user procs */
+        total_count++;
+
+        if (ord < skip || (size_t)count >= max_nodes) {
+            continue;        /* already delivered, or this page is full */
+        }
+
+        node = &node_arr[count];
+        node->pid = (task->pid);
+        node->ppid = (task->real_parent ? task->real_parent->pid : 0);
+        node->create_time = (task->start_time);
+        node->uid = (task->cred->uid.val);
+        node->gid = (task->cred->gid.val);
+        node->euid = (task->cred->euid.val);
+        node->egid = (task->cred->egid.val);
+
+        name_len = strnlen(task->comm, sizeof(node->comm) - 1);
+        memcpy(node->comm, task->comm, name_len);
+        node->comm[name_len] = '\0';
+
+        count++;
+    }
+    rcu_read_unlock();
+
+    header->result_count = (count);
+    header->total_count = (total_count);
+
+    igloo_debug_osi("igloo: OSI_PROC_ALL returning %d procs (skip=%d total=%d)\n",
+                    count, skip, total_count);
+
+    mem_region->header.size = (sizeof(struct osi_result_header) +
+                               (count * sizeof(struct osi_proc_node)));
+    mem_region->header.op = (HYPER_RESP_READ_OK);
+}
+
 void handle_op_osi_proc_exe(portal_region *mem_region)
 {
     struct task_struct *task;

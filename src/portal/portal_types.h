@@ -92,6 +92,25 @@ struct osi_proc {
     uint64_t start_time;
 };
 
+/*
+ * Slim per-process record for the bulk process-tree walk
+ * (handle_op_osi_proc_all). Purpose-built for slice-1 tree()/get(): identity
+ * + genealogy + ids only, with comm inlined (no string pool) so records are
+ * fixed-size and densely packed (~72 per page vs ~18 for full osi_proc).
+ * TASK_COMM_LEN is 16; keep the field literal so the host ABI is stable
+ * regardless of the guest kernel's TASK_COMM_LEN.
+ */
+struct osi_proc_node {
+    uint64_t pid;
+    uint64_t ppid;
+    uint64_t create_time;   // task->start_time; stable across execve (identity)
+    uint32_t uid;
+    uint32_t gid;
+    uint32_t euid;
+    uint32_t egid;
+    char comm[16];          // NUL-padded task->comm (truncated to 15 + NUL)
+};
+
 // File descriptor entry structure for handle_op_read_fds
 struct osi_fd_entry {
     uint64_t fd;                 // File descriptor number

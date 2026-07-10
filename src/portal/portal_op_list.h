@@ -7,6 +7,7 @@
     X(exec, EXEC) \
     X(osi_proc, OSI_PROC) \
     X(osi_proc_handles, OSI_PROC_HANDLES) \
+    X(osi_proc_all, OSI_PROC_ALL) \
     X(osi_mappings, OSI_MAPPINGS) \
     X(osi_proc_mem, OSI_PROC_MEM) \
     X(osi_proc_exe, OSI_PROC_EXE) \
