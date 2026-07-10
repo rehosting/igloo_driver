@@ -86,6 +86,11 @@ struct syscall_event {
     struct task_struct *task;          /* Task pointer */
     struct pt_regs *regs;              /* Pointer to current registers */
     long retval;                       /* Return value */
+    uint64_t pid;                      /* current->pid, denormalized so the host
+                                        * can identify the task without a
+                                        * separate OSI_PROC round-trip */
+    uint64_t create_time;              /* current->start_time (process identity,
+                                        * stable across execve) */
     u32 argc;                          /* Number of arguments */
     bool skip_syscall;                 /* Flag to skip syscall execution */
     char syscall_name[SYSCALL_NAME_MAX_LEN]; /* Name of syscall (embedded in structure) */
