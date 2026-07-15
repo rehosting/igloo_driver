@@ -199,6 +199,17 @@ void handle_op_mtd_create(portal_region *mem_region)
     mtd->size = req_total_size;
     mtd->erasesize = req_erasesize;
     mtd->writesize = req_writesize;
+    /*
+     * UBI validates the write-buffer size (max_write_size): it must be
+     * >= min_io_size (writesize), a multiple of it, and a power of 2
+     * (see ubi_attach_mtd_dev() in drivers/mtd/ubi/build.c). We previously
+     * left writebufsize at 0, so attaching UBI to one of these devices failed
+     * with "ubi_attach_mtd_dev: bad write buffer size 0 for N min. I/O unit".
+     * Setting it to the write (page) size lets UBI/UBIFS attach to
+     * hyperfile-backed MTD partitions, which vendor firmware relies on for
+     * UBI-mounted nvram/config partitions.
+     */
+    mtd->writebufsize = req_writesize;
     mtd->oobsize = req->is_nand ? req->oob_size : 0;
     mtd->owner = THIS_MODULE;
     mtd->priv = entry;
