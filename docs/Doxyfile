@@ -1,0 +1,72 @@
+# Doxygen configuration for igloo_driver.
+#
+# We only want the XML backend: Breathe (in conf.py) consumes the XML and
+# Sphinx renders the HTML/PDF. No standalone Doxygen HTML is produced.
+#
+# This file is driven by conf.py, which sets OUTPUT_DIRECTORY / INPUT via
+# environment overrides so a bare `sphinx-build docs/ _build/` is fully
+# self-contained (Doxygen runs first, then Sphinx). See docs/conf.py.
+
+PROJECT_NAME           = "igloo_driver"
+PROJECT_BRIEF          = "In-guest kernel agent for IGLOO / Penguin rehosting"
+
+# INPUT and OUTPUT_DIRECTORY are overridden from conf.py via the environment
+# (Doxygen expands $(VAR) at parse time). Defaults keep manual runs working
+# from the docs/ directory.
+INPUT                  = $(DOXYGEN_INPUT)
+OUTPUT_DIRECTORY       = $(DOXYGEN_OUTPUT)
+
+RECURSIVE              = YES
+FILE_PATTERNS          = *.c *.h
+
+# `X` is the X-macro helper redefined in several headers (portal_op_list.h
+# consumers). Documenting it produces a spurious "Duplicate C declaration"
+# across files and carries no reference value — drop it.
+EXCLUDE_SYMBOLS        = X
+
+# The source is only sparsely commented, so extract every declaration — a
+# signature-level reference is still useful, and documented symbols get their
+# prose on top. Undocumented members are included too.
+EXTRACT_ALL            = YES
+EXTRACT_STATIC         = YES
+EXTRACT_PRIVATE        = YES
+EXTRACT_LOCAL_CLASSES  = YES
+
+# XML only; Breathe reads this.
+GENERATE_HTML          = NO
+GENERATE_LATEX         = NO
+GENERATE_XML           = YES
+XML_PROGRAMLISTING     = YES
+
+# Quiet: warnings about undocumented members would be pure noise here.
+QUIET                  = YES
+WARNINGS               = NO
+WARN_IF_UNDOCUMENTED   = NO
+WARN_IF_DOC_ERROR      = YES
+WARN_NO_PARAMDOC       = NO
+
+# Preprocessing. The portal op list is an X-macro; we do NOT try to expand it
+# (the generated handle_op_* prototypes are cataloged by hand in portal.md,
+# which reads far better than an expanded macro dump). Plain enums, structs and
+# functions are extracted literally.
+ENABLE_PREPROCESSING   = YES
+# Expand ONLY the predefined macros below (not the X-macro op list). This lets
+# us strip kernel sparse annotations (__user etc.) that the Sphinx C domain
+# cannot parse in function-pointer members, while leaving PORTAL_OP_LIST intact.
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = YES
+SEARCH_INCLUDES        = NO
+PREDEFINED             = __user= \
+                         __kernel= \
+                         __iomem= \
+                         __force= \
+                         __rcu= \
+                         __must_check= \
+                         __maybe_unused=
+
+# Keep the layout arch-neutral: the per-arch hypercall asm in ehypercall.h is
+# guarded by CONFIG_* — define none so every branch's declaration is visible in
+# the parse (Doxygen shows the guarded blocks as documented source regardless).
+
+OPTIMIZE_OUTPUT_FOR_C  = YES
+TYPEDEF_HIDES_STRUCT   = YES

@@ -1,0 +1,13 @@
+# Documentation build dependencies for igloo_driver.
+# Used by the docs CI workflow and for local builds:
+#   python3 -m venv .venv && . .venv/bin/activate
+#   pip install -r docs/requirements.txt
+#   sphinx-build docs/ docs/_build/html   # (needs `doxygen` on PATH too)
+sphinx
+myst-parser
+furo
+breathe
+sphinx-copybutton
+sphinxemoji
+sphinx-notfound-page
+linkify-it-py

@@ -1,0 +1,130 @@
+name: Docs
+
+# Documentation (Sphinx HTML) build + dual publish, adapted from Penguin's
+# docs.yaml.
+#
+# Difference from Penguin: Penguin builds its docs from a live runtime image
+# (its Sphinx run introspects live Python plugins), so it triggers via
+# `workflow_run` after the container publish. igloo_driver is a pure C kernel
+# module with no runtime doc path — the docs are a plain `sphinx-build` of
+# docs/ (Doxygen extracts the C API; see docs/conf.py). That build depends only
+# on docs/ + src/, NOT on the (heavy, multi-arch) module build, so we trigger
+# directly on pushes to main that touch docs, plus manual dispatch. This keeps
+# docs decoupled from the module release, matching Penguin's intent.
+#
+# The deploy_static job is lifted almost verbatim from Penguin: it publishes the
+# rendered HTML to BOTH GitHub Pages and a generated-only `docs` branch.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "README.md"
+      - "src/**"
+      - ".github/workflows/docs.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # force-push the rendered HTML to the `docs` branch
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "docs"
+  cancel-in-progress: false
+
+jobs:
+  build_docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Doxygen
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y doxygen
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install documentation dependencies
+        run: pip install -r docs/requirements.txt
+
+      - name: Build HTML docs
+        run: |
+          # conf.py runs Doxygen itself, so a bare sphinx-build is
+          # self-contained. -W turns warnings into errors to keep the docs
+          # honest (the build is currently warning-clean).
+          sphinx-build -b html -W --keep-going docs docs/_build/html
+          tar -czvf docs.tar.gz -C docs/_build/html .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: html
+          path: docs.tar.gz
+
+  deploy_static:
+    needs: build_docs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # force-push the rendered HTML to the `docs` branch
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: html
+      - name: Unzip HTML
+        run: |
+          mkdir html_content
+          tar -xvf docs.tar.gz -C html_content
+
+      # Also publish the rendered site to a `docs` branch so it can be cloned
+      # and served directly (git clone --branch docs --depth 1 …), independent
+      # of the GitHub Pages artifact deploy below. force_orphan keeps `docs` as a
+      # single-commit, generated-only branch with no shared history — never
+      # hand-edit it. peaceiris disables Jekyll (drops a .nojekyll) by default,
+      # which Sphinx's `_static/` dirs require.
+      - name: Publish HTML to the docs branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./html_content
+          publish_branch: docs
+          force_orphan: true
+
+      # A re-run does NOT clear artifacts uploaded by a prior attempt.
+      # upload-pages-artifact always names its artifact "github-pages", so a
+      # re-run leaves 2+ identically-named artifacts and deploy-pages@v4 aborts
+      # with "Multiple artifacts named github-pages were unexpectedly found".
+      # Delete any stale one first so exactly one exists at deploy time.
+      - name: Delete stale github-pages artifacts from prior attempts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ids=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
+            --paginate --jq '.artifacts[] | select(.name=="github-pages") | .id')
+          for id in $ids; do
+            echo "Deleting stale github-pages artifact $id"
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}" || true
+          done
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'html_content'
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
