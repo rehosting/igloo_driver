@@ -145,54 +145,67 @@ static void igloo_devfs_flush_shm_to_hypervisor(struct file *file, struct portal
 {
     void *buffer;
     loff_t size;
-    ssize_t bytes;
-    loff_t pos = 0;
+    loff_t off;
+    size_t stage_sz;
 
     if (!pe || !pe->shm_file) return;
     if (!file->f_op || !file->f_op->write) return; // Python didn't provide a write hook
 
     mutex_lock(&pe->shm_lock);
-    
+
     // Get the exact size of the shared memory file
     size = i_size_read(file_inode(pe->shm_file));
     if (size <= 0) goto unlock;
 
+    // Flush back in bounded chunks. The mmap length is guest-controlled, so a single
+    // (k)vzalloc(size) is an unbounded allocation that fails on 32-bit donor kernels for
+    // large device mmaps (vmalloc space is only ~128-240 MB) and lets a guest force huge
+    // kernel allocations on demand. A fixed staging buffer keeps this O(1) in kernel memory.
+    stage_sz = (size < (loff_t)IGLOO_DEVFS_STAGE_SZ) ? (size_t)size : IGLOO_DEVFS_STAGE_SZ;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
-    buffer = kvzalloc(size, GFP_KERNEL);
+    buffer = kvzalloc(stage_sz, GFP_KERNEL);
 #else
-    buffer = vzalloc(size);
+    buffer = vzalloc(stage_sz);
 #endif
+    if (!buffer) goto unlock;
 
-    if (buffer) {
-        // 1. Read the modified data from the hidden RAM file
+    for (off = 0; off < size; off += stage_sz) {
+        size_t chunk = (size - off < (loff_t)stage_sz) ? (size_t)(size - off) : stage_sz;
+        loff_t rpos = off;
+        loff_t wpos = off;
+        ssize_t bytes;
+
+        // 1. Read this window of modified data from the hidden RAM file
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
-        bytes = kernel_read(pe->shm_file, buffer, size, &pos);
+        bytes = kernel_read(pe->shm_file, buffer, chunk, &rpos);
 #else
-        mm_segment_t old_fs = get_fs();
-        set_fs(KERNEL_DS);
-        bytes = vfs_read(pe->shm_file, (char __user *)buffer, size, &pos);
-        set_fs(old_fs);
-#endif
-
-        // 2. Push it back to the Python plugin via the trampoline
-        if (bytes > 0) {
-            pos = 0;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
-            old_fs = get_fs();
+        {
+            mm_segment_t old_fs = get_fs();
             set_fs(KERNEL_DS);
-            file->f_op->write(file, (const char __user *)buffer, bytes, &pos);
+            bytes = vfs_read(pe->shm_file, (char __user *)buffer, chunk, &rpos);
             set_fs(old_fs);
-#else
-            file->f_op->write(file, (const char __user *)buffer, bytes, &pos);
-#endif
         }
+#endif
+        if (bytes <= 0) break;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
-        kvfree(buffer);
+        // 2. Push it back to the Python plugin via the trampoline (at the same offset)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
+        {
+            mm_segment_t old_fs = get_fs();
+            set_fs(KERNEL_DS);
+            file->f_op->write(file, (const char __user *)buffer, bytes, &wpos);
+            set_fs(old_fs);
+        }
 #else
-        vfree(buffer);
+        file->f_op->write(file, (const char __user *)buffer, bytes, &wpos);
 #endif
     }
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
+    kvfree(buffer);
+#else
+    vfree(buffer);
+#endif
 
 unlock:
     mutex_unlock(&pe->shm_lock);
@@ -254,23 +267,34 @@ static int igloo_devfs_proxy_mmap(struct file *file, struct vm_area_struct *vma)
 #endif
         
         if (!IS_ERR(shm_file)) {
+            // Seed the sparse shmem backing in bounded chunks. The mmap length is
+            // guest-controlled, so a single (k)vzalloc(size) is unbounded and fails on
+            // 32-bit donor kernels for large device mmaps (issue #79). igloo_fetch_mmap_page()
+            // honors the offset, so a fixed staging buffer suffices regardless of mmap length.
+            size_t stage_sz = (size < IGLOO_DEVFS_STAGE_SZ) ? size : (size_t)IGLOO_DEVFS_STAGE_SZ;
+            void *buffer;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
-            void *buffer = kvzalloc(size, GFP_KERNEL);
+            buffer = kvzalloc(stage_sz, GFP_KERNEL);
 #else
-            void *buffer = vzalloc(size);
+            buffer = vzalloc(stage_sz);
 #endif
             if (buffer) {
-                ssize_t bytes = igloo_fetch_mmap_page(file, buffer, 0, size);
-                if (bytes > 0) {
-                    loff_t pos = 0;
+                size_t off;
+                for (off = 0; off < size; off += stage_sz) {
+                    size_t chunk = (size - off < stage_sz) ? (size - off) : stage_sz;
+                    ssize_t bytes = igloo_fetch_mmap_page(file, buffer, off, chunk);
+                    if (bytes > 0) {
+                        loff_t pos = off;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
-                    kernel_write(shm_file, buffer, bytes, &pos);
+                        kernel_write(shm_file, buffer, bytes, &pos);
 #else
-                    mm_segment_t old_fs = get_fs();
-                    set_fs(KERNEL_DS);
-                    vfs_write(shm_file, (char __user *)buffer, bytes, &pos);
-                    set_fs(old_fs);
+                        mm_segment_t old_fs = get_fs();
+                        set_fs(KERNEL_DS);
+                        vfs_write(shm_file, (char __user *)buffer, bytes, &pos);
+                        set_fs(old_fs);
 #endif
+                    }
+                    if (bytes <= 0) break; // stop on short/failed fetch
                 }
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
                 kvfree(buffer);
