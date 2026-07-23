@@ -27,9 +27,15 @@
 #include <linux/rtnetlink.h>
 #include <net/cfg80211.h>
 
-/* Host callback: fill `buf` (up to `maxlen` bytes) with an array of struct portal_wifi_bss;
- * return the number of entries written (>=0), or a negative errno. */
+/* Host callbacks. All fill a kernel-side scratch buffer that the host writes into via the
+ * portal (plugins.mem.write_bytes) and return a small status code:
+ *   scan    — fill `buf` with an array of struct portal_wifi_bss; return the entry count (>=0).
+ *   survey  — fill one struct portal_wifi_survey for channel index `idx`;   1=present 0=end <0=err.
+ *   station — fill one struct portal_wifi_station for peer index `idx`;     1=present 0=end <0=err.
+ * survey/station are one-entry-per-call to match cfg80211's idx-based .dump_* iteration. */
 typedef int (*py_scan_cb_t)(int id, uint8_t *buf, unsigned long maxlen);
+typedef int (*py_survey_cb_t)(int id, int idx, uint8_t *buf, unsigned long maxlen);
+typedef int (*py_station_cb_t)(int id, int idx, uint8_t *buf, unsigned long maxlen);
 
 /* On-wire BSS entry the host packs into the scan buffer (packed, little-endian == mipsel). */
 struct portal_wifi_bss {
@@ -41,16 +47,42 @@ struct portal_wifi_bss {
 	uint16_t capability;   /* 0 => default to WLAN_CAPABILITY_ESS */
 } __attribute__((packed));
 
+/* On-wire per-channel survey entry (channel noise + activity). Mirrors survey_info. */
+struct portal_wifi_survey {
+	uint16_t freq_mhz;
+	int16_t  noise_dbm;
+	uint8_t  in_use;       /* nonzero => mark this channel as the one in use */
+	uint8_t  _pad[3];
+	uint64_t time_ms;      /* SURVEY_INFO_TIME:      channel active time */
+	uint64_t time_busy_ms; /* SURVEY_INFO_TIME_BUSY: channel busy time */
+} __attribute__((packed));
+
+/* On-wire per-station entry (a connected peer's link stats). Mirrors station_info. */
+struct portal_wifi_station {
+	uint8_t  mac[6];
+	int16_t  signal_dbm;
+	uint32_t inactive_ms;
+	uint32_t connected_time_s;
+	uint32_t rx_packets;
+	uint32_t tx_packets;
+	uint64_t rx_bytes;
+	uint64_t tx_bytes;
+} __attribute__((packed));
+
 /* Request struct the host builds via kffi.new("struct portal_wifi_create_req"). */
 struct portal_wifi_create_req {
 	char     ifname[16];
 	uint8_t  mac[6];
 	uint8_t  _pad[2];
 	uint64_t cb_scan_ptr;
+	uint64_t cb_survey_ptr;    /* 0 => .dump_survey unsupported  */
+	uint64_t cb_station_ptr;   /* 0 => .dump/.get_station unsupported */
 };
 
 #define PW_SCAN_BUF_SZ 8192
 #define PW_MAX_BSS     ((int)(PW_SCAN_BUF_SZ / sizeof(struct portal_wifi_bss)))
+#define PW_OP_BUF_SZ   256   /* single-entry scratch for survey/station .dump_* callbacks */
+#define PW_MAX_STATION 128   /* .get_station scan cap when resolving a MAC via the idx callback */
 
 struct portal_wifi_dev {
 	int                          id;
@@ -60,7 +92,10 @@ struct portal_wifi_dev {
 	struct cfg80211_scan_request *scan_req;
 	struct delayed_work          scan_work;
 	py_scan_cb_t                 py_scan;
+	py_survey_cb_t               py_survey;
+	py_station_cb_t              py_station;
 	uint8_t                     *scan_buf;
+	uint8_t                     *op_buf;    /* PW_OP_BUF_SZ scratch for survey/station */
 };
 
 static atomic_t wifi_id = ATOMIC_INIT(0);
@@ -158,8 +193,101 @@ static int pw_scan(struct wiphy *wiphy, struct cfg80211_scan_request *request)
 	return 0;
 }
 
+/* --- survey (per-channel noise/activity): `iw dev <if> survey dump` --- */
+static int pw_dump_survey(struct wiphy *wiphy, struct net_device *netdev,
+			  int idx, struct survey_info *survey)
+{
+	struct portal_wifi_dev *d = wiphy_priv(wiphy);
+	struct portal_wifi_survey *s = (struct portal_wifi_survey *)d->op_buf;
+	struct ieee80211_channel *chan;
+	int rc;
+
+	if (!d->py_survey || !d->op_buf)
+		return -ENOENT;
+	rc = d->py_survey(d->id, idx, d->op_buf, PW_OP_BUF_SZ);
+	if (rc <= 0)
+		return -ENOENT;   /* end of list (0) or error (<0) → stop the dump */
+
+	chan = ieee80211_get_channel(wiphy, s->freq_mhz);
+	if (!chan)
+		return -ENOENT;
+
+	memset(survey, 0, sizeof(*survey));
+	survey->channel = chan;
+	survey->noise = s->noise_dbm;
+	survey->time = s->time_ms;
+	survey->time_busy = s->time_busy_ms;
+	survey->filled = SURVEY_INFO_NOISE_DBM |
+			 SURVEY_INFO_TIME | SURVEY_INFO_TIME_BUSY;
+	if (s->in_use)
+		survey->filled |= SURVEY_INFO_IN_USE;
+	return 0;
+}
+
+/* --- stations (connected-peer link stats): `iw dev <if> station dump/get` --- */
+static void pw_fill_sinfo(struct station_info *sinfo, struct portal_wifi_station *st)
+{
+	memset(sinfo, 0, sizeof(*sinfo));
+	sinfo->filled = BIT_ULL(NL80211_STA_INFO_SIGNAL) |
+			BIT_ULL(NL80211_STA_INFO_INACTIVE_TIME) |
+			BIT_ULL(NL80211_STA_INFO_CONNECTED_TIME) |
+			BIT_ULL(NL80211_STA_INFO_RX_BYTES64) |
+			BIT_ULL(NL80211_STA_INFO_TX_BYTES64) |
+			BIT_ULL(NL80211_STA_INFO_RX_PACKETS) |
+			BIT_ULL(NL80211_STA_INFO_TX_PACKETS);
+	sinfo->signal = st->signal_dbm;
+	sinfo->inactive_time = st->inactive_ms;
+	sinfo->connected_time = st->connected_time_s;
+	sinfo->rx_bytes = st->rx_bytes;
+	sinfo->tx_bytes = st->tx_bytes;
+	sinfo->rx_packets = st->rx_packets;
+	sinfo->tx_packets = st->tx_packets;
+}
+
+static int pw_dump_station(struct wiphy *wiphy, struct net_device *dev,
+			   int idx, u8 *mac, struct station_info *sinfo)
+{
+	struct portal_wifi_dev *d = wiphy_priv(wiphy);
+	struct portal_wifi_station *st = (struct portal_wifi_station *)d->op_buf;
+	int rc;
+
+	if (!d->py_station || !d->op_buf)
+		return -ENOENT;
+	rc = d->py_station(d->id, idx, d->op_buf, PW_OP_BUF_SZ);
+	if (rc <= 0)
+		return -ENOENT;
+	memcpy(mac, st->mac, ETH_ALEN);
+	pw_fill_sinfo(sinfo, st);
+	return 0;
+}
+
+static int pw_get_station(struct wiphy *wiphy, struct net_device *dev,
+			  const u8 *mac, struct station_info *sinfo)
+{
+	struct portal_wifi_dev *d = wiphy_priv(wiphy);
+	struct portal_wifi_station *st = (struct portal_wifi_station *)d->op_buf;
+	int idx, rc;
+
+	if (!d->py_station || !d->op_buf)
+		return -ENOENT;
+	/* Resolve a specific MAC by walking the host's idx-based station list. */
+	for (idx = 0; idx < PW_MAX_STATION; idx++) {
+		rc = d->py_station(d->id, idx, d->op_buf, PW_OP_BUF_SZ);
+		if (rc <= 0)
+			break;
+		if (ether_addr_equal(st->mac, mac)) {
+			pw_fill_sinfo(sinfo, st);
+			return 0;
+		}
+	}
+	return -ENOENT;
+}
+
 static const struct cfg80211_ops pw_cfg80211_ops = {
-	.scan = pw_scan,
+	.scan         = pw_scan,
+	.dump_survey  = pw_dump_survey,
+	.dump_station = pw_dump_station,
+	.get_station  = pw_get_station,
 };
 
 /* --- minimal netdev --- */
@@ -208,7 +336,10 @@ void handle_op_wifi_create(portal_region *mem_region)
 	d = wiphy_priv(wiphy);
 	d->wiphy = wiphy;
 	d->py_scan = (py_scan_cb_t)(unsigned long)req->cb_scan_ptr;
+	d->py_survey = (py_survey_cb_t)(unsigned long)req->cb_survey_ptr;
+	d->py_station = (py_station_cb_t)(unsigned long)req->cb_station_ptr;
 	d->scan_buf = kzalloc(PW_SCAN_BUF_SZ, GFP_KERNEL);
+	d->op_buf = kzalloc(PW_OP_BUF_SZ, GFP_KERNEL);
 	INIT_DELAYED_WORK(&d->scan_work, pw_scan_work);
 
 	wiphy->max_scan_ssids = 4;
@@ -221,6 +352,7 @@ void handle_op_wifi_create(portal_region *mem_region)
 	if (err < 0) {
 		printk(KERN_ERR "portal_wifi: wiphy_register failed: %d\n", err);
 		kfree(d->scan_buf);
+		kfree(d->op_buf);
 		wiphy_free(wiphy);
 		mem_region->header.op = HYPER_RESP_WRITE_FAIL;
 		return;
@@ -231,6 +363,7 @@ void handle_op_wifi_create(portal_region *mem_region)
 		printk(KERN_ERR "portal_wifi: alloc_netdev failed\n");
 		wiphy_unregister(wiphy);
 		kfree(d->scan_buf);
+		kfree(d->op_buf);
 		wiphy_free(wiphy);
 		mem_region->header.op = HYPER_RESP_WRITE_FAIL;
 		return;
@@ -255,6 +388,7 @@ void handle_op_wifi_create(portal_region *mem_region)
 		free_netdev(ndev);
 		wiphy_unregister(wiphy);
 		kfree(d->scan_buf);
+		kfree(d->op_buf);
 		wiphy_free(wiphy);
 		mem_region->header.op = HYPER_RESP_WRITE_FAIL;
 		return;
@@ -263,8 +397,9 @@ void handle_op_wifi_create(portal_region *mem_region)
 	d->ndev = ndev;
 	d->id = atomic_inc_return(&wifi_id);
 
-	printk(KERN_INFO "portal_wifi: created wiphy '%s' netdev '%s' id=%d (scan_cb=%px)\n",
-	       wiphy_name(wiphy), ndev->name, d->id, d->py_scan);
+	printk(KERN_INFO "portal_wifi: created wiphy '%s' netdev '%s' id=%d "
+	       "(scan=%px survey=%px station=%px)\n",
+	       wiphy_name(wiphy), ndev->name, d->id, d->py_scan, d->py_survey, d->py_station);
 
 	mem_region->header.size = d->id;
 	mem_region->header.op = HYPER_RESP_READ_NUM;
