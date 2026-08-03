@@ -38,6 +38,7 @@ int uname_hc_init(void);
 int block_mounts_init(void);
 int igloo_open_init(void);
 int signal_hc_init(void);
+int exit_hc_init(void);
 
 /* Register probes for mmap and munmap */
 int init_module(void) {
@@ -55,6 +56,11 @@ int init_module(void) {
 
     if ((ret = signal_hc_init()) != 0) {
         printk(KERN_ERR "Failed to register signal_hc returning %d\n", ret);
+        return ret;
+    }
+
+    if ((ret = exit_hc_init()) != 0) {
+        printk(KERN_ERR "Failed to register exit_hc returning %d\n", ret);
         return ret;
     }
 
