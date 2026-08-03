@@ -28,6 +28,8 @@
     X(set_portalcall_fastpath, SET_PORTALCALL_FASTPATH) \
     X(register_signal_hook, REGISTER_SIGNAL_HOOK) \
     X(unregister_signal_hook, UNREGISTER_SIGNAL_HOOK) \
+    X(register_exit_hook, REGISTER_EXIT_HOOK) \
+    X(unregister_exit_hook, UNREGISTER_EXIT_HOOK) \
     X(ffi_exec, FFI_EXEC) \
     X(kallsyms_lookup, KALLSYMS_LOOKUP) \
     X(tramp_generate, TRAMP_GENERATE) \

@@ -31,6 +31,7 @@ enum igloo_hypercall_constants {
     IGLOO_HYP_SYSCALL_RETURN = 0x1339,
     IGLOO_HYP_SETUP_TASK_COMM = 0x133a,
     IGLOO_HYP_SIGNAL_DELIVER = 0x133b,
+    IGLOO_HYP_PROC_EXIT = 0x133c,
     
     /* Uprobe operations */
     IGLOO_HYP_UPROBE_ENTER  = 0x6901,
