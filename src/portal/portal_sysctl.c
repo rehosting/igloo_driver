@@ -276,7 +276,7 @@ static struct ctl_table *igloo_find_sysctl_leaf(const char *dir_path, const char
 // is the operation that panics on old kernels (see the guard in
 // handle_op_sysctl_create_file), so we only ever do it under a parent we know
 // is real.
-static bool igloo_sysctl_dir_exists(const char *dir_path)
+static bool __maybe_unused igloo_sysctl_dir_exists(const char *dir_path)
 {
     struct igloo_ctl_table_root *sysctl_root;
     struct igloo_ctl_dir *curr_dir = NULL;
@@ -352,6 +352,30 @@ static bool igloo_sysctl_dir_exists(const char *dir_path)
     }
 
     return true;
+}
+
+/* Subtrees of /proc/sys that are separate mounted filesystems, not sysctls
+ * (binfmt_misc is the canonical example). register_sysctl() cannot create a
+ * ctl_dir inside these, and on pre-5.0 kernels the failed attempt faults in the
+ * cleanup path (drop_sysctl_table()->rb_erase() NULL deref). This mirrors the
+ * Python _NON_SYSCTL_SUBTREES guard in hyperfile/sysctl.py, which normally
+ * rejects them before they reach us; this is the driver-side backstop. A
+ * genuinely new *sysctl* directory (e.g. a vendor-specific boot-environment
+ * directory) is created fine by register_sysctl and must NOT be refused. */
+static bool igloo_sysctl_dir_is_fs_backed(const char *dir_path)
+{
+    static const char * const fs_backed[] = { "fs/binfmt_misc" };
+    size_t i;
+
+    if (!dir_path || !dir_path[0])
+        return false;
+    for (i = 0; i < ARRAY_SIZE(fs_backed); i++) {
+        size_t n = strlen(fs_backed[i]);
+        if (strncmp(dir_path, fs_backed[i], n) == 0 &&
+            (dir_path[n] == '\0' || dir_path[n] == '/'))
+            return true;
+    }
+    return false;
 }
 
 void handle_op_sysctl_create_file(portal_region *mem_region)
@@ -442,12 +466,17 @@ void handle_op_sysctl_create_file(portal_region *mem_region)
     // when it has to create a new directory hierarchy and an intermediate
     // component cannot be created -- e.g. anything under the filesystem-backed
     // /proc/sys/fs/binfmt_misc node, which returns -EROFS and then faults in the
-    // cleanup path. Refuse to create an entry whose parent directory does not
-    // already exist instead of handing the kernel a doomed registration.
+    // cleanup path. That failure mode is specific to filesystem-backed, non-sysctl
+    // subtrees; a genuinely new *sysctl* directory (vendor-specific dirs, e.g. a
+    // bootloader environment exposed under /proc/sys, common in embedded
+    // firmware) is created safely by register_sysctl(). So refuse only the
+    // filesystem-backed subtrees, not every
+    // not-yet-existing parent -- the previous broad existence check wrongly
+    // dropped legitimate vendor sysctls and hung boots that poll for them.
     // Newer kernels return NULL from register_sysctl() and are handled by the
     // !entry->header path below, so this guard is scoped to the affected versions.
-    if (clean_dir[0] && !igloo_sysctl_dir_exists(clean_dir)) {
-        printk(KERN_WARNING "portal_sysctl: refusing to create '%s/%s': parent sysctl directory does not exist\n",
+    if (igloo_sysctl_dir_is_fs_backed(clean_dir)) {
+        printk(KERN_WARNING "portal_sysctl: refusing to create '%s/%s': parent is a filesystem-backed (non-sysctl) subtree\n",
                clean_dir, clean_name);
         kfree(entry->data_buffer);
         kfree(entry);
