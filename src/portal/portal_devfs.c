@@ -13,6 +13,8 @@
 #include <linux/file.h>        // Required for fput()
 #include <linux/poll.h>        // Required for poll_wait()/poll_table_struct/POLL* (issue #77)
 #include <linux/wait.h>        // Required for wait_queue_head_t/wake_up_interruptible (issue #77)
+#include <linux/timer.h>       // Required for timer_list/timer_setup/mod_timer (periodic poll heartbeat)
+#include <linux/jiffies.h>     // Required for msecs_to_jiffies() (periodic poll heartbeat)
 #include <linux/shmem_fs.h>    // Required for shmem_kernel_file_setup()
 #include <linux/vmalloc.h>     // Required for kvzalloc/vzalloc()
 #include <linux/blkdev.h>
@@ -40,11 +42,16 @@ struct portal_devfs_create_req {
     int support_mmap;
     int is_block;
     int logical_block_size;
-    int major; 
+    int major;
     int minor;
     struct igloo_dev_ops ops;
     int replace;
     int parent_id;
+    // periodic poll heartbeat: if > 0, arm a self-rearming kernel timer that
+    // marks this node readable every poll_interval_ms and wakes poll_wq. Lets a
+    // poll()/epoll(timeout=-1) main loop advance at a fixed cadence (models a
+    // hardware heartbeat, e.g. a watchdog device). 0 = disabled.
+    int poll_interval_ms;
 };
 
 // Internal: Track created devices
@@ -78,6 +85,16 @@ struct portal_devfs_entry {
     wait_queue_head_t poll_wq;
     unsigned int (*python_poll)(struct file *, struct poll_table_struct *);
     ssize_t (*python_write)(struct file *, const char __user *, size_t, loff_t *);
+
+    // periodic poll heartbeat: when poll_interval_ms > 0 a self-rearming timer
+    // sets poll_ready and wakes poll_wq every interval; the poll proxy then
+    // reports POLLIN once per tick (edge-consumed via atomic_xchg) and "not
+    // ready" otherwise. Models a device that delivers a periodic hardware event
+    // (e.g. a watchdog): neither always-ready (which spins an epoll(-1) loop)
+    // nor never-ready (which deadlocks it), but a fixed cadence.
+    struct timer_list poll_timer;
+    atomic_t poll_ready;
+    unsigned int poll_interval_ms;
 
     char *name;
 };
@@ -303,6 +320,26 @@ static int igloo_devfs_proxy_mmap(struct file *file, struct vm_area_struct *vma)
 }
 
 /*
+ * periodic poll heartbeat timer: mark the node readable and wake any poller
+ * parked on poll_wq, then re-arm. Driven by poll_interval_ms; see the poll
+ * proxy below for how the tick is consumed. timer_setup()/from_timer() landed
+ * in 4.14; older kernels use setup_timer() with the entry pointer in ->data.
+ */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+static void igloo_devfs_poll_timer_fn(struct timer_list *t)
+{
+    struct portal_devfs_entry *pe = from_timer(pe, t, poll_timer);
+#else
+static void igloo_devfs_poll_timer_fn(unsigned long data)
+{
+    struct portal_devfs_entry *pe = (struct portal_devfs_entry *)data;
+#endif
+    atomic_set(&pe->poll_ready, 1);
+    wake_up_interruptible(&pe->poll_wq);
+    mod_timer(&pe->poll_timer, jiffies + msecs_to_jiffies(pe->poll_interval_ms));
+}
+
+/*
  * poll proxy (issue #77): register the opener on the per-device wait queue so a
  * "not ready" poll can actually block and be woken later, then defer the
  * readiness mask to the Python-modeled poll. Without this, the f_op->poll fop
@@ -323,6 +360,19 @@ static unsigned int igloo_devfs_proxy_poll(struct file *file, struct poll_table_
         return POLLIN | POLLRDNORM | POLLOUT | POLLWRNORM;
 
     poll_wait(file, &pe->poll_wq, pt);
+
+    if (pe->poll_interval_ms > 0) {
+        /* Periodic heartbeat node (e.g. a watchdog device). The timer
+         * sets poll_ready once per interval; report POLLIN for exactly one
+         * poll() per tick (atomic_xchg consumes it) and "not ready" otherwise,
+         * so an epoll(timeout=-1) main loop wakes at a fixed cadence and parks
+         * in between rather than spinning (always-ready) or deadlocking
+         * (never-ready). Deliberately not POLLOUT: a constant writable mask
+         * would re-spin a loop that also watches EPOLLOUT. */
+        if (atomic_xchg(&pe->poll_ready, 0))
+            return POLLIN | POLLRDNORM;
+        return 0;
+    }
 
     if (pe->python_poll)
         return pe->python_poll(file, pt);
@@ -683,6 +733,10 @@ void handle_op_devfs_create_device(portal_region *mem_region)
     pe->python_poll = req->ops.poll;
     pe->python_write = req->ops.write;
     init_waitqueue_head(&pe->poll_wq);
+    // periodic poll heartbeat cadence (0 = disabled); the timer itself is armed
+    // only on the char-device path (block devices have no poll proxy).
+    pe->poll_interval_ms = req->poll_interval_ms;
+    atomic_set(&pe->poll_ready, 0);
     pe->is_block = req->is_block;
     pe->mode = req->mode ? req->mode : 0666;
 
@@ -824,6 +878,18 @@ void handle_op_devfs_create_device(portal_region *mem_region)
             cdev_del(&pe->cdev);
             if (!dynamic_chrdev_region) unregister_chrdev_region(devt, 1);
             goto fail_alloc;
+        }
+
+        // Arm the periodic poll heartbeat now the entry is fully live. Never
+        // cancelled: devfs entries persist for the module's lifetime (there is
+        // no per-entry teardown), matching this timer's self-rearming lifetime.
+        if (pe->poll_interval_ms > 0) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+            timer_setup(&pe->poll_timer, igloo_devfs_poll_timer_fn, 0);
+#else
+            setup_timer(&pe->poll_timer, igloo_devfs_poll_timer_fn, (unsigned long)pe);
+#endif
+            mod_timer(&pe->poll_timer, jiffies + msecs_to_jiffies(pe->poll_interval_ms));
         }
     }
 
