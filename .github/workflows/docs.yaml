@@ -35,7 +35,14 @@ concurrency:
 
 jobs:
   build_docs:
-    runs-on: ubuntu-latest
+    # Pinned to 24.04, NOT ubuntu-latest: Doxygen comes from apt, so the runner
+    # image decides its version, and Doxygen's XML for anonymous aggregates is
+    # not stable across releases. 1.9.1 emitted an "@N" placeholder name that
+    # Breathe skipped; 1.9.8 (what 24.04 ships) emits an empty <name>, which
+    # Sphinx's C domain cannot parse -- that is what broke this build. Combined
+    # with -W below, letting ubuntu-latest roll means CI can go red with no
+    # change on our side. Bump deliberately, and re-run the docs build when you do.
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -46,6 +53,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y doxygen
+          doxygen --version
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -59,7 +67,9 @@ jobs:
         run: |
           # conf.py runs Doxygen itself, so a bare sphinx-build is
           # self-contained. -W turns warnings into errors to keep the docs
-          # honest (the build is currently warning-clean).
+          # honest. The build is warning-clean as of this commit -- and stays
+          # that way only because both inputs are pinned: the Python side by
+          # docs/requirements.txt, the Doxygen side by the runs-on image above.
           sphinx-build -b html -W --keep-going docs docs/_build/html
           tar -czvf docs.tar.gz -C docs/_build/html .
 
