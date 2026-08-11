@@ -3,11 +3,58 @@
 #   python3 -m venv .venv && . .venv/bin/activate
 #   pip install -r docs/requirements.txt
 #   sphinx-build docs/ docs/_build/html   # (needs `doxygen` on PATH too)
-sphinx
-myst-parser
-furo
-breathe
-sphinx-copybutton
-sphinxemoji
-sphinx-notfound-page
-linkify-it-py
+#
+# Fully pinned, including transitive deps. The docs build runs with -W
+# (warnings-as-errors), so ANY upstream release can turn CI red with no change
+# on our side -- docutils and myst-parser in particular. Resolved and verified
+# warning-clean on Python 3.12 (the version docs.yaml installs).
+#
+# To upgrade: install unpinned into a fresh 3.12 venv, run
+#   sphinx-build -b html -W --keep-going docs docs/_build/html
+# and if it is clean, paste `pip freeze` back here.
+#
+# NOTE: Doxygen is NOT pinned here -- it comes from apt in docs.yaml. The runner
+# image is pinned to ubuntu-24.04 there for the same reason; see that comment.
+
+# -- Direct dependencies -----------------------------------------------------
+sphinx==9.1.0
+myst-parser==5.1.0
+furo==2025.12.19
+breathe==4.36.0
+sphinx-copybutton==0.5.2
+sphinxemoji==0.3.2
+sphinx-notfound-page==1.1.0
+linkify-it-py==2.1.0
+
+# -- Transitive dependencies (pinned for reproducibility) --------------------
+accessible-pygments==0.0.5
+alabaster==1.0.0
+babel==2.18.0
+beautifulsoup4==4.15.0
+certifi==2026.7.22
+charset-normalizer==3.4.9
+docutils==0.22.4
+idna==3.18
+imagesize==2.0.0
+jinja2==3.1.6
+markdown-it-py==4.2.0
+markupsafe==3.0.3
+mdit-py-plugins==0.6.1
+mdurl==0.1.2
+packaging==26.3
+pygments==2.20.0
+pyyaml==6.0.3
+requests==2.34.2
+roman-numerals==4.1.0
+snowballstemmer==3.1.1
+soupsieve==2.9.2
+sphinx-basic-ng==1.0.0b2
+sphinxcontrib-applehelp==2.0.0
+sphinxcontrib-devhelp==2.0.0
+sphinxcontrib-htmlhelp==2.1.0
+sphinxcontrib-jsmath==1.0.1
+sphinxcontrib-qthelp==2.0.0
+sphinxcontrib-serializinghtml==2.0.0
+typing-extensions==4.16.0
+uc-micro-py==2.0.0
+urllib3==2.7.0
