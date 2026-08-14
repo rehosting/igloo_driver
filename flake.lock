@@ -1,0 +1,111 @@
+{
+  "nodes": {
+    "igloo_driver": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1786551192,
+        "narHash": "sha256-zeOP0nQEb/uns46MizbcX3DpS4or4EM8XuOmRRIPbo4=",
+        "owner": "rehosting",
+        "repo": "igloo_driver",
+        "rev": "243c889e2b3360b16e5b12d6a20b0c5c0766dd07",
+        "type": "github"
+      },
+      "original": {
+        "owner": "rehosting",
+        "repo": "igloo_driver",
+        "type": "github"
+      }
+    },
+    "kernelsmith": {
+      "inputs": {
+        "musl-cross-make": "musl-cross-make",
+        "nixpkgs": "nixpkgs"
+      },
+      "locked": {
+        "lastModified": 1786663087,
+        "narHash": "sha256-uynOJDkUTq7V3gZxNre3CmeMwBSYYoToi1kYea52OPU=",
+        "owner": "rehosting",
+        "repo": "kernelsmith",
+        "rev": "f3220b9a1919076317659310d75b28f0c36fab62",
+        "type": "github"
+      },
+      "original": {
+        "owner": "rehosting",
+        "repo": "kernelsmith",
+        "type": "github"
+      }
+    },
+    "linux-builder": {
+      "inputs": {
+        "igloo_driver": "igloo_driver",
+        "kernelsmith": "kernelsmith",
+        "nixpkgs": [
+          "linux-builder",
+          "kernelsmith",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1786671278,
+        "narHash": "sha256-rSvxoJrhVBUz20atIwjVNOXDQFzwghxnBzPAvlY3qkI=",
+        "owner": "rehosting",
+        "repo": "linux_builder",
+        "rev": "2efd7d97f5797a269c05872e77f28c76cbd4b4db",
+        "type": "github"
+      },
+      "original": {
+        "owner": "rehosting",
+        "ref": "nixdev_0.1.0",
+        "repo": "linux_builder",
+        "type": "github"
+      }
+    },
+    "musl-cross-make": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1781646546,
+        "narHash": "sha256-ZGkLvkred/sDa2Mw2/1N+Nh8bvUyujxxOLTZDfd2qN4=",
+        "owner": "richfelker",
+        "repo": "musl-cross-make",
+        "rev": "227df8b99103f9c59f6570babf892978e293082f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "richfelker",
+        "repo": "musl-cross-make",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1735563628,
+        "narHash": "sha256-OnSAY7XDSx7CtDoqNh8jwVwh4xNL/2HaJxGjryLWzX8=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "b134951a4c9f3c995fd7be05f3243f8ecd65d798",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-24.05",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "kernelsmith": [
+          "linux-builder",
+          "kernelsmith"
+        ],
+        "linux-builder": "linux-builder",
+        "nixpkgs": [
+          "linux-builder",
+          "nixpkgs"
+        ]
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

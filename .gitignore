@@ -16,3 +16,7 @@ cache
 src/portal/portal_tramp_gen.h
 src/portal/ffi_stubs_generated.h
 igloo_driver.tar.gz
+# nix
+result
+result-*
+.direnv/

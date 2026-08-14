@@ -48,8 +48,55 @@ sphinx-build -b html docs docs/_build/html
 
 ## Building the module
 
-igloo_driver is cross-compiled for ~13 architectures against multiple kernel
-versions inside a Docker toolchain container. The wrapper is `build.sh`.
+There are two build paths. They produce the same `igloo_driver.tar.gz` layout.
+
+### With Nix (recommended)
+
+```bash
+nix build .#igloo_driver                                # the release tarball
+nix build '.#packages.x86_64-linux."igloo-6.13-armel"'  # one module
+nix build .#all                                         # every module
+nix flake check                                         # shapes match target names
+```
+
+No Docker, no toolchain image, and no `local_packages/` download: the kernels
+come from
+[`linux_builder`](https://github.com/rehosting/linux_builder)'s flake as
+**derivations**, and the cross compiler comes from the kernel each module is
+built against.
+
+That last point is the reason this path exists. A module is loadable only by
+the exact kernel build it was compiled against — its modversion CRCs come from
+that kernel's headers, and the kernel's `.config` itself contains options
+Kconfig resolves *by probing the compiler* (`CONFIG_STACKPROTECTOR_PER_TASK`,
+`CONFIG_INIT_STACK_*`, the `CC_HAS_*` family). So the ABI moves when the
+toolchain moves, even with identical sources and identical config files.
+Building against a kernel *derivation* makes a mismatched pair unrepresentable,
+where building against an unpacked `kernel-devel` tree only made it unlikely.
+
+`kernels/BUILT_AGAINST.txt` inside the archive names the exact kernel store
+path each module belongs to.
+
+> Cell names contain a `.`, which Nix parses as an attribute-path separator —
+> quote the attribute (`'.#packages.x86_64-linux."igloo-6.13-armel"'`) or it
+> will not resolve.
+
+To build against a different `linux_builder`:
+
+```bash
+nix build .#igloo_driver --override-input linux-builder github:rehosting/linux_builder/<ref>
+```
+
+### With Docker
+
+The original path: cross-compilation for ~13 architectures inside a Docker
+toolchain container, driven by `build.sh`.
+
+Note that it can only consume a **Docker-built** `kernel-devel-all.tar.gz`. A
+Nix-built one ships host tools linked against the Nix store (`scripts/basic/fixdep`
+requests an interpreter under `/nix/store`), which cannot execute inside the
+Ubuntu-based toolchain image — every target fails within seconds of `make`
+starting. Use the Nix path against Nix-built kernels.
 
 **Prerequisites:** Docker; a toolchain image (default
 `rehosting/embedded-toolchains:latest`); and kernel headers as
