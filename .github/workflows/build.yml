@@ -137,5 +137,11 @@ jobs:
             module ABI even when the sources and config files are identical.
           draft: false
           generate_release_notes: true
-          prerelease: false
+          # dev_* tags publish as PRERELEASES; only main merges are full
+          # releases. GitHub's `releases/latest` is the newest non-prerelease,
+          # and `releases/latest/download/igloo_driver.tar.gz` is read by
+          # penguin's nix-dev.sh and by this repo's own test.yml -- so a dev_*
+          # build marked as a full release would silently become the driver
+          # everything picks up. Matches linux_builder's convention.
+          prerelease: ${{ startsWith(github.ref, 'refs/tags/dev_') }}
           files: igloo_driver.tar.gz
