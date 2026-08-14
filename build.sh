@@ -137,6 +137,37 @@ else
     fi
 fi
 
+# Refuse a NIX-BUILT kernel-devel tree, loudly and here.
+#
+# A kernel build tree ships PREBUILT HOST TOOLS. Built by nix, those are linked
+# against the Nix store -- scripts/basic/fixdep asks for an interpreter under
+# /nix/store, which does not exist inside the Ubuntu-based toolchain image. The
+# result is every single target failing within seconds of `make` starting, with
+# an error that names fixdep and says nothing about why. This is not a bug in
+# the tarball; it is what "prebuilt host tools" means, and no amount of retrying
+# in the container fixes it.
+#
+# Nix-built kernels are built with the nix path instead: `nix build
+# .#igloo_driver`, which takes linux_builder as a flake input and never
+# round-trips through a tarball at all. See README.md.
+if fixdep=$(ls "${KERNEL_DEVEL_MOUNT_DIR}"/*/scripts/basic/fixdep 2>/dev/null | head -1) \
+   && [ -n "$fixdep" ] && grep -qa '/nix/store' "$fixdep"; then
+    cat >&2 <<EOF
+Error: ${KERNEL_DEVEL_MOUNT_DIR} is a NIX-BUILT kernel-devel tree.
+
+Its prebuilt host tools ($fixdep) are linked against the Nix store, which is
+not present in the toolchain container, so every target would fail in seconds.
+
+Build against nix kernels with the nix path instead:
+
+    nix build .#igloo_driver
+    nix build .#igloo_driver --override-input linux-builder github:rehosting/linux_builder/<ref>
+
+Or point --kernel-devel-path at a Docker-built kernel-devel tree.
+EOF
+    exit 1
+fi
+
 # Set build output directory in cache & initialize subfolders
 BUILD_OUTPUT_DIR="$(pwd)/cache/build"
 mkdir -p "$BUILD_OUTPUT_DIR/kernels"
@@ -159,8 +190,13 @@ mkdir -p "$BUILD_OUTPUT_DIR/logs"
 # absolute --kernel-devel-path outside _FROM is left as-is.
 rewrite_mount() {
     local path="$1"
-    if [[ -n "$PENGUIN_HOST_MOUNT_FROM" && -n "$PENGUIN_HOST_MOUNT_TO" \
-          && "$path" == "$PENGUIN_HOST_MOUNT_FROM"* ]]; then
+    # `:-` is load-bearing: this script runs under `set -u`, so a bare
+    # $PENGUIN_HOST_MOUNT_FROM aborts with "unbound variable" whenever the
+    # variable is NOT set -- which is every local build and every runner
+    # without the shared-docker wrapper, i.e. exactly the case the comment
+    # above says is a no-op. `./build.sh` has been unusable locally as a result.
+    if [[ -n "${PENGUIN_HOST_MOUNT_FROM:-}" && -n "${PENGUIN_HOST_MOUNT_TO:-}" \
+          && "$path" == "${PENGUIN_HOST_MOUNT_FROM}"* ]]; then
         printf '%s' "${PENGUIN_HOST_MOUNT_TO}${path#"$PENGUIN_HOST_MOUNT_FROM"}"
     else
         printf '%s' "$path"

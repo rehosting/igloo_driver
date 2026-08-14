@@ -69,14 +69,15 @@
           kernel = lbPkgs.${name};
         };
 
-      kernelCells = builtins.filter (c: c != null)
-        (map parse (builtins.attrNames lbPkgs));
-
       # An empty matrix would make `nix build .#all` and the release tarball
-      # succeed while shipping nothing at all -- the exact failure this repo
-      # has had before, just moved. Fail at evaluation instead.
-      _ = lib.assertMsg (kernelCells != [ ])
-        "no kernel-<version>-<target> outputs found in linux_builder; the naming convention changed";
+      # succeed while shipping nothing at all. Guard inline rather than as a
+      # separate `assert` binding: an unreferenced let-binding is never forced,
+      # so a standalone assertion here would silently never run.
+      kernelCells =
+        let found = builtins.filter (c: c != null) (map parse (builtins.attrNames lbPkgs));
+        in if found == [ ] then
+          throw "no kernel-<version>-<target> outputs in linux_builder; the naming convention changed"
+        else found;
 
       mkModule = import ./nix/module.nix { inherit pkgs kernelsmith; };
       artifacts = import ./nix/artifacts.nix {
@@ -143,6 +144,12 @@
         # which compiles cleanly and produces the wrong machine's object --
         # linux_builder shipped two such bugs before adding the equivalent.
         shape-check = import ./nix/shape.nix { inherit pkgs; } { inherit cells; };
+
+        # Every module's modversion CRCs must agree with its kernel's
+        # Module.symvers. Taking the kernel as a build input makes the INPUTS
+        # right structurally; this proves the OUTPUT is, which is a different
+        # claim -- see nix/modversions.nix.
+        modversions-check = import ./nix/modversions.nix { inherit pkgs; } { inherit cells; };
       };
 
       # The (version, target) pairs this flake builds for, as data. Useful for
@@ -150,8 +157,27 @@
       matrix.${system} = map (c: { inherit (c) version target; }) kernelCells;
 
       checks.${system} = {
-        inherit (self.packages.${system}) shape-check;
+        inherit (self.packages.${system}) shape-check modversions-check;
       };
+
+      # Build igloo.ko against an ARBITRARY kernelsmith-built kernel, not just
+      # one of linux_builder's cells.
+      #
+      # This is the seam for where the driver is heading: fewer changes carried
+      # as kernel patches, more of the delta living in the module, and
+      # eventually igloo.ko loading into a stock upstream kernel. Anything that
+      # can hand over a `buildKernel` derivation can build a matching module
+      # today, without this repo enumerating that kernel anywhere:
+      #
+      #   igloo.lib.x86_64-linux.buildFor {
+      #     kernel = kernelsmith.buildKernel { ... };
+      #     version = "6.6"; target = "armel";
+      #   }
+      #
+      # version/target are labels here -- ARCH, CROSS_COMPILE and the compiler
+      # all still come from the kernel's passthru.
+      lib.${system}.buildFor = { kernel, version ? "0", target ? "unknown" }:
+        mkModule { inherit kernel version target; src = self; };
 
       devShells.${system}.default = pkgs.mkShell {
         packages = with pkgs; [ gnumake python3 bc ];

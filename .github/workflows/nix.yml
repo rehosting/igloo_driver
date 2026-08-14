@@ -135,10 +135,12 @@ jobs:
           exit $fail
 
       # Every module's ELF class, byte order and machine must match what its
-      # target name claims. Cheap, and the only check that catches a cell which
-      # compiles cleanly and emits the wrong machine's object.
-      - name: Shapes match target names
-        run: nix build --print-out-paths .#shape-check
+      # target name claims, and every module's modversion CRCs must agree with
+      # its kernel's Module.symvers. The second is the check that would have
+      # caught the 129-of-221 mismatch that shipped and only surfaced as a
+      # guest panic at insmod.
+      - name: Shapes and modversions
+        run: nix flake check --print-build-logs
 
       - name: Release tarball assembles
         run: |

@@ -56,7 +56,7 @@ There are two build paths. They produce the same `igloo_driver.tar.gz` layout.
 nix build .#igloo_driver                                # the release tarball
 nix build '.#packages.x86_64-linux."igloo-6.13-armel"'  # one module
 nix build .#all                                         # every module
-nix flake check                                         # shapes match target names
+nix flake check                                         # shape + modversion checks
 ```
 
 No Docker, no toolchain image, and no `local_packages/` download: the kernels
@@ -75,7 +75,23 @@ Building against a kernel *derivation* makes a mismatched pair unrepresentable,
 where building against an unpacked `kernel-devel` tree only made it unlikely.
 
 `kernels/BUILT_AGAINST.txt` inside the archive names the exact kernel store
-path each module belongs to.
+path each module belongs to, and `nix flake check` asserts that every module's
+modversion CRCs actually agree with that kernel's `Module.symvers` — the check
+that catches a `disagrees about version of symbol module_layout` panic before
+it reaches a guest rather than after.
+
+The matrix is not restated here: it is read out of `linux_builder`'s kernel
+outputs, so this repo builds for exactly the kernels that exist.
+
+To build `igloo.ko` against some other kernelsmith-built kernel — a stock
+upstream one, say — use the `buildFor` seam rather than adding it to a matrix:
+
+```nix
+igloo-driver.lib.x86_64-linux.buildFor {
+  kernel = kernelsmith.buildKernel { /* ... */ };
+  version = "6.6"; target = "armel";
+}
+```
 
 > Cell names contain a `.`, which Nix parses as an attribute-path separator —
 > quote the attribute (`'.#packages.x86_64-linux."igloo-6.13-armel"'`) or it
