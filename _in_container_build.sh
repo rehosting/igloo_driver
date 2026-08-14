@@ -189,6 +189,30 @@ echo "Completed module builds for all targets."
 
 echo "Creating igloo_driver.tar.gz archive in output directory..."
 cd "${OUTPUT_BASE}"
+
+# Record which kernel-devel these modules were compiled against.
+#
+# A .ko is only loadable by the exact kernel build it was compiled against:
+# modversion CRCs are derived from the kernel's headers and config, and the
+# config includes options Kconfig resolves by PROBING THE COMPILER
+# (CONFIG_STACKPROTECTOR_PER_TASK, CONFIG_INIT_STACK_*, the CC_HAS_* family).
+# So a different toolchain in linux_builder yields a different ABI even with
+# identical sources and identical config files.
+#
+# That is not hypothetical: pairing v0.0.96 with nix-built kernels put 129 of
+# 221 CRCs out of agreement, and the only symptom was
+#   "igloo: disagrees about version of symbol module_layout"
+# followed by a guest panic. Nothing in the release said what it was built
+# against, so the mismatch was undiscoverable until boot. This file makes the
+# pairing inspectable.
+cat > kernels/BUILT_AGAINST.txt <<EOF
+linux_builder: ${LINUX_BUILDER_VERSION:-unknown}
+
+These modules are ONLY loadable on kernels from that linux_builder release.
+A kernel built by any other toolchain will reject them with
+"disagrees about version of symbol module_layout" at insmod.
+EOF
+
 tar --use-compress-program=pigz -cf "/app/igloo_driver.tar.gz" kernels
 echo "Archive created at /app/igloo_driver.tar.gz"
 

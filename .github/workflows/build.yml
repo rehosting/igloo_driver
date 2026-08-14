@@ -6,6 +6,11 @@ on:
     tags:
       - 'dev_*'
   workflow_dispatch:
+    inputs:
+      linux_builder_version:
+        description: "linux_builder release to build against (overrides the LINUX_BUILDER_VERSION pin below)"
+        type: string
+        default: ""
 
 env:
   REGISTRY: ${{ secrets.REHOSTING_ARC_REGISTRY || 'harbor.harbor.svc.cluster.local' }}
@@ -13,6 +18,18 @@ env:
   CACHE: ${{ secrets.REHOSTING_ARC_REGISTRY && format('{0}/proxy', secrets.REHOSTING_ARC_REGISTRY) || 'docker.io' }}
   TARGET: ${{ secrets.REHOSTING_ARC_REGISTRY || 'harbor.harbor.svc.cluster.local/external' }}
   EXTERNAL_REGISTRY_PASS: 'PctyVGasz15Pn9M0yA9yMNwOawFaXnk3Tl4N'
+
+  # The linux_builder release whose kernel-devel these modules are compiled
+  # against. An EXPLICIT PIN, deliberately -- this used to be
+  # `releases/latest/download/...`, a floating reference.
+  #
+  # A .ko is only loadable by the exact kernel build it was compiled against,
+  # so with a floating reference the modules in any given igloo_driver release
+  # silently depended on whatever linux_builder had published most recently,
+  # and nothing recorded which one that was. Bumping this is a deliberate,
+  # reviewable act; the value also lands in the release notes and in
+  # kernels/BUILT_AGAINST.txt inside the tarball.
+  LINUX_BUILDER_VERSION: nixdev_0.1.0
 
 jobs:
   build:
@@ -50,11 +67,22 @@ jobs:
           echo "FROM ${{secrets.REHOSTING_ARC_REGISTRY}}/proxy/rehosting/embedded-toolchains:latest" | \
           docker buildx build -t embedded-toolchains:latest --load -
 
-      - name: Download kernel-devel-all from release if not present
+      - name: Download kernel-devel-all from the pinned linux_builder release
+        id: kernel_devel
         run: |
+          set -euo pipefail
+          VER="${{ inputs.linux_builder_version }}"
+          [ -n "$VER" ] || VER="${LINUX_BUILDER_VERSION}"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "Building against linux_builder $VER"
           if [ ! -f local_packages/kernel-devel-all.tar.gz ]; then
             mkdir -p local_packages
-            curl -L -o local_packages/kernel-devel-all.tar.gz "https://github.com/rehosting/linux_builder/releases/latest/download/kernel-devel-all.tar.gz"
+            # -f so a bad tag fails here, loudly, instead of writing an HTML
+            # 404 body to the .tar.gz and failing later as a corrupt archive.
+            curl -fL -o local_packages/kernel-devel-all.tar.gz \
+              "https://github.com/rehosting/linux_builder/releases/download/$VER/kernel-devel-all.tar.gz"
+          else
+            echo "::warning::using a pre-existing local_packages/kernel-devel-all.tar.gz; it may not be $VER"
           fi
       - name: Install pigz
         run: |
@@ -62,6 +90,10 @@ jobs:
           sudo apt-get install -y pigz
 
       - name: Extract and build all modules
+        env:
+          # Recorded into kernels/BUILT_AGAINST.txt inside the tarball, so the
+          # pairing travels with the artifact rather than living only in CI logs.
+          LINUX_BUILDER_VERSION: ${{ steps.kernel_devel.outputs.version }}
         run: |
           ./build.sh --versions "4.10 6.13" \
             --image embedded-toolchains:latest \
@@ -94,6 +126,15 @@ jobs:
           name: Release ${{ steps.version.outputs.v-version }}
           body: |
             Release ${{ steps.version.outputs.v-version }}
+
+            Built against **linux_builder `${{ steps.kernel_devel.outputs.version }}`**.
+
+            These modules are only loadable on kernels from that linux_builder
+            release. A kernel built with a different toolchain rejects them at
+            insmod with `disagrees about version of symbol module_layout`,
+            because Kconfig resolves options like `CONFIG_STACKPROTECTOR_PER_TASK`
+            and `CONFIG_INIT_STACK_*` by probing the compiler, which changes the
+            module ABI even when the sources and config files are identical.
           draft: false
           generate_release_notes: true
           prerelease: false

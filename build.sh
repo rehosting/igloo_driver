@@ -174,6 +174,7 @@ BUILD_OUTPUT_MOUNT_SRC="$(rewrite_mount "$BUILD_OUTPUT_DIR")"
 # Run the container with proper environment variables and mounts
 docker run ${INTERACTIVE} --rm \
     -e RELEASE="${RELEASE}" \
+    -e LINUX_BUILDER_VERSION="${LINUX_BUILDER_VERSION:-}" \
     -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
     -v "$KERNEL_DEVEL_MOUNT_SRC":/kernel-devel:ro \
     -v "$APP_MOUNT_SRC":/app \
