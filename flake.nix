@@ -32,7 +32,11 @@
     # Taking the flake makes the kernel derivation the input, so ARCH,
     # CROSS_COMPILE and the compiler all come from the kernel itself and a
     # mismatched (kernel, module) pair stops being representable.
-    linux-builder.url = "github:rehosting/linux_builder/nixdev_0.1.0";
+    # nixdev_0.1.1, not _0.1.0: that release's 4.10/x86_64 kernel did not boot
+    # (binutils >= 2.31 emitting R_X86_64_PLT32, which Linux only learned in
+    # 4.16). A module is only as good as the kernel it is paired with, so this
+    # pin has to move with the kernels, not lag them.
+    linux-builder.url = "github:rehosting/linux_builder/nixdev_0.1.1";
 
     # Follow, do not re-pin. buildModule reads the toolchain out of the
     # kernel's passthru, so the compiler is already whatever built the kernel;
