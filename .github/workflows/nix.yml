@@ -1,0 +1,244 @@
+# Build igloo.ko with nix, against linux_builder's kernel DERIVATIONS.
+#
+# The Docker workflows (build.yml, test.yml) download a kernel-devel tarball and
+# build inside embedded-toolchains. This one takes linux_builder as a flake
+# input instead, so the kernel a module is compiled against is a build input
+# rather than an unpacked directory that happens to be lying around. See
+# flake.nix for why that distinction is the point of this path.
+#
+# Nix install + Cachix wiring comes from rehosting/ci/actions/nix-setup, the
+# org's shared action. Per its skip-push default, PR runs PULL from
+# rehosting-tools but do not push; pushes to main populate it. All 19 kernels
+# were pushed there by linux_builder's nixdev_0.1.0 tag build, so this workflow
+# substitutes them rather than cross-building a kernel per cell.
+name: nix (modules)
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    # Cut a nix-built PRERELEASE from a tag, without touching the version line.
+    #
+    # Deliberately NOT `dev_*`: that prefix already triggers build.yml, so a
+    # shared prefix would have both pipelines cut a release for the same tag and
+    # race `version-increment` for the same vX.Y.Z. Tag globs are anchored, so
+    # `nixdev_*` does not match `dev_*` and the two stay independent while both
+    # release paths exist. Same convention as linux_builder.
+    tags: ['nixdev_*']
+  workflow_dispatch:
+    inputs:
+      full_matrix:
+        description: "Build every cell, not just the gate"
+        type: boolean
+        default: false
+
+concurrency:
+  group: nix-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# The Arc pods run as a uid with no passwd entry, so $USER/$LOGNAME are unset
+# and HOME-relative caches are not writable. `cachix use` fails outright with
+# "$USER must be set. If running in a container, try setting USER=root." These
+# four are a precondition for running Nix on this runner pool, not decoration.
+env:
+  USER: runner
+  LOGNAME: runner
+  TMPDIR: /home/runner/_work/_temp
+  XDG_CACHE_HOME: /home/runner/_work/.cache
+
+jobs:
+  # The fast gate: one cell per kernel version, both of them built all the way
+  # through to the shipped artifacts (module -> ISF -> stripped .ko), because
+  # the ISF step has its own way to fail -- a module built without debug info
+  # yields a valid but empty symbol table.
+  gate:
+    name: build ${{ matrix.cell }}
+    runs-on: rehosting-arc
+    strategy:
+      fail-fast: false
+      matrix:
+        cell: ["4.10-armel", "6.13-armel"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare runner directories
+        run: mkdir -p "$TMPDIR" "$XDG_CACHE_HOME"
+      - name: Set up Nix
+        uses: rehosting/ci/actions/nix-setup@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache-backend: cachix
+          cachix-name: rehosting-tools
+          cachix-auth-token: ${{ secrets.CACHIX_REHOSTING }}
+          # No VM needed; avoids install-nix-action's KVM/udevadm step, which
+          # fails on Arc pods that expose /dev/kvm without a working udevd.
+          enable-kvm: false
+          extra-nix-config: |
+            max-jobs = 8
+            cores = 8
+
+      - name: Build module, ISF and stripped .ko
+        run: |
+          set -euo pipefail
+          for out in igloo isf ko; do
+            # Cell names contain a '.', which nix parses as an attrpath
+            # separator -- the quoting is load-bearing.
+            nix build --no-link --print-out-paths \
+              ".#packages.x86_64-linux.\"$out-${{ matrix.cell }}\""
+          done
+
+  # The full 19-cell matrix: on demand, and on a `nixdev_*` tag, where it is
+  # also what produces the release. Not on every PR -- the gate above catches
+  # everything that is not arch-specific.
+  full:
+    name: full matrix
+    runs-on: rehosting-arc
+    permissions:
+      contents: write
+    # Also on a push to main: the Docker pipeline is gone, so this job is the
+    # only thing that cuts a release and a merge has to build the whole matrix.
+    if: >-
+      ${{ (github.event_name == 'workflow_dispatch' && inputs.full_matrix)
+          || startsWith(github.ref, 'refs/tags/nixdev_')
+          || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare runner directories
+        run: mkdir -p "$TMPDIR" "$XDG_CACHE_HOME"
+      - name: Set up Nix
+        uses: rehosting/ci/actions/nix-setup@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache-backend: cachix
+          cachix-name: rehosting-tools
+          cachix-auth-token: ${{ secrets.CACHIX_REHOSTING }}
+          enable-kvm: false
+          extra-nix-config: |
+            max-jobs = 8
+            cores = 8
+
+      - name: Every module
+        run: nix build --print-out-paths --no-link .#all
+
+      # Built per cell rather than through the tarball so a single failing arch
+      # is attributable at a glance instead of buried in a 19-cell aggregate.
+      - name: Every ISF and stripped module
+        run: |
+          set -euo pipefail
+          cells=$(nix eval --json ".#packages.x86_64-linux" --apply \
+            'p: builtins.filter (n: builtins.match "(isf|ko)-.*" n != null)
+                  (builtins.attrNames p)' | python3 -c 'import json,sys;print("\n".join(json.load(sys.stdin)))')
+          fail=0
+          for c in $cells; do
+            if nix build --no-link ".#packages.x86_64-linux.\"$c\""; then
+              echo "OK   $c"
+            else
+              echo "FAIL $c"; fail=1
+            fi
+          done
+          exit $fail
+
+      # Every module's ELF class, byte order and machine must match what its
+      # target name claims, and every module's modversion CRCs must agree with
+      # its kernel's Module.symvers. The second is the check that would have
+      # caught the 129-of-221 mismatch that shipped and only surfaced as a
+      # guest panic at insmod.
+      - name: Shapes and modversions
+        run: nix flake check --print-build-logs
+
+      - name: Release tarball assembles
+        run: |
+          set -euo pipefail
+          nix build --print-out-paths --out-link result-driver .#igloo_driver
+          # Copy out of the store: the output is a read-only file, and the
+          # upload needs a real file in the workdir.
+          cp -L result-driver igloo_driver.tar.gz
+          chmod u+w igloo_driver.tar.gz
+          ls -l igloo_driver.tar.gz
+
+      # The manifest and the pairing, in the log, so a reviewer can see what
+      # this ships and which kernels it is bound to without downloading it.
+      - name: Manifest
+        run: |
+          tar tzf igloo_driver.tar.gz | sed 's|^\./||' | grep -v '/$' | sort
+          echo "--- BUILT_AGAINST ---"
+          tar xzOf igloo_driver.tar.gz kernels/BUILT_AGAINST.txt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: igloo-modules-nix
+          path: igloo_driver.tar.gz
+
+      # Prerelease from a nixdev_* tag: the tag IS the version, no increment.
+      # For handing a downstream repo an immutable driver to test against
+      # without consuming a version number.
+      #
+      # This used to carry a warning that it must NEVER become a full release,
+      # because `releases/latest` is the newest non-prerelease and consumers
+      # read `releases/latest/download/igloo_driver.tar.gz` -- so a full release
+      # here "would silently become the driver everything picks up". That is now
+      # the intent, not the hazard: the nix driver IS the one everything should
+      # pick up, and the vX.Y.Z step below deliberately makes it so. The Docker
+      # path that used to own that version line is gone.
+      - name: Publish prerelease
+        if: ${{ startsWith(github.ref, 'refs/tags/nixdev_') }}
+        uses: softprops/action-gh-release@v1
+        with:
+          files: igloo_driver.tar.gz
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }} (nix, prerelease)
+          prerelease: true
+          body: |
+            Built by the **nix** path, not the Docker pipeline. Prerelease, for
+            downstream testing only -- it does not participate in the `vX.Y.Z`
+            version line.
+
+            Modules are compiled against linux_builder's kernel DERIVATIONS, so
+            the (kernel, module) pairing is a build input rather than a version
+            string. `kernels/BUILT_AGAINST.txt` inside the archive names the
+            exact kernel store path each module belongs to.
+
+      # ---- the vX.Y.Z version line -------------------------------------
+      # Ported from the deleted build.yml. That workflow cut this repo's real
+      # releases from the DOCKER path, and it can no longer run at all: it fed
+      # on linux_builder's `releases/latest/download/kernel-devel-all.tar.gz`,
+      # and as of linux_builder v4.0.1 that asset is nix-built. Its prebuilt
+      # host tools are linked against /nix/store, so they cannot execute in the
+      # Ubuntu toolchain image -- build.sh detected exactly this and refused.
+      #
+      # So release duty moves here, where the modules are compiled against the
+      # kernel DERIVATIONS they will be paired with. That is the whole point:
+      # driver v0.0.96 was Docker-built against different kernels and 129 of 221
+      # modversion CRCs disagreed, which the guest reported as "igloo: disagrees
+      # about version of symbol module_layout".
+      #
+      # `use_api: true` reads GIT TAGS via /git/matching-refs/tags/, takes the
+      # highest by `sort -V`, and applies `increment` (default: patch). To move
+      # the version LINE, push a bare marker tag at main's tip -- do NOT set
+      # `increment: minor`, which is not self-clearing and silently bumps the
+      # release after it too.
+      - name: Get next version
+        id: version
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: reecetech/version-increment@2023.10.1
+        with:
+          use_api: true
+
+      - name: Publish release
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: softprops/action-gh-release@v2.0.8
+        with:
+          files: igloo_driver.tar.gz
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ steps.version.outputs.v-version }}
+          name: Release ${{ steps.version.outputs.v-version }}
+          generate_release_notes: true
+          prerelease: false
+          body: |
+            Built by the **nix** path: every module is cross-compiled against
+            linux_builder's kernel derivations, so the (kernel, module) pairing
+            is a build input rather than a version string.
+
+            `kernels/BUILT_AGAINST.txt` inside the archive names the exact
+            kernel store path each module belongs to.

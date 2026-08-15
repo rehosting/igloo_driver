@@ -48,33 +48,78 @@ sphinx-build -b html docs docs/_build/html
 
 ## Building the module
 
-igloo_driver is cross-compiled for ~13 architectures against multiple kernel
-versions inside a Docker toolchain container. The wrapper is `build.sh`.
+There are two build paths. They produce the same `igloo_driver.tar.gz` layout.
 
-**Prerequisites:** Docker; a toolchain image (default
-`rehosting/embedded-toolchains:latest`); and kernel headers as
-`local_packages/kernel-devel-all.tar.gz` (published by
-[`linux_builder`](https://github.com/rehosting/linux_builder)):
+### With Nix (recommended)
 
 ```bash
-mkdir -p local_packages
-curl -L -o local_packages/kernel-devel-all.tar.gz \
-  https://github.com/rehosting/linux_builder/releases/latest/download/kernel-devel-all.tar.gz
+nix build .#igloo_driver                                # the release tarball
+nix build '.#packages.x86_64-linux."igloo-6.13-armel"'  # one module
+nix build .#all                                         # every module
+nix flake check                                         # shape + modversion checks
 ```
 
-Then build:
+No Docker, no toolchain image, and no `local_packages/` download: the kernels
+come from
+[`linux_builder`](https://github.com/rehosting/linux_builder)'s flake as
+**derivations**, and the cross compiler comes from the kernel each module is
+built against.
+
+That last point is the reason this path exists. A module is loadable only by
+the exact kernel build it was compiled against — its modversion CRCs come from
+that kernel's headers, and the kernel's `.config` itself contains options
+Kconfig resolves *by probing the compiler* (`CONFIG_STACKPROTECTOR_PER_TASK`,
+`CONFIG_INIT_STACK_*`, the `CC_HAS_*` family). So the ABI moves when the
+toolchain moves, even with identical sources and identical config files.
+Building against a kernel *derivation* makes a mismatched pair unrepresentable,
+where building against an unpacked `kernel-devel` tree only made it unlikely.
+
+`kernels/BUILT_AGAINST.txt` inside the archive names the exact kernel store
+path each module belongs to, and `nix flake check` asserts that every module's
+modversion CRCs actually agree with that kernel's `Module.symvers` — the check
+that catches a `disagrees about version of symbol module_layout` panic before
+it reaches a guest rather than after.
+
+The matrix is not restated here: it is read out of `linux_builder`'s kernel
+outputs, so this repo builds for exactly the kernels that exist.
+
+To build `igloo.ko` against some other kernelsmith-built kernel — a stock
+upstream one, say — use the `buildFor` seam rather than adding it to a matrix:
+
+```nix
+igloo-driver.lib.x86_64-linux.buildFor {
+  kernel = kernelsmith.buildKernel { /* ... */ };
+  version = "6.6"; target = "armel";
+}
+```
+
+> Cell names contain a `.`, which Nix parses as an attribute-path separator —
+> quote the attribute (`'.#packages.x86_64-linux."igloo-6.13-armel"'`) or it
+> will not resolve.
+
+To build against a different `linux_builder`:
 
 ```bash
-./build.sh                                   # all default targets, versions 4.10 & 6.13
-./build.sh --versions "4.10 6.7" \
-           --targets "armel mipseb mipsel"   # a subset
-./build.sh --release                         # stripped modules
-./build.sh --help                            # all options
+nix build .#igloo_driver --override-input linux-builder github:rehosting/linux_builder/<ref>
 ```
 
-The output is a single archive, `igloo_driver.tar.gz`, containing
-`igloo.ko.<target>` per target/version. See
-[docs/building.md](docs/building.md) for the full reference.
+### History: the Docker path
+
+Until linux_builder v4.0.1 this repo also cross-compiled inside a Docker
+toolchain container, driven by `build.sh`. That path is removed; it lives in
+git history.
+
+It did not rot — it became **unrunnable**. It fed on linux_builder's
+`releases/latest/download/kernel-devel-all.tar.gz`, and as of v4.0.1 that asset
+is Nix-built. A Nix-built kernel-devel tree ships prebuilt host tools linked
+against the Nix store (`scripts/basic/fixdep` requests an interpreter under
+`/nix/store`), which cannot execute inside an Ubuntu toolchain image; every
+target fails within seconds of `make` starting. `build.sh` grew a guard that
+detected exactly this and refused, rather than failing with an error naming
+fixdep and nothing else.
+
+That is not a bug in the tarball. It is what "prebuilt host tools" means, and
+it is why a Nix linux_builder forces a Nix igloo_driver.
 
 ## Using it with Penguin
 
