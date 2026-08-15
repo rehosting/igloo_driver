@@ -94,9 +94,12 @@ jobs:
     runs-on: rehosting-arc
     permissions:
       contents: write
+    # Also on a push to main: the Docker pipeline is gone, so this job is the
+    # only thing that cuts a release and a merge has to build the whole matrix.
     if: >-
       ${{ (github.event_name == 'workflow_dispatch' && inputs.full_matrix)
-          || startsWith(github.ref, 'refs/tags/nixdev_') }}
+          || startsWith(github.ref, 'refs/tags/nixdev_')
+          || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     steps:
       - uses: actions/checkout@v4
       - name: Prepare runner directories
@@ -166,14 +169,17 @@ jobs:
           name: igloo-modules-nix
           path: igloo_driver.tar.gz
 
-      # Prerelease only, and only from a nixdev_* tag. No version-increment
-      # here -- the tag IS the version -- so this cannot collide with the
-      # Docker pipeline's vX.Y.Z line while both exist.
+      # Prerelease from a nixdev_* tag: the tag IS the version, no increment.
+      # For handing a downstream repo an immutable driver to test against
+      # without consuming a version number.
       #
-      # It must stay a prerelease: `releases/latest` is the newest NON-prerelease,
-      # and penguin's nix-dev.sh plus this repo's own test.yml both read
-      # `releases/latest/download/igloo_driver.tar.gz`. A full release here would
-      # silently become the driver everything picks up.
+      # This used to carry a warning that it must NEVER become a full release,
+      # because `releases/latest` is the newest non-prerelease and consumers
+      # read `releases/latest/download/igloo_driver.tar.gz` -- so a full release
+      # here "would silently become the driver everything picks up". That is now
+      # the intent, not the hazard: the nix driver IS the one everything should
+      # pick up, and the vX.Y.Z step below deliberately makes it so. The Docker
+      # path that used to own that version line is gone.
       - name: Publish prerelease
         if: ${{ startsWith(github.ref, 'refs/tags/nixdev_') }}
         uses: softprops/action-gh-release@v1
@@ -192,3 +198,47 @@ jobs:
             the (kernel, module) pairing is a build input rather than a version
             string. `kernels/BUILT_AGAINST.txt` inside the archive names the
             exact kernel store path each module belongs to.
+
+      # ---- the vX.Y.Z version line -------------------------------------
+      # Ported from the deleted build.yml. That workflow cut this repo's real
+      # releases from the DOCKER path, and it can no longer run at all: it fed
+      # on linux_builder's `releases/latest/download/kernel-devel-all.tar.gz`,
+      # and as of linux_builder v4.0.1 that asset is nix-built. Its prebuilt
+      # host tools are linked against /nix/store, so they cannot execute in the
+      # Ubuntu toolchain image -- build.sh detected exactly this and refused.
+      #
+      # So release duty moves here, where the modules are compiled against the
+      # kernel DERIVATIONS they will be paired with. That is the whole point:
+      # driver v0.0.96 was Docker-built against different kernels and 129 of 221
+      # modversion CRCs disagreed, which the guest reported as "igloo: disagrees
+      # about version of symbol module_layout".
+      #
+      # `use_api: true` reads GIT TAGS via /git/matching-refs/tags/, takes the
+      # highest by `sort -V`, and applies `increment` (default: patch). To move
+      # the version LINE, push a bare marker tag at main's tip -- do NOT set
+      # `increment: minor`, which is not self-clearing and silently bumps the
+      # release after it too.
+      - name: Get next version
+        id: version
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: reecetech/version-increment@2023.10.1
+        with:
+          use_api: true
+
+      - name: Publish release
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: softprops/action-gh-release@v2.0.8
+        with:
+          files: igloo_driver.tar.gz
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ steps.version.outputs.v-version }}
+          name: Release ${{ steps.version.outputs.v-version }}
+          generate_release_notes: true
+          prerelease: false
+          body: |
+            Built by the **nix** path: every module is cross-compiled against
+            linux_builder's kernel derivations, so the (kernel, module) pairing
+            is a build input rather than a version string.
+
+            `kernels/BUILT_AGAINST.txt` inside the archive names the exact
+            kernel store path each module belongs to.

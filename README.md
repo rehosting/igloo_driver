@@ -103,41 +103,23 @@ To build against a different `linux_builder`:
 nix build .#igloo_driver --override-input linux-builder github:rehosting/linux_builder/<ref>
 ```
 
-### With Docker
+### History: the Docker path
 
-The original path: cross-compilation for ~13 architectures inside a Docker
-toolchain container, driven by `build.sh`.
+Until linux_builder v4.0.1 this repo also cross-compiled inside a Docker
+toolchain container, driven by `build.sh`. That path is removed; it lives in
+git history.
 
-Note that it can only consume a **Docker-built** `kernel-devel-all.tar.gz`. A
-Nix-built one ships host tools linked against the Nix store (`scripts/basic/fixdep`
-requests an interpreter under `/nix/store`), which cannot execute inside the
-Ubuntu-based toolchain image — every target fails within seconds of `make`
-starting. Use the Nix path against Nix-built kernels.
+It did not rot — it became **unrunnable**. It fed on linux_builder's
+`releases/latest/download/kernel-devel-all.tar.gz`, and as of v4.0.1 that asset
+is Nix-built. A Nix-built kernel-devel tree ships prebuilt host tools linked
+against the Nix store (`scripts/basic/fixdep` requests an interpreter under
+`/nix/store`), which cannot execute inside an Ubuntu toolchain image; every
+target fails within seconds of `make` starting. `build.sh` grew a guard that
+detected exactly this and refused, rather than failing with an error naming
+fixdep and nothing else.
 
-**Prerequisites:** Docker; a toolchain image (default
-`rehosting/embedded-toolchains:latest`); and kernel headers as
-`local_packages/kernel-devel-all.tar.gz` (published by
-[`linux_builder`](https://github.com/rehosting/linux_builder)):
-
-```bash
-mkdir -p local_packages
-curl -L -o local_packages/kernel-devel-all.tar.gz \
-  https://github.com/rehosting/linux_builder/releases/latest/download/kernel-devel-all.tar.gz
-```
-
-Then build:
-
-```bash
-./build.sh                                   # all default targets, versions 4.10 & 6.13
-./build.sh --versions "4.10 6.7" \
-           --targets "armel mipseb mipsel"   # a subset
-./build.sh --release                         # stripped modules
-./build.sh --help                            # all options
-```
-
-The output is a single archive, `igloo_driver.tar.gz`, containing
-`igloo.ko.<target>` per target/version. See
-[docs/building.md](docs/building.md) for the full reference.
+That is not a bug in the tarball. It is what "prebuilt host tools" means, and
+it is why a Nix linux_builder forces a Nix igloo_driver.
 
 ## Using it with Penguin
 

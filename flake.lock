@@ -47,16 +47,16 @@
         "nixpkgs-qemu": "nixpkgs-qemu"
       },
       "locked": {
-        "lastModified": 1786744488,
-        "narHash": "sha256-lvq2IUnrIbxEO0zTvDKlyXjQHZWT1eXT8B1zICk9L+4=",
+        "lastModified": 1786767380,
+        "narHash": "sha256-oLZVUeaYA6mO1aCZeE24LM1qUVY13NPHS54wrIA45So=",
         "owner": "rehosting",
         "repo": "linux_builder",
-        "rev": "48b318301cafe50adbbca079a3943c7ab8dd9a39",
+        "rev": "b87fad4abe85c6f6cdee0ab9e892f9bee5d21798",
         "type": "github"
       },
       "original": {
         "owner": "rehosting",
-        "ref": "nixdev_0.1.1",
+        "ref": "v4.0.1",
         "repo": "linux_builder",
         "type": "github"
       }
