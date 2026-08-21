@@ -1,0 +1,594 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../">
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="Hooks" href="hooks_api.html"><link rel="prev" title="Portal types" href="types_api.html">
+
+    <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
+        <title>Hypercall ABI - igloo_driver docs</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=d111a655" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/furo.css?v=7bdb33bb" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/furo-extensions.css?v=8dab3a3b" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f2f2f2;
+  --color-code-foreground: #1e1e1e;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../index.html"><div class="brand">igloo_driver docs</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="../index.html">
+  
+  <span class="sidebar-brand-text">igloo_driver docs</span>
+  
+</a><form class="sidebar-search-container" method="get" action="../search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../portal.html">Portal</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../hypercall_abi.html">The hypercall ABI</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../hooks.html">Hooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../hyperfs.html">hyperfs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pseudofiles.html">Pseudo-files &amp; devices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../building.html">Building</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">C API reference</span></p>
+<ul class="current">
+<li class="toctree-l1 current has-children"><a class="reference internal" href="index.html">C API reference</a><input aria-label="Toggle navigation of C API reference" checked="" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="portal_api.html">Portal (internals)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="types_api.html">Portal types</a></li>
+<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">Hypercall ABI</a></li>
+<li class="toctree-l2"><a class="reference internal" href="hooks_api.html">Hooks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="hyperfs_api.html">hyperfs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="scope_api.html">Analysis scoping</a></li>
+</ul>
+</li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="../_sources/api/hypercall_api.md.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="hypercall-abi">
+<h1>Hypercall ABI<a class="headerlink" href="#hypercall-abi" title="Link to this heading">¶</a></h1>
+<p>The per-architecture hypercall primitive and the hypercall number constants.
+See <a class="reference internal" href="../hypercall_abi.html"><span class="std std-doc">The hypercall ABI</span></a> for the narrative reference.</p>
+<section id="hypercall-numbers-igloo-hypercall-consts-h">
+<h2>Hypercall numbers — <code class="docutils literal notranslate"><span class="pre">igloo_hypercall_consts.h</span></code><a class="headerlink" href="#hypercall-numbers-igloo-hypercall-consts-h" title="Link to this heading">¶</a></h2>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-enums">Enums</p>
+<dl class="c enum">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423"></span><span class="k"><span class="pre">enum</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">igloo_hypercall_constants</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants" title="Link to this definition">¶</a><br /></dt>
+<dd><p><em>Values:</em></p>
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_OPEN">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423a23e1504212f0928042ba9e0ba50966e4"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_OPEN</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_OPEN" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_IOCTL_ENOTTY">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423aa50ef185a5261ce7069015162dbf6485"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_IOCTL_ENOTTY</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_IOCTL_ENOTTY" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_IPV4_SETUP">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423a91f2fce626c3db31a8c8d13d9c3ef810"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_IPV4_SETUP</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_IPV4_SETUP" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_IPV4_BIND">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423aada311faeb97154993b94d3f2e5e7e81"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_IPV4_BIND</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_IPV4_BIND" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_IPV6_SETUP">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423a003f3d9249fc12d34d0f6afdf8ec6e4e"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_IPV6_SETUP</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_IPV6_SETUP" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_IPV6_BIND">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423a8c7a7916cbce07f051f1a99235698921"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_IPV6_BIND</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_IPV6_BIND" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_IPV4_RELEASE">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423aa626d7756d9d501c79763bd7f7f8551f"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_IPV4_RELEASE</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_IPV4_RELEASE" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_IPV6_RELEASE">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423a0b97ea593332a88728b7ff38daaf3419"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_IPV6_RELEASE</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_IPV6_RELEASE" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_HYP_UNAME">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423a95b679fcf9c00945ab3db628d401db0f"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_HYP_UNAME</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_HYP_UNAME" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_HYP_ENOENT">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423a42a46edf8cc194d0f1eb0bc824048117"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_HYP_ENOENT</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_HYP_ENOENT" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.HC_TASK_CHANGE">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423a441e058cea94ad4e2f83c4e32c67b7c2"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">HC_TASK_CHANGE</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.HC_TASK_CHANGE" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.HC_VMA_UPDATE">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423a980cea8bf8d66b093b1a54bcf4bb4710"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">HC_VMA_UPDATE</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.HC_VMA_UPDATE" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_HYP_VMA_REPORT_UPDATE">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423accd87e75b2ab87c3fa4d7a1532edc030"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_HYP_VMA_REPORT_UPDATE</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_HYP_VMA_REPORT_UPDATE" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_HYP_VMA_VM_START">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423a032dc89bebc5b1cb5efb9224c61e3729"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_HYP_VMA_VM_START</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_HYP_VMA_VM_START" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_HYP_VMA_VM_END">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423a4642a60b981ebf3cb4be2a01937531e7"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_HYP_VMA_VM_END</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_HYP_VMA_VM_END" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_HYP_VMA_NAME">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423a10855e7a30de99594b34ef3a3f243128"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_HYP_VMA_NAME</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_HYP_VMA_NAME" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_HYP_VMA_SPECIAL">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423a19be88534c5a375244606f53145dac01"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_HYP_VMA_SPECIAL</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_HYP_VMA_SPECIAL" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_HYP_TASK_PSTIME">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423ac3e55c42f1120882e3b3cf3797bad302"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_HYP_TASK_PSTIME</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_HYP_TASK_PSTIME" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_HYP_SYSCALL_ENTER">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423addb5b96b0759bf6e8a4982d5f3785991"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_HYP_SYSCALL_ENTER</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_HYP_SYSCALL_ENTER" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_HYP_SYSCALL_RETURN">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423a0b21268d6887846275d758ae86a447b6"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_HYP_SYSCALL_RETURN</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_HYP_SYSCALL_RETURN" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_HYP_SETUP_TASK_COMM">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423ad5ec41c82385feafa798cc9deb5081f7"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_HYP_SETUP_TASK_COMM</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_HYP_SETUP_TASK_COMM" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_HYP_SIGNAL_DELIVER">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423adbc2dfacb7bfa029e1c020f78af07acf"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_HYP_SIGNAL_DELIVER</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_HYP_SIGNAL_DELIVER" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_HYP_PROC_EXIT">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423a3665019f9b2f614dc72e4fe9120a5f22"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_HYP_PROC_EXIT</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_HYP_PROC_EXIT" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_HYP_UPROBE_ENTER">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423ae273f7a97f1b38d62f6ecb8a194fe5c3"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_HYP_UPROBE_ENTER</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_HYP_UPROBE_ENTER" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_HYP_UPROBE_RETURN">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423ae81054c761ebf6dde763a9d3a720f970"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_HYP_UPROBE_RETURN</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_HYP_UPROBE_RETURN" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_HYP_KPROBE_ENTER">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423adf1ed1151af83c77e2bf950792d4dfbf"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_HYP_KPROBE_ENTER</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_HYP_KPROBE_ENTER" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_HYP_KPROBE_RETURN">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423a25dd993269eac8d00c773a45a850df95"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_HYP_KPROBE_RETURN</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_HYP_KPROBE_RETURN" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_HYPER_ENABLE_PORTAL_INTERRUPT">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423a9fb47a0b07816c18f069bb2bacac0d77"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_HYPER_ENABLE_PORTAL_INTERRUPT</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_HYPER_ENABLE_PORTAL_INTERRUPT" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_HYPER_PORTAL_INTERRUPT">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423a78d3e79a26415c4053cfb5496ab63f3a"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_HYPER_PORTAL_INTERRUPT</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_HYPER_PORTAL_INTERRUPT" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_HYP_TRAMP_HIT">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423aaab058fee935afd79c76d3e16c04c850"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_HYP_TRAMP_HIT</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_HYP_TRAMP_HIT" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_SIGSTOP_KTHREAD">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423ad988b915b5b198d37ce8c006d79c2dad"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_SIGSTOP_KTHREAD</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_SIGSTOP_KTHREAD" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_HYPERFS_MAGIC">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423aee52eb38df79e21555b9a1e8721854ed"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_HYPERFS_MAGIC</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_HYPERFS_MAGIC" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_SIGSTOP_ARGV">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423abbb3511d6fa1ebf2f8541739f276480b"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_SIGSTOP_ARGV</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_SIGSTOP_ARGV" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_SIGSTOP_QUERY">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423a5848a6cb8d0ef4bd329a2cd0449b6b15"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_SIGSTOP_QUERY</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_SIGSTOP_QUERY" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_HYPER_REGISTER_MEM_REGION">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423aa4234b8955a2eb6a8574b3fbf88414c5"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_HYPER_REGISTER_MEM_REGION</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_HYPER_REGISTER_MEM_REGION" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_SYSCALL">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423a36664285ee60c8e0305fb3f46777dc2a"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_SYSCALL</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_SYSCALL" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_MODULE_BASE">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423a3c32da26718016c9ee8b882c0715c66d"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_MODULE_BASE</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_MODULE_BASE" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.igloo_hypercall_constants.IGLOO_INIT_MODULE">
+<span class="target" id="igloo__hypercall__consts_8h_1adde05476e4f4ae93d1965a1b18849423a4974448cb8d7b64a36209b30cd3a56c6"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IGLOO_INIT_MODULE</span></span></span><a class="headerlink" href="#c.igloo_hypercall_constants.IGLOO_INIT_MODULE" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+</section>
+<section id="the-hypercall-primitive-ehypercall-h">
+<h2>The hypercall primitive — <code class="docutils literal notranslate"><span class="pre">ehypercall.h</span></code><a class="headerlink" href="#the-hypercall-primitive-ehypercall-h" title="Link to this heading">¶</a></h2>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-functions">Functions</p>
+<dl class="c function">
+<dt class="sig sig-object c" id="c.igloo_hypercall4">
+<span class="target" id="ehypercall_8h_1ac50f278117b634909cdc61076725f1ad"></span><span class="k"><span class="pre">static</span></span><span class="w"> </span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="kt"><span class="pre">unsigned</span></span><span class="w"> </span><span class="kt"><span class="pre">long</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">igloo_hypercall4</span></span></span><span class="sig-paren">(</span><span class="kt"><span class="pre">unsigned</span></span><span class="w"> </span><span class="kt"><span class="pre">long</span></span><span class="w"> </span><span class="n"><span class="pre">num</span></span>, <span class="kt"><span class="pre">unsigned</span></span><span class="w"> </span><span class="kt"><span class="pre">long</span></span><span class="w"> </span><span class="n"><span class="pre">arg1</span></span>, <span class="kt"><span class="pre">unsigned</span></span><span class="w"> </span><span class="kt"><span class="pre">long</span></span><span class="w"> </span><span class="n"><span class="pre">arg2</span></span>, <span class="kt"><span class="pre">unsigned</span></span><span class="w"> </span><span class="kt"><span class="pre">long</span></span><span class="w"> </span><span class="n"><span class="pre">arg3</span></span>, <span class="kt"><span class="pre">unsigned</span></span><span class="w"> </span><span class="kt"><span class="pre">long</span></span><span class="w"> </span><span class="n"><span class="pre">arg4</span></span><span class="sig-paren">)</span><a class="headerlink" href="#c.igloo_hypercall4" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</div>
+</section>
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="hooks_api.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">Hooks</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="types_api.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">Portal types</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; The IGLOO / Penguin rehosting team
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">Hypercall ABI</a><ul>
+<li><a class="reference internal" href="#hypercall-numbers-igloo-hypercall-consts-h">Hypercall numbers — <code class="docutils literal notranslate"><span class="pre">igloo_hypercall_consts.h</span></code></a><ul>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants"><code class="docutils literal notranslate"><span class="pre">igloo_hypercall_constants</span></code></a><ul>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_OPEN"><code class="docutils literal notranslate"><span class="pre">IGLOO_OPEN</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_IOCTL_ENOTTY"><code class="docutils literal notranslate"><span class="pre">IGLOO_IOCTL_ENOTTY</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_IPV4_SETUP"><code class="docutils literal notranslate"><span class="pre">IGLOO_IPV4_SETUP</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_IPV4_BIND"><code class="docutils literal notranslate"><span class="pre">IGLOO_IPV4_BIND</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_IPV6_SETUP"><code class="docutils literal notranslate"><span class="pre">IGLOO_IPV6_SETUP</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_IPV6_BIND"><code class="docutils literal notranslate"><span class="pre">IGLOO_IPV6_BIND</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_IPV4_RELEASE"><code class="docutils literal notranslate"><span class="pre">IGLOO_IPV4_RELEASE</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_IPV6_RELEASE"><code class="docutils literal notranslate"><span class="pre">IGLOO_IPV6_RELEASE</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_HYP_UNAME"><code class="docutils literal notranslate"><span class="pre">IGLOO_HYP_UNAME</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_HYP_ENOENT"><code class="docutils literal notranslate"><span class="pre">IGLOO_HYP_ENOENT</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.HC_TASK_CHANGE"><code class="docutils literal notranslate"><span class="pre">HC_TASK_CHANGE</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.HC_VMA_UPDATE"><code class="docutils literal notranslate"><span class="pre">HC_VMA_UPDATE</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_HYP_VMA_REPORT_UPDATE"><code class="docutils literal notranslate"><span class="pre">IGLOO_HYP_VMA_REPORT_UPDATE</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_HYP_VMA_VM_START"><code class="docutils literal notranslate"><span class="pre">IGLOO_HYP_VMA_VM_START</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_HYP_VMA_VM_END"><code class="docutils literal notranslate"><span class="pre">IGLOO_HYP_VMA_VM_END</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_HYP_VMA_NAME"><code class="docutils literal notranslate"><span class="pre">IGLOO_HYP_VMA_NAME</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_HYP_VMA_SPECIAL"><code class="docutils literal notranslate"><span class="pre">IGLOO_HYP_VMA_SPECIAL</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_HYP_TASK_PSTIME"><code class="docutils literal notranslate"><span class="pre">IGLOO_HYP_TASK_PSTIME</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_HYP_SYSCALL_ENTER"><code class="docutils literal notranslate"><span class="pre">IGLOO_HYP_SYSCALL_ENTER</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_HYP_SYSCALL_RETURN"><code class="docutils literal notranslate"><span class="pre">IGLOO_HYP_SYSCALL_RETURN</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_HYP_SETUP_TASK_COMM"><code class="docutils literal notranslate"><span class="pre">IGLOO_HYP_SETUP_TASK_COMM</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_HYP_SIGNAL_DELIVER"><code class="docutils literal notranslate"><span class="pre">IGLOO_HYP_SIGNAL_DELIVER</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_HYP_PROC_EXIT"><code class="docutils literal notranslate"><span class="pre">IGLOO_HYP_PROC_EXIT</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_HYP_UPROBE_ENTER"><code class="docutils literal notranslate"><span class="pre">IGLOO_HYP_UPROBE_ENTER</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_HYP_UPROBE_RETURN"><code class="docutils literal notranslate"><span class="pre">IGLOO_HYP_UPROBE_RETURN</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_HYP_KPROBE_ENTER"><code class="docutils literal notranslate"><span class="pre">IGLOO_HYP_KPROBE_ENTER</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_HYP_KPROBE_RETURN"><code class="docutils literal notranslate"><span class="pre">IGLOO_HYP_KPROBE_RETURN</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_HYPER_ENABLE_PORTAL_INTERRUPT"><code class="docutils literal notranslate"><span class="pre">IGLOO_HYPER_ENABLE_PORTAL_INTERRUPT</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_HYPER_PORTAL_INTERRUPT"><code class="docutils literal notranslate"><span class="pre">IGLOO_HYPER_PORTAL_INTERRUPT</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_HYP_TRAMP_HIT"><code class="docutils literal notranslate"><span class="pre">IGLOO_HYP_TRAMP_HIT</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_SIGSTOP_KTHREAD"><code class="docutils literal notranslate"><span class="pre">IGLOO_SIGSTOP_KTHREAD</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_HYPERFS_MAGIC"><code class="docutils literal notranslate"><span class="pre">IGLOO_HYPERFS_MAGIC</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_SIGSTOP_ARGV"><code class="docutils literal notranslate"><span class="pre">IGLOO_SIGSTOP_ARGV</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_SIGSTOP_QUERY"><code class="docutils literal notranslate"><span class="pre">IGLOO_SIGSTOP_QUERY</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_HYPER_REGISTER_MEM_REGION"><code class="docutils literal notranslate"><span class="pre">IGLOO_HYPER_REGISTER_MEM_REGION</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_SYSCALL"><code class="docutils literal notranslate"><span class="pre">IGLOO_SYSCALL</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_MODULE_BASE"><code class="docutils literal notranslate"><span class="pre">IGLOO_MODULE_BASE</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_hypercall_constants.IGLOO_INIT_MODULE"><code class="docutils literal notranslate"><span class="pre">IGLOO_INIT_MODULE</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a class="reference internal" href="#the-hypercall-primitive-ehypercall-h">The hypercall primitive — <code class="docutils literal notranslate"><span class="pre">ehypercall.h</span></code></a><ul>
+<li><a class="reference internal" href="#c.igloo_hypercall4"><code class="docutils literal notranslate"><span class="pre">igloo_hypercall4()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="../_static/documentation_options.js?v=8a448e45"></script>
+    <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../_static/scripts/furo.js?v=46bd48cc"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=f281be69"></script>
+    </body>
+</html>

@@ -1,0 +1,1083 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="./">
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark"><link rel="index" title="Index" href="#"><link rel="search" title="Search" href="search.html">
+
+    <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 --><title>Index - igloo_driver docs</title>
+<link rel="stylesheet" type="text/css" href="_static/pygments.css?v=d111a655" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=7bdb33bb" />
+    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo-extensions.css?v=8dab3a3b" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f2f2f2;
+  --color-code-foreground: #1e1e1e;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="index.html"><div class="brand">igloo_driver docs</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon no-toc" for="__toc">
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="index.html">
+  
+  <span class="sidebar-brand-text">igloo_driver docs</span>
+  
+</a><form class="sidebar-search-container" method="get" action="search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="portal.html">Portal</a></li>
+<li class="toctree-l1"><a class="reference internal" href="hypercall_abi.html">The hypercall ABI</a></li>
+<li class="toctree-l1"><a class="reference internal" href="hooks.html">Hooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="hyperfs.html">hyperfs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pseudofiles.html">Pseudo-files &amp; devices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="building.html">Building</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">C API reference</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="api/index.html">C API reference</a><input aria-label="Toggle navigation of C API reference" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="api/portal_api.html">Portal (internals)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/types_api.html">Portal types</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/hypercall_api.html">Hypercall ABI</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/hooks_api.html">Hooks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/hyperfs_api.html">hyperfs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/scope_api.html">Analysis scoping</a></li>
+</ul>
+</li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon no-toc" for="__toc">
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          
+<section class="genindex-section">
+  <h1 id="index">Index</h1>
+  <div class="genindex-jumpbox"><a href="#C"><strong>C</strong></a> | <a href="#G"><strong>G</strong></a> | <a href="#H"><strong>H</strong></a> | <a href="#I"><strong>I</strong></a> | <a href="#K"><strong>K</strong></a> | <a href="#M"><strong>M</strong></a> | <a href="#N"><strong>N</strong></a> | <a href="#O"><strong>O</strong></a> | <a href="#P"><strong>P</strong></a> | <a href="#R"><strong>R</strong></a> | <a href="#S"><strong>S</strong></a> | <a href="#U"><strong>U</strong></a> | <a href="#V"><strong>V</strong></a></div>
+</section>
+<section id="C" class="genindex-section">
+  <h2>C</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/portal_api.html#c.check_portal_interrupt">check_portal_interrupt (C function)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.check_str_contains">check_str_contains (C function)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.check_str_endswith">check_str_endswith (C function)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.check_str_exact">check_str_exact (C function)</a>
+</li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/hooks_api.html#c.check_str_startswith">check_str_startswith (C function)</a>
+</li>
+        <li><a href="api/portal_api.html#c.CHUNK_SIZE">CHUNK_SIZE (C macro)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.CMP_CHUNK_SIZE">CMP_CHUNK_SIZE (C macro)</a>
+</li>
+        <li><a href="api/types_api.html#c.CURRENT_PID_NUM">CURRENT_PID_NUM (C macro)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="G" class="genindex-section">
+  <h2>G</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/portal_api.html#c.get_target_task_by_id">get_target_task_by_id (C function)</a>
+</li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/portal_api.html#c.get_target_task_mm">get_target_task_mm (C function)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="H" class="genindex-section">
+  <h2>H</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/hooks_api.html#c.handle_op_register_signal_hook">handle_op_register_signal_hook (C function)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.handle_op_unregister_signal_hook">handle_op_unregister_signal_hook (C function)</a>
+</li>
+        <li><a href="api/hyperfs_api.html#c.HYP_RETRY">HYP_RETRY (C macro)</a>
+</li>
+        <li><a href="api/types_api.html#c.HYPER_OP">HYPER_OP (C enum)</a>
+</li>
+        <li><a href="api/types_api.html#c.HYPER_OP.HYPER_OP_MAX">HYPER_OP.HYPER_OP_MAX (C enumerator)</a>
+</li>
+        <li><a href="api/types_api.html#c.HYPER_OP.HYPER_OP_NONE">HYPER_OP.HYPER_OP_NONE (C enumerator)</a>
+</li>
+        <li><a href="api/types_api.html#c.HYPER_OP.HYPER_RESP_MAX">HYPER_OP.HYPER_RESP_MAX (C enumerator)</a>
+</li>
+        <li><a href="api/types_api.html#c.HYPER_OP.HYPER_RESP_NONE">HYPER_OP.HYPER_RESP_NONE (C enumerator)</a>
+</li>
+        <li><a href="api/types_api.html#c.HYPER_OP.HYPER_RESP_READ_FAIL">HYPER_OP.HYPER_RESP_READ_FAIL (C enumerator)</a>
+</li>
+        <li><a href="api/types_api.html#c.HYPER_OP.HYPER_RESP_READ_NUM">HYPER_OP.HYPER_RESP_READ_NUM (C enumerator)</a>
+</li>
+        <li><a href="api/types_api.html#c.HYPER_OP.HYPER_RESP_READ_OK">HYPER_OP.HYPER_RESP_READ_OK (C enumerator)</a>
+</li>
+        <li><a href="api/types_api.html#c.HYPER_OP.HYPER_RESP_READ_PARTIAL">HYPER_OP.HYPER_RESP_READ_PARTIAL (C enumerator)</a>
+</li>
+        <li><a href="api/types_api.html#c.HYPER_OP.HYPER_RESP_WRITE_FAIL">HYPER_OP.HYPER_RESP_WRITE_FAIL (C enumerator)</a>
+</li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/types_api.html#c.HYPER_OP.HYPER_RESP_WRITE_OK">HYPER_OP.HYPER_RESP_WRITE_OK (C enumerator)</a>
+</li>
+        <li><a href="api/hyperfs_api.html#c.hyperfs_exit">hyperfs_exit (C function)</a>
+</li>
+        <li><a href="api/hyperfs_api.html#c.hyperfs_file_ops">hyperfs_file_ops (C enum)</a>
+</li>
+        <li><a href="api/hyperfs_api.html#c.hyperfs_file_ops.HYP_GETATTR">hyperfs_file_ops.HYP_GETATTR (C enumerator)</a>
+</li>
+        <li><a href="api/hyperfs_api.html#c.hyperfs_file_ops.HYP_IOCTL">hyperfs_file_ops.HYP_IOCTL (C enumerator)</a>
+</li>
+        <li><a href="api/hyperfs_api.html#c.hyperfs_file_ops.HYP_READ">hyperfs_file_ops.HYP_READ (C enumerator)</a>
+</li>
+        <li><a href="api/hyperfs_api.html#c.hyperfs_file_ops.HYP_WRITE">hyperfs_file_ops.HYP_WRITE (C enumerator)</a>
+</li>
+        <li><a href="api/hyperfs_api.html#c.hyperfs_init">hyperfs_init (C function)</a>
+</li>
+        <li><a href="api/hyperfs_api.html#c.hyperfs_limits">hyperfs_limits (C enum)</a>
+</li>
+        <li><a href="api/hyperfs_api.html#c.hyperfs_limits.HYPERFILE_PATH_MAX">hyperfs_limits.HYPERFILE_PATH_MAX (C enumerator)</a>
+</li>
+        <li><a href="api/hyperfs_api.html#c.hyperfs_ops">hyperfs_ops (C enum)</a>
+</li>
+        <li><a href="api/hyperfs_api.html#c.hyperfs_ops.HYP_FILE_OP">hyperfs_ops.HYP_FILE_OP (C enumerator)</a>
+</li>
+        <li><a href="api/hyperfs_api.html#c.hyperfs_ops.HYP_GET_HYPERFILE_PATHS">hyperfs_ops.HYP_GET_HYPERFILE_PATHS (C enumerator)</a>
+</li>
+        <li><a href="api/hyperfs_api.html#c.hyperfs_ops.HYP_GET_NUM_HYPERFILES">hyperfs_ops.HYP_GET_NUM_HYPERFILES (C enumerator)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="I" class="genindex-section">
+  <h2>I</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/hooks_api.html#c.igloo_enoent">igloo_enoent (C function)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.igloo_enoent_path">igloo_enoent_path (C function)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall4">igloo_hypercall4 (C function)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants">igloo_hypercall_constants (C enum)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.HC_TASK_CHANGE">igloo_hypercall_constants.HC_TASK_CHANGE (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.HC_VMA_UPDATE">igloo_hypercall_constants.HC_VMA_UPDATE (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_HYP_ENOENT">igloo_hypercall_constants.IGLOO_HYP_ENOENT (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_HYP_KPROBE_ENTER">igloo_hypercall_constants.IGLOO_HYP_KPROBE_ENTER (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_HYP_KPROBE_RETURN">igloo_hypercall_constants.IGLOO_HYP_KPROBE_RETURN (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_HYP_PROC_EXIT">igloo_hypercall_constants.IGLOO_HYP_PROC_EXIT (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_HYP_SETUP_TASK_COMM">igloo_hypercall_constants.IGLOO_HYP_SETUP_TASK_COMM (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_HYP_SIGNAL_DELIVER">igloo_hypercall_constants.IGLOO_HYP_SIGNAL_DELIVER (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_HYP_SYSCALL_ENTER">igloo_hypercall_constants.IGLOO_HYP_SYSCALL_ENTER (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_HYP_SYSCALL_RETURN">igloo_hypercall_constants.IGLOO_HYP_SYSCALL_RETURN (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_HYP_TASK_PSTIME">igloo_hypercall_constants.IGLOO_HYP_TASK_PSTIME (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_HYP_TRAMP_HIT">igloo_hypercall_constants.IGLOO_HYP_TRAMP_HIT (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_HYP_UNAME">igloo_hypercall_constants.IGLOO_HYP_UNAME (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_HYP_UPROBE_ENTER">igloo_hypercall_constants.IGLOO_HYP_UPROBE_ENTER (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_HYP_UPROBE_RETURN">igloo_hypercall_constants.IGLOO_HYP_UPROBE_RETURN (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_HYP_VMA_NAME">igloo_hypercall_constants.IGLOO_HYP_VMA_NAME (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_HYP_VMA_REPORT_UPDATE">igloo_hypercall_constants.IGLOO_HYP_VMA_REPORT_UPDATE (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_HYP_VMA_SPECIAL">igloo_hypercall_constants.IGLOO_HYP_VMA_SPECIAL (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_HYP_VMA_VM_END">igloo_hypercall_constants.IGLOO_HYP_VMA_VM_END (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_HYP_VMA_VM_START">igloo_hypercall_constants.IGLOO_HYP_VMA_VM_START (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_HYPER_ENABLE_PORTAL_INTERRUPT">igloo_hypercall_constants.IGLOO_HYPER_ENABLE_PORTAL_INTERRUPT (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_HYPER_PORTAL_INTERRUPT">igloo_hypercall_constants.IGLOO_HYPER_PORTAL_INTERRUPT (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_HYPER_REGISTER_MEM_REGION">igloo_hypercall_constants.IGLOO_HYPER_REGISTER_MEM_REGION (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_HYPERFS_MAGIC">igloo_hypercall_constants.IGLOO_HYPERFS_MAGIC (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_INIT_MODULE">igloo_hypercall_constants.IGLOO_INIT_MODULE (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_IOCTL_ENOTTY">igloo_hypercall_constants.IGLOO_IOCTL_ENOTTY (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_IPV4_BIND">igloo_hypercall_constants.IGLOO_IPV4_BIND (C enumerator)</a>
+</li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_IPV4_RELEASE">igloo_hypercall_constants.IGLOO_IPV4_RELEASE (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_IPV4_SETUP">igloo_hypercall_constants.IGLOO_IPV4_SETUP (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_IPV6_BIND">igloo_hypercall_constants.IGLOO_IPV6_BIND (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_IPV6_RELEASE">igloo_hypercall_constants.IGLOO_IPV6_RELEASE (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_IPV6_SETUP">igloo_hypercall_constants.IGLOO_IPV6_SETUP (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_MODULE_BASE">igloo_hypercall_constants.IGLOO_MODULE_BASE (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_OPEN">igloo_hypercall_constants.IGLOO_OPEN (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_SIGSTOP_ARGV">igloo_hypercall_constants.IGLOO_SIGSTOP_ARGV (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_SIGSTOP_KTHREAD">igloo_hypercall_constants.IGLOO_SIGSTOP_KTHREAD (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_SIGSTOP_QUERY">igloo_hypercall_constants.IGLOO_SIGSTOP_QUERY (C enumerator)</a>
+</li>
+        <li><a href="api/hypercall_api.html#c.igloo_hypercall_constants.IGLOO_SYSCALL">igloo_hypercall_constants.IGLOO_SYSCALL (C enumerator)</a>
+</li>
+        <li><a href="api/scope_api.html#c.igloo_in_scope">igloo_in_scope (C function)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.igloo_ioctl">igloo_ioctl (C function)</a>
+</li>
+        <li><a href="api/portal_api.html#c.igloo_is_kernel_addr">igloo_is_kernel_addr (C function)</a>
+</li>
+        <li><a href="api/portal_api.html#c.igloo_portal">igloo_portal (C function)</a>
+</li>
+        <li><a href="api/portal_api.html#c.igloo_portal_init">igloo_portal_init (C function)</a>
+</li>
+        <li><a href="api/portal_api.html#c.igloo_pr_debug">igloo_pr_debug (C macro)</a>
+</li>
+        <li><a href="api/types_api.html#c.igloo_proc_ops">igloo_proc_ops (C struct)</a>
+</li>
+        <li><a href="api/types_api.html#c.igloo_proc_ops.get_unmapped_area">igloo_proc_ops.get_unmapped_area (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.igloo_proc_ops.ioctl">igloo_proc_ops.ioctl (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.igloo_proc_ops.lseek">igloo_proc_ops.lseek (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.igloo_proc_ops.mmap">igloo_proc_ops.mmap (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.igloo_proc_ops.open">igloo_proc_ops.open (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.igloo_proc_ops.poll">igloo_proc_ops.poll (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.igloo_proc_ops.read">igloo_proc_ops.read (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.igloo_proc_ops.read_iter">igloo_proc_ops.read_iter (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.igloo_proc_ops.release">igloo_proc_ops.release (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.igloo_proc_ops.write">igloo_proc_ops.write (C var)</a>
+</li>
+        <li><a href="api/portal_api.html#c.igloo_procfs_compat_init">igloo_procfs_compat_init (C function)</a>
+</li>
+        <li><a href="api/scope_api.html#c.igloo_scope_init">igloo_scope_init (C function)</a>
+</li>
+        <li><a href="api/scope_api.html#c.igloo_scope_set_enabled">igloo_scope_set_enabled (C function)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.igloo_syscall_arg_value">igloo_syscall_arg_value (C function)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="K" class="genindex-section">
+  <h2>K</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/hooks_api.html#c.kernel_signal_hook">kernel_signal_hook (C struct)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.kernel_signal_hook.hlist">kernel_signal_hook.hlist (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.kernel_signal_hook.hook">kernel_signal_hook.hook (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.kernel_signal_hook.in_use">kernel_signal_hook.in_use (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.kernel_signal_hook.rcu">kernel_signal_hook.rcu (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.kernel_syscall_hook">kernel_syscall_hook (C struct)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.kernel_syscall_hook.hlist">kernel_syscall_hook.hlist (C var)</a>
+</li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/hooks_api.html#c.kernel_syscall_hook.hook">kernel_syscall_hook.hook (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.kernel_syscall_hook.in_use">kernel_syscall_hook.in_use (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.kernel_syscall_hook.name_hlist">kernel_syscall_hook.name_hlist (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.kernel_syscall_hook.normalized_name">kernel_syscall_hook.normalized_name (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.kernel_syscall_hook.normalized_name_hash">kernel_syscall_hook.normalized_name_hash (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.kernel_syscall_hook.normalized_name_len">kernel_syscall_hook.normalized_name_len (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.kernel_syscall_hook.rcu">kernel_syscall_hook.rcu (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.kernel_syscall_hook.unregister_work">kernel_syscall_hook.unregister_work (C var)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="M" class="genindex-section">
+  <h2>M</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/hooks_api.html#c.MAX_FAST_STR_LEN">MAX_FAST_STR_LEN (C macro)</a>
+</li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/hooks_api.html#c.MAX_SAFE_ALLOC">MAX_SAFE_ALLOC (C macro)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="N" class="genindex-section">
+  <h2>N</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/hooks_api.html#c.normalize_syscall_name">normalize_syscall_name (C function)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="O" class="genindex-section">
+  <h2>O</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/types_api.html#c.osi_fd_entry">osi_fd_entry (C struct)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_fd_entry.fd">osi_fd_entry.fd (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_fd_entry.name_offset">osi_fd_entry.name_offset (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_module">osi_module (C struct)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_module.base">osi_module.base (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_module.dev">osi_module.dev (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_module.file_offset">osi_module.file_offset (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_module.flags">osi_module.flags (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_module.inode">osi_module.inode (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_module.name_offset">osi_module.name_offset (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_module.offset">osi_module.offset (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_module.pgoff">osi_module.pgoff (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_module.size">osi_module.size (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc">osi_proc (C struct)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.arg_end">osi_proc.arg_end (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.arg_start">osi_proc.arg_start (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.brk">osi_proc.brk (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.create_time">osi_proc.create_time (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.egid">osi_proc.egid (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.end_code">osi_proc.end_code (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.end_data">osi_proc.end_data (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.env_end">osi_proc.env_end (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.env_start">osi_proc.env_start (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.euid">osi_proc.euid (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.gid">osi_proc.gid (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.map_count">osi_proc.map_count (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.mmap_base">osi_proc.mmap_base (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.name_offset">osi_proc.name_offset (C var)</a>
+</li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/types_api.html#c.osi_proc.pgd">osi_proc.pgd (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.pid">osi_proc.pid (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.ppid">osi_proc.ppid (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.saved_auxv">osi_proc.saved_auxv (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.start_brk">osi_proc.start_brk (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.start_code">osi_proc.start_code (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.start_data">osi_proc.start_data (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.start_stack">osi_proc.start_stack (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.start_time">osi_proc.start_time (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.task_size">osi_proc.task_size (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.taskd">osi_proc.taskd (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc.uid">osi_proc.uid (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc_handle">osi_proc_handle (C struct)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc_handle.pid">osi_proc_handle.pid (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc_handle.start_time">osi_proc_handle.start_time (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc_handle.taskd">osi_proc_handle.taskd (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc_node">osi_proc_node (C struct)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc_node.comm">osi_proc_node.comm (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc_node.create_time">osi_proc_node.create_time (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc_node.egid">osi_proc_node.egid (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc_node.euid">osi_proc_node.euid (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc_node.gid">osi_proc_node.gid (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc_node.pid">osi_proc_node.pid (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc_node.ppid">osi_proc_node.ppid (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_proc_node.uid">osi_proc_node.uid (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_result_header">osi_result_header (C struct)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_result_header.result_count">osi_result_header.result_count (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.osi_result_header.total_count">osi_result_header.total_count (C var)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="P" class="genindex-section">
+  <h2>P</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/portal_api.html#c.PORTAL_DATA">PORTAL_DATA (C macro)</a>
+</li>
+        <li><a href="api/portal_api.html#c.PORTAL_DATA_OFFSET">PORTAL_DATA_OFFSET (C macro)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_ffi_call">portal_ffi_call (C struct)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_ffi_call.args">portal_ffi_call.args (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_ffi_call.func_ptr">portal_ffi_call.func_ptr (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_ffi_call.num_args">portal_ffi_call.num_args (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_ffi_call.result">portal_ffi_call.result (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_ffi_call.sig_mask">portal_ffi_call.sig_mask (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_hyperfs_add_hyperfile_args">portal_hyperfs_add_hyperfile_args (C struct)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_hyperfs_add_hyperfile_args.file_name_offset">portal_hyperfs_add_hyperfile_args.file_name_offset (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_hyperfs_add_hyperfile_args.fops_ptr">portal_hyperfs_add_hyperfile_args.fops_ptr (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_hyperfs_add_hyperfile_args.fs_name_offset">portal_hyperfs_add_hyperfile_args.fs_name_offset (C var)</a>
+</li>
+        <li><a href="api/portal_api.html#c.portal_op_handler">portal_op_handler (C type)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_create_req">portal_procfs_create_req (C struct)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_create_req.fops">portal_procfs_create_req.fops (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_create_req.mmap_phys_addr">portal_procfs_create_req.mmap_phys_addr (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_create_req.mode">portal_procfs_create_req.mode (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_create_req.parent_id">portal_procfs_create_req.parent_id (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_create_req.path">portal_procfs_create_req.path (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_create_req.replace">portal_procfs_create_req.replace (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_create_req.size">portal_procfs_create_req.size (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_create_req.support_mmap">portal_procfs_create_req.support_mmap (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_dir">portal_procfs_dir (C struct)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_dir.entry">portal_procfs_dir.entry (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_dir.id">portal_procfs_dir.id (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_dir.list">portal_procfs_dir.list (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_dir.path">portal_procfs_dir.path (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_dir.synthetic_pid">portal_procfs_dir.synthetic_pid (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_entry">portal_procfs_entry (C struct)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_entry.entry">portal_procfs_entry.entry (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_entry.id">portal_procfs_entry.id (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_entry.list">portal_procfs_entry.list (C var)</a>
+</li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/types_api.html#c.portal_procfs_entry.mmap_phys_addr">portal_procfs_entry.mmap_phys_addr (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_entry.name">portal_procfs_entry.name (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_entry.parent">portal_procfs_entry.parent (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_entry.python_release">portal_procfs_entry.python_release (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_entry.shm_file">portal_procfs_entry.shm_file (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_procfs_entry.shm_lock">portal_procfs_entry.shm_lock (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_region">portal_region (C union)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_region.header">portal_region.header (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_region.raw">portal_region.raw (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_sysctl_create_req">portal_sysctl_create_req (C struct)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_sysctl_create_req.dir_path">portal_sysctl_create_req.dir_path (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_sysctl_create_req.entry_name">portal_sysctl_create_req.entry_name (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_sysctl_create_req.handler">portal_sysctl_create_req.handler (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_sysctl_create_req.initial_value">portal_sysctl_create_req.initial_value (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_sysctl_create_req.maxlen">portal_sysctl_create_req.maxlen (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_sysctl_create_req.mode">portal_sysctl_create_req.mode (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_tramp_generate">portal_tramp_generate (C struct)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_tramp_generate.status">portal_tramp_generate.status (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_tramp_generate.tramp_addr">portal_tramp_generate.tramp_addr (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_tramp_generate.tramp_id">portal_tramp_generate.tramp_id (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_type">portal_type (C enum)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_type.PORTAL_KPROBE_TYPE_BOTH">portal_type.PORTAL_KPROBE_TYPE_BOTH (C enumerator)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_type.PORTAL_KPROBE_TYPE_ENTRY">portal_type.PORTAL_KPROBE_TYPE_ENTRY (C enumerator)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_type.PORTAL_KPROBE_TYPE_RETURN">portal_type.PORTAL_KPROBE_TYPE_RETURN (C enumerator)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_type.PORTAL_UPROBE_TYPE_BOTH">portal_type.PORTAL_UPROBE_TYPE_BOTH (C enumerator)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_type.PORTAL_UPROBE_TYPE_ENTRY">portal_type.PORTAL_UPROBE_TYPE_ENTRY (C enumerator)</a>
+</li>
+        <li><a href="api/types_api.html#c.portal_type.PORTAL_UPROBE_TYPE_RETURN">portal_type.PORTAL_UPROBE_TYPE_RETURN (C enumerator)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.portalcall_fastpath_is_enabled">portalcall_fastpath_is_enabled (C function)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.portalcall_fastpath_register_magic">portalcall_fastpath_register_magic (C function)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.portalcall_fastpath_set_enabled">portalcall_fastpath_set_enabled (C function)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.portalcall_fastpath_should_skip">portalcall_fastpath_should_skip (C function)</a>
+</li>
+        <li><a href="api/types_api.html#c.PROCFS_MAX_PATH">PROCFS_MAX_PATH (C macro)</a>
+</li>
+        <li><a href="api/types_api.html#c.PROCFS_PID_PARENT_ID">PROCFS_PID_PARENT_ID (C macro)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="R" class="genindex-section">
+  <h2>R</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/types_api.html#c.region_header">region_header (C struct)</a>
+</li>
+        <li><a href="api/types_api.html#c.region_header.addr">region_header.addr (C var)</a>
+</li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/types_api.html#c.region_header.op">region_header.op (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.region_header.pid">region_header.pid (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.region_header.size">region_header.size (C var)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="S" class="genindex-section">
+  <h2>S</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/hooks_api.html#c.signal_event">signal_event (C struct)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.signal_event.comm">signal_event.comm (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.signal_event.drop">signal_event.drop (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.signal_event.hook">signal_event.hook (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.signal_event.pc">signal_event.pc (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.signal_event.pid">signal_event.pid (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.signal_event.regs">signal_event.regs (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.signal_event.sig">signal_event.sig (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.signal_event.task">signal_event.task (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.signal_hc_init">signal_hc_init (C function)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.signal_hook">signal_hook (C struct)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.signal_hook.comm_filter">signal_hook.comm_filter (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.signal_hook.comm_filter_enabled">signal_hook.comm_filter_enabled (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.signal_hook.enabled">signal_hook.enabled (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.signal_hook.filter_pid">signal_hook.filter_pid (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.signal_hook.pid_filter_enabled">signal_hook.pid_filter_enabled (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.signal_hook.sig">signal_hook.sig (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.SIGNAL_NAME_MAX_LEN">SIGNAL_NAME_MAX_LEN (C macro)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_event">syscall_event (C struct)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_event.argc">syscall_event.argc (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_event.args">syscall_event.args (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_event.create_time">syscall_event.create_time (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_event.hook">syscall_event.hook (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_event.pc">syscall_event.pc (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_event.pid">syscall_event.pid (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_event.regs">syscall_event.regs (C var)</a>
+</li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/hooks_api.html#c.syscall_event.retval">syscall_event.retval (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_event.skip_syscall">syscall_event.skip_syscall (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_event.syscall_name">syscall_event.syscall_name (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_event.task">syscall_event.task (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_hook">syscall_hook (C struct)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_hook.arg_filters">syscall_hook.arg_filters (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_hook.comm_filter">syscall_hook.comm_filter (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_hook.comm_filter_enabled">syscall_hook.comm_filter_enabled (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_hook.enabled">syscall_hook.enabled (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_hook.filter_pid">syscall_hook.filter_pid (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_hook.name">syscall_hook.name (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_hook.on_all">syscall_hook.on_all (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_hook.on_enter">syscall_hook.on_enter (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_hook.on_return">syscall_hook.on_return (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_hook.pid_filter_enabled">syscall_hook.pid_filter_enabled (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_hook.retval_filter">syscall_hook.retval_filter (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_hook.scope_filter_enabled">syscall_hook.scope_filter_enabled (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_hook_lock">syscall_hook_lock (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_hook_table">syscall_hook_table (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_name_hash">syscall_name_hash (C function)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.SYSCALL_NAME_MAX_LEN">SYSCALL_NAME_MAX_LEN (C macro)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscall_normalized_name_hash">syscall_normalized_name_hash (C function)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.syscalls_hc_init">syscalls_hc_init (C function)</a>
+</li>
+        <li><a href="api/types_api.html#c.SYSCTL_MAX_NAME">SYSCTL_MAX_NAME (C macro)</a>
+</li>
+        <li><a href="api/types_api.html#c.SYSCTL_MAX_PATH">SYSCTL_MAX_PATH (C macro)</a>
+</li>
+        <li><a href="api/types_api.html#c.SYSCTL_MAX_VAL">SYSCTL_MAX_VAL (C macro)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="U" class="genindex-section">
+  <h2>U</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/hooks_api.html#c.unregister_syscall_hook">unregister_syscall_hook (C function)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+<section id="V" class="genindex-section">
+  <h2>V</h2>
+  <table style="width: 100%" class="indextable genindextable"><tr>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/hooks_api.html#c.value_filter">value_filter (C struct)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter.bitmask">value_filter.bitmask (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter.enabled">value_filter.enabled (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter.max_value">value_filter.max_value (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter.min_value">value_filter.min_value (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter.pattern">value_filter.pattern (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter.pattern_len">value_filter.pattern_len (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter.type">value_filter.type (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter.value">value_filter.value (C var)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter_type">value_filter_type (C enum)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter_type.SYSCALLS_HC_FILTER_BITMASK_CLEAR">value_filter_type.SYSCALLS_HC_FILTER_BITMASK_CLEAR (C enumerator)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter_type.SYSCALLS_HC_FILTER_BITMASK_SET">value_filter_type.SYSCALLS_HC_FILTER_BITMASK_SET (C enumerator)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter_type.SYSCALLS_HC_FILTER_ERROR">value_filter_type.SYSCALLS_HC_FILTER_ERROR (C enumerator)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter_type.SYSCALLS_HC_FILTER_EXACT">value_filter_type.SYSCALLS_HC_FILTER_EXACT (C enumerator)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter_type.SYSCALLS_HC_FILTER_GREATER">value_filter_type.SYSCALLS_HC_FILTER_GREATER (C enumerator)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter_type.SYSCALLS_HC_FILTER_GREATER_EQUAL">value_filter_type.SYSCALLS_HC_FILTER_GREATER_EQUAL (C enumerator)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter_type.SYSCALLS_HC_FILTER_LESS">value_filter_type.SYSCALLS_HC_FILTER_LESS (C enumerator)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter_type.SYSCALLS_HC_FILTER_LESS_EQUAL">value_filter_type.SYSCALLS_HC_FILTER_LESS_EQUAL (C enumerator)</a>
+</li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api/hooks_api.html#c.value_filter_type.SYSCALLS_HC_FILTER_NOT_EQUAL">value_filter_type.SYSCALLS_HC_FILTER_NOT_EQUAL (C enumerator)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter_type.SYSCALLS_HC_FILTER_RANGE">value_filter_type.SYSCALLS_HC_FILTER_RANGE (C enumerator)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter_type.SYSCALLS_HC_FILTER_STR_CONTAINS">value_filter_type.SYSCALLS_HC_FILTER_STR_CONTAINS (C enumerator)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter_type.SYSCALLS_HC_FILTER_STR_ENDSWITH">value_filter_type.SYSCALLS_HC_FILTER_STR_ENDSWITH (C enumerator)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter_type.SYSCALLS_HC_FILTER_STR_EXACT">value_filter_type.SYSCALLS_HC_FILTER_STR_EXACT (C enumerator)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter_type.SYSCALLS_HC_FILTER_STR_STARTSWITH">value_filter_type.SYSCALLS_HC_FILTER_STR_STARTSWITH (C enumerator)</a>
+</li>
+        <li><a href="api/hooks_api.html#c.value_filter_type.SYSCALLS_HC_FILTER_SUCCESS">value_filter_type.SYSCALLS_HC_FILTER_SUCCESS (C enumerator)</a>
+</li>
+        <li><a href="api/types_api.html#c.vfs_close_result">vfs_close_result (C struct)</a>
+</li>
+        <li><a href="api/types_api.html#c.vfs_close_result._pad">vfs_close_result._pad (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.vfs_close_result.error">vfs_close_result.error (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.vfs_open_result">vfs_open_result (C struct)</a>
+</li>
+        <li><a href="api/types_api.html#c.vfs_open_result.error">vfs_open_result.error (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.vfs_open_result.fs_magic">vfs_open_result.fs_magic (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.vfs_open_result.handle">vfs_open_result.handle (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.vfs_read_result">vfs_read_result (C struct)</a>
+</li>
+        <li><a href="api/types_api.html#c.vfs_read_result._pad">vfs_read_result._pad (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.vfs_read_result.eof">vfs_read_result.eof (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.vfs_read_result.error">vfs_read_result.error (C var)</a>
+</li>
+        <li><a href="api/types_api.html#c.vfs_read_result.nbytes">vfs_read_result.nbytes (C var)</a>
+</li>
+    </ul></td>
+  </tr></table>
+</section>
+
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          
+          
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; The IGLOO / Penguin rehosting team
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer no-toc">
+      
+      
+      
+    </aside>
+  </div>
+</div><script src="_static/documentation_options.js?v=8a448e45"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/scripts/furo.js?v=46bd48cc"></script>
+    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="_static/copybutton.js?v=f281be69"></script>
+    </body>
+</html>

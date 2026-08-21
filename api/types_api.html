@@ -1,0 +1,1382 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../">
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="Hypercall ABI" href="hypercall_api.html"><link rel="prev" title="Portal (internals)" href="portal_api.html">
+
+    <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
+        <title>Portal types - igloo_driver docs</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=d111a655" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/furo.css?v=7bdb33bb" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/furo-extensions.css?v=8dab3a3b" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f2f2f2;
+  --color-code-foreground: #1e1e1e;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../index.html"><div class="brand">igloo_driver docs</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="../index.html">
+  
+  <span class="sidebar-brand-text">igloo_driver docs</span>
+  
+</a><form class="sidebar-search-container" method="get" action="../search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../portal.html">Portal</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../hypercall_abi.html">The hypercall ABI</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../hooks.html">Hooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../hyperfs.html">hyperfs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pseudofiles.html">Pseudo-files &amp; devices</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../building.html">Building</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">C API reference</span></p>
+<ul class="current">
+<li class="toctree-l1 current has-children"><a class="reference internal" href="index.html">C API reference</a><input aria-label="Toggle navigation of C API reference" checked="" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="portal_api.html">Portal (internals)</a></li>
+<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">Portal types</a></li>
+<li class="toctree-l2"><a class="reference internal" href="hypercall_api.html">Hypercall ABI</a></li>
+<li class="toctree-l2"><a class="reference internal" href="hooks_api.html">Hooks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="hyperfs_api.html">hyperfs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="scope_api.html">Analysis scoping</a></li>
+</ul>
+</li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="../_sources/api/types_api.md.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="portal-types">
+<h1>Portal types<a class="headerlink" href="#portal-types" title="Link to this heading">¶</a></h1>
+<p>The shared-memory region layout, operation/response enums, probe types, and the
+OS-introspection (OSI) structures.</p>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-defines">Defines</p>
+<dl class="c macro">
+<dt class="sig sig-object c" id="c.CURRENT_PID_NUM">
+<span class="target" id="portal__types_8h_1a0959af16a537b0380891bdc248bc8b67"></span><span class="sig-name descname"><span class="n"><span class="pre">CURRENT_PID_NUM</span></span></span><a class="headerlink" href="#c.CURRENT_PID_NUM" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c macro">
+<dt class="sig sig-object c" id="c.PROCFS_MAX_PATH">
+<span class="target" id="portal__types_8h_1aa108394b7ef4556182416d746bd28c99"></span><span class="sig-name descname"><span class="n"><span class="pre">PROCFS_MAX_PATH</span></span></span><a class="headerlink" href="#c.PROCFS_MAX_PATH" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c macro">
+<dt class="sig sig-object c" id="c.PROCFS_PID_PARENT_ID">
+<span class="target" id="portal__types_8h_1a365bba2750f15b4e97200e68b788cd62"></span><span class="sig-name descname"><span class="n"><span class="pre">PROCFS_PID_PARENT_ID</span></span></span><a class="headerlink" href="#c.PROCFS_PID_PARENT_ID" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c macro">
+<dt class="sig sig-object c" id="c.SYSCTL_MAX_PATH">
+<span class="target" id="portal__types_8h_1aaaed4ad7ad797101082f4bc5e94f5492"></span><span class="sig-name descname"><span class="n"><span class="pre">SYSCTL_MAX_PATH</span></span></span><a class="headerlink" href="#c.SYSCTL_MAX_PATH" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c macro">
+<dt class="sig sig-object c" id="c.SYSCTL_MAX_NAME">
+<span class="target" id="portal__types_8h_1aa6da8684acc0240c26a4f27960dab6f3"></span><span class="sig-name descname"><span class="n"><span class="pre">SYSCTL_MAX_NAME</span></span></span><a class="headerlink" href="#c.SYSCTL_MAX_NAME" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c macro">
+<dt class="sig sig-object c" id="c.SYSCTL_MAX_VAL">
+<span class="target" id="portal__types_8h_1a8c5bb6c7851cc8cfe3c056512c267fb3"></span><span class="sig-name descname"><span class="n"><span class="pre">SYSCTL_MAX_VAL</span></span></span><a class="headerlink" href="#c.SYSCTL_MAX_VAL" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</div>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-enums">Enums</p>
+<dl class="c enum">
+<dt class="sig sig-object c" id="c.HYPER_OP">
+<span class="target" id="portal__types_8h_1ac4059d75d9c8e0c603887c34ee01fe75"></span><span class="k"><span class="pre">enum</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">HYPER_OP</span></span></span><a class="headerlink" href="#c.HYPER_OP" title="Link to this definition">¶</a><br /></dt>
+<dd><p><em>Values:</em></p>
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.HYPER_OP.HYPER_OP_NONE">
+<span class="target" id="portal__types_8h_1ac4059d75d9c8e0c603887c34ee01fe75ab388f819608301315a455a08315e5f02"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">HYPER_OP_NONE</span></span></span><a class="headerlink" href="#c.HYPER_OP.HYPER_OP_NONE" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.HYPER_OP.HYPER_OP_MAX">
+<span class="target" id="portal__types_8h_1ac4059d75d9c8e0c603887c34ee01fe75aeda611da15de5faded8a8e787bcebf8a"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">HYPER_OP_MAX</span></span></span><a class="headerlink" href="#c.HYPER_OP.HYPER_OP_MAX" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.HYPER_OP.HYPER_RESP_NONE">
+<span class="target" id="portal__types_8h_1ac4059d75d9c8e0c603887c34ee01fe75a8a2133110992d79235cb7a5281926dfe"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">HYPER_RESP_NONE</span></span></span><a class="headerlink" href="#c.HYPER_OP.HYPER_RESP_NONE" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.HYPER_OP.HYPER_RESP_READ_OK">
+<span class="target" id="portal__types_8h_1ac4059d75d9c8e0c603887c34ee01fe75ac73728940741d953b3d25ded479e2374"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">HYPER_RESP_READ_OK</span></span></span><a class="headerlink" href="#c.HYPER_OP.HYPER_RESP_READ_OK" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.HYPER_OP.HYPER_RESP_READ_FAIL">
+<span class="target" id="portal__types_8h_1ac4059d75d9c8e0c603887c34ee01fe75a5ac417e3d0889c473ad8c25b3c0513a4"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">HYPER_RESP_READ_FAIL</span></span></span><a class="headerlink" href="#c.HYPER_OP.HYPER_RESP_READ_FAIL" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.HYPER_OP.HYPER_RESP_READ_PARTIAL">
+<span class="target" id="portal__types_8h_1ac4059d75d9c8e0c603887c34ee01fe75a8bc07e8d9b1255e673388c7bf4b0184c"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">HYPER_RESP_READ_PARTIAL</span></span></span><a class="headerlink" href="#c.HYPER_OP.HYPER_RESP_READ_PARTIAL" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.HYPER_OP.HYPER_RESP_WRITE_OK">
+<span class="target" id="portal__types_8h_1ac4059d75d9c8e0c603887c34ee01fe75af049515a5a333b40bfa5a6d802ef1dff"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">HYPER_RESP_WRITE_OK</span></span></span><a class="headerlink" href="#c.HYPER_OP.HYPER_RESP_WRITE_OK" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.HYPER_OP.HYPER_RESP_WRITE_FAIL">
+<span class="target" id="portal__types_8h_1ac4059d75d9c8e0c603887c34ee01fe75ad9cc6386030b32454d9f5c3b901dd02a"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">HYPER_RESP_WRITE_FAIL</span></span></span><a class="headerlink" href="#c.HYPER_OP.HYPER_RESP_WRITE_FAIL" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.HYPER_OP.HYPER_RESP_READ_NUM">
+<span class="target" id="portal__types_8h_1ac4059d75d9c8e0c603887c34ee01fe75aba6ba09752fac46f49be5f642d3d85af"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">HYPER_RESP_READ_NUM</span></span></span><a class="headerlink" href="#c.HYPER_OP.HYPER_RESP_READ_NUM" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.HYPER_OP.HYPER_RESP_MAX">
+<span class="target" id="portal__types_8h_1ac4059d75d9c8e0c603887c34ee01fe75af9dc15523537b2d66e6b0901d6a42ff0"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">HYPER_RESP_MAX</span></span></span><a class="headerlink" href="#c.HYPER_OP.HYPER_RESP_MAX" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="c enum">
+<dt class="sig sig-object c" id="c.portal_type">
+<span class="target" id="portal__types_8h_1aa5de99f761253f59de5f70886ae38b8a"></span><span class="k"><span class="pre">enum</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">portal_type</span></span></span><a class="headerlink" href="#c.portal_type" title="Link to this definition">¶</a><br /></dt>
+<dd><p><em>Values:</em></p>
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.portal_type.PORTAL_UPROBE_TYPE_ENTRY">
+<span class="target" id="portal__types_8h_1aa5de99f761253f59de5f70886ae38b8aa6d954eaf948dd492f16bb6a0aa29465e"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">PORTAL_UPROBE_TYPE_ENTRY</span></span></span><a class="headerlink" href="#c.portal_type.PORTAL_UPROBE_TYPE_ENTRY" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.portal_type.PORTAL_UPROBE_TYPE_RETURN">
+<span class="target" id="portal__types_8h_1aa5de99f761253f59de5f70886ae38b8aabcea61e338260a19cc0a898933317579"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">PORTAL_UPROBE_TYPE_RETURN</span></span></span><a class="headerlink" href="#c.portal_type.PORTAL_UPROBE_TYPE_RETURN" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.portal_type.PORTAL_UPROBE_TYPE_BOTH">
+<span class="target" id="portal__types_8h_1aa5de99f761253f59de5f70886ae38b8aaee9947b0be0f45ec9dd1cac67d3c621f"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">PORTAL_UPROBE_TYPE_BOTH</span></span></span><a class="headerlink" href="#c.portal_type.PORTAL_UPROBE_TYPE_BOTH" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.portal_type.PORTAL_KPROBE_TYPE_ENTRY">
+<span class="target" id="portal__types_8h_1aa5de99f761253f59de5f70886ae38b8aaef24c0c67942d75766a365fe4a342357"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">PORTAL_KPROBE_TYPE_ENTRY</span></span></span><a class="headerlink" href="#c.portal_type.PORTAL_KPROBE_TYPE_ENTRY" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.portal_type.PORTAL_KPROBE_TYPE_RETURN">
+<span class="target" id="portal__types_8h_1aa5de99f761253f59de5f70886ae38b8aa275075adce85607740c438a48d3bf9ed"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">PORTAL_KPROBE_TYPE_RETURN</span></span></span><a class="headerlink" href="#c.portal_type.PORTAL_KPROBE_TYPE_RETURN" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.portal_type.PORTAL_KPROBE_TYPE_BOTH">
+<span class="target" id="portal__types_8h_1aa5de99f761253f59de5f70886ae38b8aaf34e6f4ee7e2d191aeed8f7f71829446"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">PORTAL_KPROBE_TYPE_BOTH</span></span></span><a class="headerlink" href="#c.portal_type.PORTAL_KPROBE_TYPE_BOTH" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</div>
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.region_header">
+<span class="target" id="structregion__header"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">region_header</span></span></span><a class="headerlink" href="#c.region_header" title="Link to this definition">¶</a><br /></dt>
+<dd><div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="c var">
+<dt class="sig sig-object c" id="c.region_header.op">
+<span class="target" id="structregion__header_1ab89118b5e20377142309a13515e59523"></span><span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">op</span></span></span><a class="headerlink" href="#c.region_header.op" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.region_header.pid">
+<span class="target" id="structregion__header_1a8554fed358adb3d8675cedbeef941526"></span><span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">pid</span></span></span><a class="headerlink" href="#c.region_header.pid" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.region_header.addr">
+<span class="target" id="structregion__header_1a60254ef34b3c652b1037d6d04359b30a"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">addr</span></span></span><a class="headerlink" href="#c.region_header.addr" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.region_header.size">
+<span class="target" id="structregion__header_1a49597a83a41f11a551f04be8959ac67d"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">size</span></span></span><a class="headerlink" href="#c.region_header.size" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="c union">
+<dt class="sig sig-object c" id="c.portal_region">
+<span class="target" id="unionportal__region"></span><span class="k"><span class="pre">union</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">portal_region</span></span></span><a class="headerlink" href="#c.portal_region" title="Link to this definition">¶</a><br /></dt>
+<dd><div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_region.header">
+<span class="target" id="unionportal__region_1a344997007d0dd88872b8a24eec7b8809"></span><a class="reference internal" href="#c.region_header" title="region_header"><span class="n"><span class="pre">region_header</span></span></a><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">header</span></span></span><a class="headerlink" href="#c.portal_region.header" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_region.raw">
+<span class="target" id="unionportal__region_1a53c41a834b7ab3edebcbbd5e347fc360"></span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">raw</span></span></span><span class="p"><span class="pre">[</span></span><span class="n"><span class="pre">PAGE_SIZE</span></span><span class="w"> </span><span class="o"><span class="pre">-</span></span><span class="w"> </span><span class="k"><span class="pre">sizeof</span></span><span class="p"><span class="pre">(</span></span><a class="reference internal" href="#c.region_header" title="region_header"><span class="n"><span class="pre">region_header</span></span></a><span class="p"><span class="pre">)</span></span><span class="p"><span class="pre">]</span></span><a class="headerlink" href="#c.portal_region.raw" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.osi_proc_handle">
+<span class="target" id="structosi__proc__handle"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">osi_proc_handle</span></span></span><a class="headerlink" href="#c.osi_proc_handle" title="Link to this definition">¶</a><br /></dt>
+<dd><div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc_handle.pid">
+<span class="target" id="structosi__proc__handle_1ac2246ed43ee0228af7a081f31b62fe66"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">pid</span></span></span><a class="headerlink" href="#c.osi_proc_handle.pid" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc_handle.taskd">
+<span class="target" id="structosi__proc__handle_1ab27648948945d70b1bea24ee8b36b316"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">taskd</span></span></span><a class="headerlink" href="#c.osi_proc_handle.taskd" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc_handle.start_time">
+<span class="target" id="structosi__proc__handle_1a691363ece84dc095c2f5f020106aa398"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">start_time</span></span></span><a class="headerlink" href="#c.osi_proc_handle.start_time" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.osi_module">
+<span class="target" id="structosi__module"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">osi_module</span></span></span><a class="headerlink" href="#c.osi_module" title="Link to this definition">¶</a><br /></dt>
+<dd><div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_module.base">
+<span class="target" id="structosi__module_1adb07e3f3667eb64017b87abdadf6c2e1"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">base</span></span></span><a class="headerlink" href="#c.osi_module.base" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_module.size">
+<span class="target" id="structosi__module_1a4db181a2f63f3697f8106d2215e86fb2"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">size</span></span></span><a class="headerlink" href="#c.osi_module.size" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_module.file_offset">
+<span class="target" id="structosi__module_1a27593167828c7305c68edae722135991"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">file_offset</span></span></span><a class="headerlink" href="#c.osi_module.file_offset" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_module.name_offset">
+<span class="target" id="structosi__module_1a32aecdf131492d17dc2290227beff847"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">name_offset</span></span></span><a class="headerlink" href="#c.osi_module.name_offset" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_module.offset">
+<span class="target" id="structosi__module_1a6be70bd66435ac140ee3620d68898666"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">offset</span></span></span><a class="headerlink" href="#c.osi_module.offset" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_module.flags">
+<span class="target" id="structosi__module_1a4659da7b14672012bf8580ba0a95ef1c"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">flags</span></span></span><a class="headerlink" href="#c.osi_module.flags" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_module.pgoff">
+<span class="target" id="structosi__module_1a45689dd539242ce9b25e3de3892eaf1f"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">pgoff</span></span></span><a class="headerlink" href="#c.osi_module.pgoff" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_module.dev">
+<span class="target" id="structosi__module_1afa14be6ac5b675b27f0f93e5900bbcfe"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dev</span></span></span><a class="headerlink" href="#c.osi_module.dev" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_module.inode">
+<span class="target" id="structosi__module_1ac34cb6af0037e3bcff314a22bc49c9d1"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">inode</span></span></span><a class="headerlink" href="#c.osi_module.inode" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.osi_proc">
+<span class="target" id="structosi__proc"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">osi_proc</span></span></span><a class="headerlink" href="#c.osi_proc" title="Link to this definition">¶</a><br /></dt>
+<dd><div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.taskd">
+<span class="target" id="structosi__proc_1a9e04cf017df2733adc6ba01fb1710d88"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">taskd</span></span></span><a class="headerlink" href="#c.osi_proc.taskd" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.pgd">
+<span class="target" id="structosi__proc_1a88ecd5a12f8a838f8c3d575cf9aed8bf"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">pgd</span></span></span><a class="headerlink" href="#c.osi_proc.pgd" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.pid">
+<span class="target" id="structosi__proc_1ac708aad22aa576d35c286847e1d2ab8c"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">pid</span></span></span><a class="headerlink" href="#c.osi_proc.pid" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.ppid">
+<span class="target" id="structosi__proc_1a5fdabf7d2fc756eff284d56f3e46a316"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">ppid</span></span></span><a class="headerlink" href="#c.osi_proc.ppid" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.name_offset">
+<span class="target" id="structosi__proc_1a23af651e343d13298142cbd206177196"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">name_offset</span></span></span><a class="headerlink" href="#c.osi_proc.name_offset" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.create_time">
+<span class="target" id="structosi__proc_1a84f97e68a56555764cffa5e77a996e0b"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">create_time</span></span></span><a class="headerlink" href="#c.osi_proc.create_time" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.map_count">
+<span class="target" id="structosi__proc_1a45b549825031d94a06eec66536579fd7"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">map_count</span></span></span><a class="headerlink" href="#c.osi_proc.map_count" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.start_brk">
+<span class="target" id="structosi__proc_1ae9c241b89ebab75ad3c6baa84425f2c3"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">start_brk</span></span></span><a class="headerlink" href="#c.osi_proc.start_brk" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.brk">
+<span class="target" id="structosi__proc_1a2d250def052e138c4c86b4b00b0eb68e"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">brk</span></span></span><a class="headerlink" href="#c.osi_proc.brk" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.start_stack">
+<span class="target" id="structosi__proc_1a92af3ae63930e51141ecd9b54a9bf613"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">start_stack</span></span></span><a class="headerlink" href="#c.osi_proc.start_stack" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.start_code">
+<span class="target" id="structosi__proc_1ab51c832dd8d9e8634a22f2d943464f60"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">start_code</span></span></span><a class="headerlink" href="#c.osi_proc.start_code" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.end_code">
+<span class="target" id="structosi__proc_1ab019ccd11ca4ff823ac8412cb29ce67b"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">end_code</span></span></span><a class="headerlink" href="#c.osi_proc.end_code" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.start_data">
+<span class="target" id="structosi__proc_1a4efe3a258954f654b8f68d2dc74578ed"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">start_data</span></span></span><a class="headerlink" href="#c.osi_proc.start_data" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.end_data">
+<span class="target" id="structosi__proc_1a82a642b248e80f9e1e4abd4d21bc6723"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">end_data</span></span></span><a class="headerlink" href="#c.osi_proc.end_data" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.arg_start">
+<span class="target" id="structosi__proc_1a61befb52ff0eb2e578ba4d6b4c3e45df"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">arg_start</span></span></span><a class="headerlink" href="#c.osi_proc.arg_start" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.arg_end">
+<span class="target" id="structosi__proc_1a2010b9a251f2a0c60ff04f7b3c5f8278"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">arg_end</span></span></span><a class="headerlink" href="#c.osi_proc.arg_end" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.env_start">
+<span class="target" id="structosi__proc_1a7e3aa38699fbb61c2ad283e1cb6dfe97"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">env_start</span></span></span><a class="headerlink" href="#c.osi_proc.env_start" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.env_end">
+<span class="target" id="structosi__proc_1aa6131dad2c4dd6f0c8164b0d513992f5"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">env_end</span></span></span><a class="headerlink" href="#c.osi_proc.env_end" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.saved_auxv">
+<span class="target" id="structosi__proc_1ad0a56fda17b6a229d0bf35a733f7c790"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">saved_auxv</span></span></span><a class="headerlink" href="#c.osi_proc.saved_auxv" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.mmap_base">
+<span class="target" id="structosi__proc_1a1eabbe5fb66e1330b2ad0389bba21f89"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">mmap_base</span></span></span><a class="headerlink" href="#c.osi_proc.mmap_base" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.task_size">
+<span class="target" id="structosi__proc_1ac7f286efad09a189b22627a7a7de685d"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">task_size</span></span></span><a class="headerlink" href="#c.osi_proc.task_size" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.uid">
+<span class="target" id="structosi__proc_1a9327cc5c2c2e6752c6a6324160fb58c3"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">uid</span></span></span><a class="headerlink" href="#c.osi_proc.uid" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.gid">
+<span class="target" id="structosi__proc_1a7cd05cd88072355f662b17b8d390e34b"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">gid</span></span></span><a class="headerlink" href="#c.osi_proc.gid" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.euid">
+<span class="target" id="structosi__proc_1a34a345f397e7be34a25963b5987b6f96"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">euid</span></span></span><a class="headerlink" href="#c.osi_proc.euid" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.egid">
+<span class="target" id="structosi__proc_1aafee95809871f3bfc16797f1fc81f973"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">egid</span></span></span><a class="headerlink" href="#c.osi_proc.egid" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc.start_time">
+<span class="target" id="structosi__proc_1a880123b4e5e87e3861e6602109eea221"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">start_time</span></span></span><a class="headerlink" href="#c.osi_proc.start_time" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.osi_proc_node">
+<span class="target" id="structosi__proc__node"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">osi_proc_node</span></span></span><a class="headerlink" href="#c.osi_proc_node" title="Link to this definition">¶</a><br /></dt>
+<dd><div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc_node.pid">
+<span class="target" id="structosi__proc__node_1aa9630324baab406a69666379f5f13b0b"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">pid</span></span></span><a class="headerlink" href="#c.osi_proc_node.pid" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc_node.ppid">
+<span class="target" id="structosi__proc__node_1a42ce36c313c965a591b351a1c0cc87b8"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">ppid</span></span></span><a class="headerlink" href="#c.osi_proc_node.ppid" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc_node.create_time">
+<span class="target" id="structosi__proc__node_1a72fac9708dde1036f647aba128fd8f05"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">create_time</span></span></span><a class="headerlink" href="#c.osi_proc_node.create_time" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc_node.uid">
+<span class="target" id="structosi__proc__node_1ad02c56967505b5e17ecdc2fc5e3150f3"></span><span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">uid</span></span></span><a class="headerlink" href="#c.osi_proc_node.uid" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc_node.gid">
+<span class="target" id="structosi__proc__node_1a255bdf3d0de6cf9a0fe91224dac752fa"></span><span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">gid</span></span></span><a class="headerlink" href="#c.osi_proc_node.gid" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc_node.euid">
+<span class="target" id="structosi__proc__node_1ada63bd7aee88f2d0a3111610eb3cac92"></span><span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">euid</span></span></span><a class="headerlink" href="#c.osi_proc_node.euid" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc_node.egid">
+<span class="target" id="structosi__proc__node_1a9316f2b3f54d7ff1949b430d8bf5957a"></span><span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">egid</span></span></span><a class="headerlink" href="#c.osi_proc_node.egid" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_proc_node.comm">
+<span class="target" id="structosi__proc__node_1af16e3a05056de8082b63a9eedcbcd08c"></span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">comm</span></span></span><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">16</span></span><span class="p"><span class="pre">]</span></span><a class="headerlink" href="#c.osi_proc_node.comm" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.osi_fd_entry">
+<span class="target" id="structosi__fd__entry"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">osi_fd_entry</span></span></span><a class="headerlink" href="#c.osi_fd_entry" title="Link to this definition">¶</a><br /></dt>
+<dd><div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_fd_entry.fd">
+<span class="target" id="structosi__fd__entry_1af064a4cf392fb747eeb2cd19dbaf4ca0"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">fd</span></span></span><a class="headerlink" href="#c.osi_fd_entry.fd" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_fd_entry.name_offset">
+<span class="target" id="structosi__fd__entry_1a1324a2bfc904bc9cf5200232f5e51856"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">name_offset</span></span></span><a class="headerlink" href="#c.osi_fd_entry.name_offset" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.vfs_open_result">
+<span class="target" id="structvfs__open__result"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">vfs_open_result</span></span></span><a class="headerlink" href="#c.vfs_open_result" title="Link to this definition">¶</a><br /></dt>
+<dd><div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="c var">
+<dt class="sig sig-object c" id="c.vfs_open_result.error">
+<span class="target" id="structvfs__open__result_1a30298ddcc9ab9c5857774a5076298e5e"></span><span class="n"><span class="pre">int32_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">error</span></span></span><a class="headerlink" href="#c.vfs_open_result.error" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.vfs_open_result.handle">
+<span class="target" id="structvfs__open__result_1a99271e6ec753368180e365f4559a3be1"></span><span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">handle</span></span></span><a class="headerlink" href="#c.vfs_open_result.handle" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.vfs_open_result.fs_magic">
+<span class="target" id="structvfs__open__result_1a8f73579486666d627cd02cc94563d6b7"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">fs_magic</span></span></span><a class="headerlink" href="#c.vfs_open_result.fs_magic" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.vfs_read_result">
+<span class="target" id="structvfs__read__result"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">vfs_read_result</span></span></span><a class="headerlink" href="#c.vfs_read_result" title="Link to this definition">¶</a><br /></dt>
+<dd><div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="c var">
+<dt class="sig sig-object c" id="c.vfs_read_result.error">
+<span class="target" id="structvfs__read__result_1ada87d278cdc167fb5e0fc4cd0f1bc7ce"></span><span class="n"><span class="pre">int32_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">error</span></span></span><a class="headerlink" href="#c.vfs_read_result.error" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.vfs_read_result.nbytes">
+<span class="target" id="structvfs__read__result_1aba57f20054670852b09b9f4c2aad3245"></span><span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">nbytes</span></span></span><a class="headerlink" href="#c.vfs_read_result.nbytes" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.vfs_read_result.eof">
+<span class="target" id="structvfs__read__result_1a249acdf216eb3507d198b1e70067166d"></span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">eof</span></span></span><a class="headerlink" href="#c.vfs_read_result.eof" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.vfs_read_result._pad">
+<span class="target" id="structvfs__read__result_1a921521c2d412daa30524b2ea528c4136"></span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">_pad</span></span></span><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">7</span></span><span class="p"><span class="pre">]</span></span><a class="headerlink" href="#c.vfs_read_result._pad" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.vfs_close_result">
+<span class="target" id="structvfs__close__result"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">vfs_close_result</span></span></span><a class="headerlink" href="#c.vfs_close_result" title="Link to this definition">¶</a><br /></dt>
+<dd><div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="c var">
+<dt class="sig sig-object c" id="c.vfs_close_result.error">
+<span class="target" id="structvfs__close__result_1ae1dcc08084e3811a4f7932bbd1550559"></span><span class="n"><span class="pre">int32_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">error</span></span></span><a class="headerlink" href="#c.vfs_close_result.error" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.vfs_close_result._pad">
+<span class="target" id="structvfs__close__result_1a289a3e69eccf951872b6973f79190e65"></span><span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">_pad</span></span></span><a class="headerlink" href="#c.vfs_close_result._pad" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.osi_result_header">
+<span class="target" id="structosi__result__header"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">osi_result_header</span></span></span><a class="headerlink" href="#c.osi_result_header" title="Link to this definition">¶</a><br /></dt>
+<dd><div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_result_header.result_count">
+<span class="target" id="structosi__result__header_1a7bd45e1ca718a0cd4045b7c41890d716"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">result_count</span></span></span><a class="headerlink" href="#c.osi_result_header.result_count" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.osi_result_header.total_count">
+<span class="target" id="structosi__result__header_1a7d701d14659dc83859f4f1279459107c"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">total_count</span></span></span><a class="headerlink" href="#c.osi_result_header.total_count" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.portal_ffi_call">
+<span class="target" id="structportal__ffi__call"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">portal_ffi_call</span></span></span><a class="headerlink" href="#c.portal_ffi_call" title="Link to this definition">¶</a><br /></dt>
+<dd><div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_ffi_call.func_ptr">
+<span class="target" id="structportal__ffi__call_1a046f79a584a41d6853de9dfdccca95f8"></span><span class="kt"><span class="pre">unsigned</span></span><span class="w"> </span><span class="kt"><span class="pre">long</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">func_ptr</span></span></span><a class="headerlink" href="#c.portal_ffi_call.func_ptr" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_ffi_call.num_args">
+<span class="target" id="structportal__ffi__call_1a25052cd4d1ed064f1a53c8847176cad2"></span><span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">num_args</span></span></span><a class="headerlink" href="#c.portal_ffi_call.num_args" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_ffi_call.sig_mask">
+<span class="target" id="structportal__ffi__call_1a985ab80e17baa67d80e7165494ab7147"></span><span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">sig_mask</span></span></span><a class="headerlink" href="#c.portal_ffi_call.sig_mask" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_ffi_call.args">
+<span class="target" id="structportal__ffi__call_1aee7fb89dab08a0f755f8ddfaae811e99"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">args</span></span></span><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">8</span></span><span class="p"><span class="pre">]</span></span><a class="headerlink" href="#c.portal_ffi_call.args" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_ffi_call.result">
+<span class="target" id="structportal__ffi__call_1a1137ab09b6e380db00502bb5bbf6993f"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">result</span></span></span><a class="headerlink" href="#c.portal_ffi_call.result" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.portal_tramp_generate">
+<span class="target" id="structportal__tramp__generate"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">portal_tramp_generate</span></span></span><a class="headerlink" href="#c.portal_tramp_generate" title="Link to this definition">¶</a><br /></dt>
+<dd><div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_tramp_generate.tramp_id">
+<span class="target" id="structportal__tramp__generate_1ab1e2ab242c91b12a2660504b4f55dfcb"></span><span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">tramp_id</span></span></span><a class="headerlink" href="#c.portal_tramp_generate.tramp_id" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_tramp_generate.status">
+<span class="target" id="structportal__tramp__generate_1acb146ddebd8c2b9e53b0e7c1e9085f45"></span><span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">status</span></span></span><a class="headerlink" href="#c.portal_tramp_generate.status" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_tramp_generate.tramp_addr">
+<span class="target" id="structportal__tramp__generate_1a8c0ea3254d803ca7866406889784c665"></span><span class="kt"><span class="pre">unsigned</span></span><span class="w"> </span><span class="kt"><span class="pre">long</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">tramp_addr</span></span></span><a class="headerlink" href="#c.portal_tramp_generate.tramp_addr" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.portal_hyperfs_add_hyperfile_args">
+<span class="target" id="structportal__hyperfs__add__hyperfile__args"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">portal_hyperfs_add_hyperfile_args</span></span></span><a class="headerlink" href="#c.portal_hyperfs_add_hyperfile_args" title="Link to this definition">¶</a><br /></dt>
+<dd><div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_hyperfs_add_hyperfile_args.fs_name_offset">
+<span class="target" id="structportal__hyperfs__add__hyperfile__args_1ac852dd78c1f86ca48ff070b6403b8a16"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">fs_name_offset</span></span></span><a class="headerlink" href="#c.portal_hyperfs_add_hyperfile_args.fs_name_offset" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_hyperfs_add_hyperfile_args.file_name_offset">
+<span class="target" id="structportal__hyperfs__add__hyperfile__args_1a14bfea646cf403cbc8c285a1e3c50822"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">file_name_offset</span></span></span><a class="headerlink" href="#c.portal_hyperfs_add_hyperfile_args.file_name_offset" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_hyperfs_add_hyperfile_args.fops_ptr">
+<span class="target" id="structportal__hyperfs__add__hyperfile__args_1a2e301e2803c193a34a82991624765662"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">fops_ptr</span></span></span><a class="headerlink" href="#c.portal_hyperfs_add_hyperfile_args.fops_ptr" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.igloo_proc_ops">
+<span class="target" id="structigloo__proc__ops"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">igloo_proc_ops</span></span></span><a class="headerlink" href="#c.igloo_proc_ops" title="Link to this definition">¶</a><br /></dt>
+<dd><div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="c var">
+<dt class="sig sig-object c" id="c.igloo_proc_ops.open">
+<span class="target" id="structigloo__proc__ops_1a8a6aa48ff86ad96dc599f8504bef40ce"></span><span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="p"><span class="pre">(</span></span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">open</span></span></span><span class="p"><span class="pre">)</span></span><span class="p"><span class="pre">(</span></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="n"><span class="pre">inode</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="n"><span class="pre">file</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">)</span></span><a class="headerlink" href="#c.igloo_proc_ops.open" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.igloo_proc_ops.read">
+<span class="target" id="structigloo__proc__ops_1a4927e35523392a86fc8e58148fbb7e4f"></span><span class="n"><span class="pre">ssize_t</span></span><span class="w"> </span><span class="p"><span class="pre">(</span></span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">read</span></span></span><span class="p"><span class="pre">)</span></span><span class="p"><span class="pre">(</span></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="n"><span class="pre">file</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="n"><span class="pre">size_t</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="n"><span class="pre">loff_t</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">)</span></span><a class="headerlink" href="#c.igloo_proc_ops.read" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.igloo_proc_ops.read_iter">
+<span class="target" id="structigloo__proc__ops_1a7e7c0efdb3f09b68ef603e7418c5cfa0"></span><span class="n"><span class="pre">ssize_t</span></span><span class="w"> </span><span class="p"><span class="pre">(</span></span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">read_iter</span></span></span><span class="p"><span class="pre">)</span></span><span class="p"><span class="pre">(</span></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="n"><span class="pre">kiocb</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="n"><span class="pre">iov_iter</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">)</span></span><a class="headerlink" href="#c.igloo_proc_ops.read_iter" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.igloo_proc_ops.write">
+<span class="target" id="structigloo__proc__ops_1a185b9e9b116626586ad64e4f4c1eb3f0"></span><span class="n"><span class="pre">ssize_t</span></span><span class="w"> </span><span class="p"><span class="pre">(</span></span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">write</span></span></span><span class="p"><span class="pre">)</span></span><span class="p"><span class="pre">(</span></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="n"><span class="pre">file</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="n"><span class="pre">size_t</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="n"><span class="pre">loff_t</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">)</span></span><a class="headerlink" href="#c.igloo_proc_ops.write" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.igloo_proc_ops.lseek">
+<span class="target" id="structigloo__proc__ops_1a9cbce83b2706a7d4f686f105604ad65e"></span><span class="n"><span class="pre">loff_t</span></span><span class="w"> </span><span class="p"><span class="pre">(</span></span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">lseek</span></span></span><span class="p"><span class="pre">)</span></span><span class="p"><span class="pre">(</span></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="n"><span class="pre">file</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="n"><span class="pre">loff_t</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="kt"><span class="pre">int</span></span><span class="p"><span class="pre">)</span></span><a class="headerlink" href="#c.igloo_proc_ops.lseek" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.igloo_proc_ops.release">
+<span class="target" id="structigloo__proc__ops_1a4ccd2b4dfa3b0a5c297501e25285904b"></span><span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="p"><span class="pre">(</span></span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">release</span></span></span><span class="p"><span class="pre">)</span></span><span class="p"><span class="pre">(</span></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="n"><span class="pre">inode</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="n"><span class="pre">file</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">)</span></span><a class="headerlink" href="#c.igloo_proc_ops.release" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.igloo_proc_ops.poll">
+<span class="target" id="structigloo__proc__ops_1aa70899c5dec9d99736c42354c386642a"></span><span class="kt"><span class="pre">unsigned</span></span><span class="w"> </span><span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="p"><span class="pre">(</span></span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">poll</span></span></span><span class="p"><span class="pre">)</span></span><span class="p"><span class="pre">(</span></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="n"><span class="pre">file</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="n"><span class="pre">poll_table_struct</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">)</span></span><a class="headerlink" href="#c.igloo_proc_ops.poll" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.igloo_proc_ops.ioctl">
+<span class="target" id="structigloo__proc__ops_1a0891129989ed69fc1cc1bbf8e93336ed"></span><span class="kt"><span class="pre">long</span></span><span class="w"> </span><span class="p"><span class="pre">(</span></span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">ioctl</span></span></span><span class="p"><span class="pre">)</span></span><span class="p"><span class="pre">(</span></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="n"><span class="pre">file</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="kt"><span class="pre">unsigned</span></span><span class="w"> </span><span class="kt"><span class="pre">int</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="kt"><span class="pre">unsigned</span></span><span class="w"> </span><span class="kt"><span class="pre">long</span></span><span class="p"><span class="pre">)</span></span><a class="headerlink" href="#c.igloo_proc_ops.ioctl" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.igloo_proc_ops.mmap">
+<span class="target" id="structigloo__proc__ops_1a73e3f5723c2c50bf7ba451bd2d16c811"></span><span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="p"><span class="pre">(</span></span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">mmap</span></span></span><span class="p"><span class="pre">)</span></span><span class="p"><span class="pre">(</span></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="n"><span class="pre">file</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="n"><span class="pre">vm_area_struct</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">)</span></span><a class="headerlink" href="#c.igloo_proc_ops.mmap" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.igloo_proc_ops.get_unmapped_area">
+<span class="target" id="structigloo__proc__ops_1aa4f79c8d73495bb3eb07f5ddeaed7b09"></span><span class="kt"><span class="pre">unsigned</span></span><span class="w"> </span><span class="kt"><span class="pre">long</span></span><span class="w"> </span><span class="p"><span class="pre">(</span></span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">get_unmapped_area</span></span></span><span class="p"><span class="pre">)</span></span><span class="p"><span class="pre">(</span></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="n"><span class="pre">file</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="kt"><span class="pre">unsigned</span></span><span class="w"> </span><span class="kt"><span class="pre">long</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="kt"><span class="pre">unsigned</span></span><span class="w"> </span><span class="kt"><span class="pre">long</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="kt"><span class="pre">unsigned</span></span><span class="w"> </span><span class="kt"><span class="pre">long</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="kt"><span class="pre">unsigned</span></span><span class="w"> </span><span class="kt"><span class="pre">long</span></span><span class="p"><span class="pre">)</span></span><a class="headerlink" href="#c.igloo_proc_ops.get_unmapped_area" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.portal_procfs_create_req">
+<span class="target" id="structportal__procfs__create__req"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">portal_procfs_create_req</span></span></span><a class="headerlink" href="#c.portal_procfs_create_req" title="Link to this definition">¶</a><br /></dt>
+<dd><div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_procfs_create_req.path">
+<span class="target" id="structportal__procfs__create__req_1a06fa47ab86823a5daab1da39fe24301d"></span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">path</span></span></span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#c.PROCFS_MAX_PATH" title="PROCFS_MAX_PATH"><span class="n"><span class="pre">PROCFS_MAX_PATH</span></span></a><span class="p"><span class="pre">]</span></span><a class="headerlink" href="#c.portal_procfs_create_req.path" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_procfs_create_req.fops">
+<span class="target" id="structportal__procfs__create__req_1a6fa47c5a7cf73ef1cd9a7b8aa50c351a"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><a class="reference internal" href="#c.igloo_proc_ops" title="igloo_proc_ops"><span class="n"><span class="pre">igloo_proc_ops</span></span></a><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">fops</span></span></span><a class="headerlink" href="#c.portal_procfs_create_req.fops" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_procfs_create_req.size">
+<span class="target" id="structportal__procfs__create__req_1ac2a5238161e6f4f7b95424cf9f9dfb78"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">size</span></span></span><a class="headerlink" href="#c.portal_procfs_create_req.size" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_procfs_create_req.mmap_phys_addr">
+<span class="target" id="structportal__procfs__create__req_1a29ce582a3405c9dc0862bd4a4a698e3c"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">mmap_phys_addr</span></span></span><a class="headerlink" href="#c.portal_procfs_create_req.mmap_phys_addr" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_procfs_create_req.support_mmap">
+<span class="target" id="structportal__procfs__create__req_1a7ace9c65797f07f190ff3ee2e87eab0e"></span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">support_mmap</span></span></span><a class="headerlink" href="#c.portal_procfs_create_req.support_mmap" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_procfs_create_req.parent_id">
+<span class="target" id="structportal__procfs__create__req_1ab37942a18ed14b61fe1c4119662326bf"></span><span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">parent_id</span></span></span><a class="headerlink" href="#c.portal_procfs_create_req.parent_id" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_procfs_create_req.mode">
+<span class="target" id="structportal__procfs__create__req_1a55f2875f8116e0ac76a759eae802a824"></span><span class="n"><span class="pre">umode_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">mode</span></span></span><a class="headerlink" href="#c.portal_procfs_create_req.mode" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_procfs_create_req.replace">
+<span class="target" id="structportal__procfs__create__req_1a96e06d41a45d55f438e1a7fb76feca7f"></span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">replace</span></span></span><a class="headerlink" href="#c.portal_procfs_create_req.replace" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.portal_procfs_entry">
+<span class="target" id="structportal__procfs__entry"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">portal_procfs_entry</span></span></span><a class="headerlink" href="#c.portal_procfs_entry" title="Link to this definition">¶</a><br /></dt>
+<dd><div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_procfs_entry.list">
+<span class="target" id="structportal__procfs__entry_1a5730b03f911d7d80759c360119f948ee"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="n"><span class="pre">list_head</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">list</span></span></span><a class="headerlink" href="#c.portal_procfs_entry.list" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_procfs_entry.id">
+<span class="target" id="structportal__procfs__entry_1a2330f4ad892ebfde431e45a14561c95e"></span><span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">id</span></span></span><a class="headerlink" href="#c.portal_procfs_entry.id" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_procfs_entry.entry">
+<span class="target" id="structportal__procfs__entry_1a30e232d4abfc9f1b66673803659682ec"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="n"><span class="pre">proc_dir_entry</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">entry</span></span></span><a class="headerlink" href="#c.portal_procfs_entry.entry" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_procfs_entry.name">
+<span class="target" id="structportal__procfs__entry_1acd1df83add60b17a9b542caca1bd548a"></span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">name</span></span></span><a class="headerlink" href="#c.portal_procfs_entry.name" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_procfs_entry.parent">
+<span class="target" id="structportal__procfs__entry_1a4a30e5f0806c2ccf034abc2672e08473"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="n"><span class="pre">proc_dir_entry</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">parent</span></span></span><a class="headerlink" href="#c.portal_procfs_entry.parent" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_procfs_entry.shm_file">
+<span class="target" id="structportal__procfs__entry_1a275a2bc81672c81dbacb28ddc5bca975"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="n"><span class="pre">file</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">shm_file</span></span></span><a class="headerlink" href="#c.portal_procfs_entry.shm_file" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_procfs_entry.shm_lock">
+<span class="target" id="structportal__procfs__entry_1ae7dc4dd36d7728350d3d4763931faf6c"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="n"><span class="pre">mutex</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">shm_lock</span></span></span><a class="headerlink" href="#c.portal_procfs_entry.shm_lock" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_procfs_entry.mmap_phys_addr">
+<span class="target" id="structportal__procfs__entry_1a3ae37998b77810087a936536de9a3370"></span><span class="n"><span class="pre">uint64_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">mmap_phys_addr</span></span></span><a class="headerlink" href="#c.portal_procfs_entry.mmap_phys_addr" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_procfs_entry.python_release">
+<span class="target" id="structportal__procfs__entry_1a234c2557b7808eef6a3d963c215ee2f8"></span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">python_release</span></span></span><a class="headerlink" href="#c.portal_procfs_entry.python_release" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.portal_procfs_dir">
+<span class="target" id="structportal__procfs__dir"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">portal_procfs_dir</span></span></span><a class="headerlink" href="#c.portal_procfs_dir" title="Link to this definition">¶</a><br /></dt>
+<dd><div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_procfs_dir.list">
+<span class="target" id="structportal__procfs__dir_1abce1470fb587965f84174d6f271e22df"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="n"><span class="pre">list_head</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">list</span></span></span><a class="headerlink" href="#c.portal_procfs_dir.list" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_procfs_dir.entry">
+<span class="target" id="structportal__procfs__dir_1ae327d9fa2fe8666224a79b79da0b4812"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="n"><span class="pre">proc_dir_entry</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">entry</span></span></span><a class="headerlink" href="#c.portal_procfs_dir.entry" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_procfs_dir.path">
+<span class="target" id="structportal__procfs__dir_1aa66473d269d1a932057bc868cd4dcca8"></span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">path</span></span></span><a class="headerlink" href="#c.portal_procfs_dir.path" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_procfs_dir.id">
+<span class="target" id="structportal__procfs__dir_1a3fee492f340be0c8983ff2ed8f8b797e"></span><span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">id</span></span></span><a class="headerlink" href="#c.portal_procfs_dir.id" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_procfs_dir.synthetic_pid">
+<span class="target" id="structportal__procfs__dir_1ad4ee1ee33aaa75b449c7b4210ffb8a06"></span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">synthetic_pid</span></span></span><a class="headerlink" href="#c.portal_procfs_dir.synthetic_pid" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="c struct">
+<dt class="sig sig-object c" id="c.portal_sysctl_create_req">
+<span class="target" id="structportal__sysctl__create__req"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">portal_sysctl_create_req</span></span></span><a class="headerlink" href="#c.portal_sysctl_create_req" title="Link to this definition">¶</a><br /></dt>
+<dd><div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_sysctl_create_req.dir_path">
+<span class="target" id="structportal__sysctl__create__req_1a7b793ad2c0cef7887f43473029c9b5b2"></span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dir_path</span></span></span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#c.SYSCTL_MAX_PATH" title="SYSCTL_MAX_PATH"><span class="n"><span class="pre">SYSCTL_MAX_PATH</span></span></a><span class="p"><span class="pre">]</span></span><a class="headerlink" href="#c.portal_sysctl_create_req.dir_path" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_sysctl_create_req.entry_name">
+<span class="target" id="structportal__sysctl__create__req_1a647ba0b5dd9943019d3b8589f784d90f"></span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">entry_name</span></span></span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#c.SYSCTL_MAX_NAME" title="SYSCTL_MAX_NAME"><span class="n"><span class="pre">SYSCTL_MAX_NAME</span></span></a><span class="p"><span class="pre">]</span></span><a class="headerlink" href="#c.portal_sysctl_create_req.entry_name" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_sysctl_create_req.initial_value">
+<span class="target" id="structportal__sysctl__create__req_1a1486e8cc180029441388a869eaf9b8c8"></span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">initial_value</span></span></span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#c.SYSCTL_MAX_VAL" title="SYSCTL_MAX_VAL"><span class="n"><span class="pre">SYSCTL_MAX_VAL</span></span></a><span class="p"><span class="pre">]</span></span><a class="headerlink" href="#c.portal_sysctl_create_req.initial_value" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_sysctl_create_req.mode">
+<span class="target" id="structportal__sysctl__create__req_1af10a8ec793341d42ef17e5c63e784c70"></span><span class="n"><span class="pre">umode_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">mode</span></span></span><a class="headerlink" href="#c.portal_sysctl_create_req.mode" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_sysctl_create_req.maxlen">
+<span class="target" id="structportal__sysctl__create__req_1ac0c1f9b812902b08411d5a66a5a47010"></span><span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">maxlen</span></span></span><a class="headerlink" href="#c.portal_sysctl_create_req.maxlen" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c.portal_sysctl_create_req.handler">
+<span class="target" id="structportal__sysctl__create__req_1aff2a0c6004fc228b4a1a555e4ec37609"></span><span class="n"><span class="pre">proc_handler</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">handler</span></span></span><a class="headerlink" href="#c.portal_sysctl_create_req.handler" title="Link to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</div>
+</dd></dl>
+
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="hypercall_api.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">Hypercall ABI</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="portal_api.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">Portal (internals)</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; The IGLOO / Penguin rehosting team
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">Portal types</a><ul>
+<li><a class="reference internal" href="#c.CURRENT_PID_NUM"><code class="docutils literal notranslate"><span class="pre">CURRENT_PID_NUM</span></code></a></li>
+<li><a class="reference internal" href="#c.PROCFS_MAX_PATH"><code class="docutils literal notranslate"><span class="pre">PROCFS_MAX_PATH</span></code></a></li>
+<li><a class="reference internal" href="#c.PROCFS_PID_PARENT_ID"><code class="docutils literal notranslate"><span class="pre">PROCFS_PID_PARENT_ID</span></code></a></li>
+<li><a class="reference internal" href="#c.SYSCTL_MAX_PATH"><code class="docutils literal notranslate"><span class="pre">SYSCTL_MAX_PATH</span></code></a></li>
+<li><a class="reference internal" href="#c.SYSCTL_MAX_NAME"><code class="docutils literal notranslate"><span class="pre">SYSCTL_MAX_NAME</span></code></a></li>
+<li><a class="reference internal" href="#c.SYSCTL_MAX_VAL"><code class="docutils literal notranslate"><span class="pre">SYSCTL_MAX_VAL</span></code></a></li>
+<li><a class="reference internal" href="#c.HYPER_OP"><code class="docutils literal notranslate"><span class="pre">HYPER_OP</span></code></a><ul>
+<li><a class="reference internal" href="#c.HYPER_OP.HYPER_OP_NONE"><code class="docutils literal notranslate"><span class="pre">HYPER_OP_NONE</span></code></a></li>
+<li><a class="reference internal" href="#c.HYPER_OP.HYPER_OP_MAX"><code class="docutils literal notranslate"><span class="pre">HYPER_OP_MAX</span></code></a></li>
+<li><a class="reference internal" href="#c.HYPER_OP.HYPER_RESP_NONE"><code class="docutils literal notranslate"><span class="pre">HYPER_RESP_NONE</span></code></a></li>
+<li><a class="reference internal" href="#c.HYPER_OP.HYPER_RESP_READ_OK"><code class="docutils literal notranslate"><span class="pre">HYPER_RESP_READ_OK</span></code></a></li>
+<li><a class="reference internal" href="#c.HYPER_OP.HYPER_RESP_READ_FAIL"><code class="docutils literal notranslate"><span class="pre">HYPER_RESP_READ_FAIL</span></code></a></li>
+<li><a class="reference internal" href="#c.HYPER_OP.HYPER_RESP_READ_PARTIAL"><code class="docutils literal notranslate"><span class="pre">HYPER_RESP_READ_PARTIAL</span></code></a></li>
+<li><a class="reference internal" href="#c.HYPER_OP.HYPER_RESP_WRITE_OK"><code class="docutils literal notranslate"><span class="pre">HYPER_RESP_WRITE_OK</span></code></a></li>
+<li><a class="reference internal" href="#c.HYPER_OP.HYPER_RESP_WRITE_FAIL"><code class="docutils literal notranslate"><span class="pre">HYPER_RESP_WRITE_FAIL</span></code></a></li>
+<li><a class="reference internal" href="#c.HYPER_OP.HYPER_RESP_READ_NUM"><code class="docutils literal notranslate"><span class="pre">HYPER_RESP_READ_NUM</span></code></a></li>
+<li><a class="reference internal" href="#c.HYPER_OP.HYPER_RESP_MAX"><code class="docutils literal notranslate"><span class="pre">HYPER_RESP_MAX</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#c.portal_type"><code class="docutils literal notranslate"><span class="pre">portal_type</span></code></a><ul>
+<li><a class="reference internal" href="#c.portal_type.PORTAL_UPROBE_TYPE_ENTRY"><code class="docutils literal notranslate"><span class="pre">PORTAL_UPROBE_TYPE_ENTRY</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_type.PORTAL_UPROBE_TYPE_RETURN"><code class="docutils literal notranslate"><span class="pre">PORTAL_UPROBE_TYPE_RETURN</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_type.PORTAL_UPROBE_TYPE_BOTH"><code class="docutils literal notranslate"><span class="pre">PORTAL_UPROBE_TYPE_BOTH</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_type.PORTAL_KPROBE_TYPE_ENTRY"><code class="docutils literal notranslate"><span class="pre">PORTAL_KPROBE_TYPE_ENTRY</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_type.PORTAL_KPROBE_TYPE_RETURN"><code class="docutils literal notranslate"><span class="pre">PORTAL_KPROBE_TYPE_RETURN</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_type.PORTAL_KPROBE_TYPE_BOTH"><code class="docutils literal notranslate"><span class="pre">PORTAL_KPROBE_TYPE_BOTH</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#c.region_header"><code class="docutils literal notranslate"><span class="pre">region_header</span></code></a><ul>
+<li><a class="reference internal" href="#c.region_header.op"><code class="docutils literal notranslate"><span class="pre">op</span></code></a></li>
+<li><a class="reference internal" href="#c.region_header.pid"><code class="docutils literal notranslate"><span class="pre">pid</span></code></a></li>
+<li><a class="reference internal" href="#c.region_header.addr"><code class="docutils literal notranslate"><span class="pre">addr</span></code></a></li>
+<li><a class="reference internal" href="#c.region_header.size"><code class="docutils literal notranslate"><span class="pre">size</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#c.portal_region"><code class="docutils literal notranslate"><span class="pre">portal_region</span></code></a><ul>
+<li><a class="reference internal" href="#c.portal_region.header"><code class="docutils literal notranslate"><span class="pre">header</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_region.raw"><code class="docutils literal notranslate"><span class="pre">raw</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#c.osi_proc_handle"><code class="docutils literal notranslate"><span class="pre">osi_proc_handle</span></code></a><ul>
+<li><a class="reference internal" href="#c.osi_proc_handle.pid"><code class="docutils literal notranslate"><span class="pre">pid</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc_handle.taskd"><code class="docutils literal notranslate"><span class="pre">taskd</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc_handle.start_time"><code class="docutils literal notranslate"><span class="pre">start_time</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#c.osi_module"><code class="docutils literal notranslate"><span class="pre">osi_module</span></code></a><ul>
+<li><a class="reference internal" href="#c.osi_module.base"><code class="docutils literal notranslate"><span class="pre">base</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_module.size"><code class="docutils literal notranslate"><span class="pre">size</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_module.file_offset"><code class="docutils literal notranslate"><span class="pre">file_offset</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_module.name_offset"><code class="docutils literal notranslate"><span class="pre">name_offset</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_module.offset"><code class="docutils literal notranslate"><span class="pre">offset</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_module.flags"><code class="docutils literal notranslate"><span class="pre">flags</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_module.pgoff"><code class="docutils literal notranslate"><span class="pre">pgoff</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_module.dev"><code class="docutils literal notranslate"><span class="pre">dev</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_module.inode"><code class="docutils literal notranslate"><span class="pre">inode</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#c.osi_proc"><code class="docutils literal notranslate"><span class="pre">osi_proc</span></code></a><ul>
+<li><a class="reference internal" href="#c.osi_proc.taskd"><code class="docutils literal notranslate"><span class="pre">taskd</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.pgd"><code class="docutils literal notranslate"><span class="pre">pgd</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.pid"><code class="docutils literal notranslate"><span class="pre">pid</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.ppid"><code class="docutils literal notranslate"><span class="pre">ppid</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.name_offset"><code class="docutils literal notranslate"><span class="pre">name_offset</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.create_time"><code class="docutils literal notranslate"><span class="pre">create_time</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.map_count"><code class="docutils literal notranslate"><span class="pre">map_count</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.start_brk"><code class="docutils literal notranslate"><span class="pre">start_brk</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.brk"><code class="docutils literal notranslate"><span class="pre">brk</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.start_stack"><code class="docutils literal notranslate"><span class="pre">start_stack</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.start_code"><code class="docutils literal notranslate"><span class="pre">start_code</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.end_code"><code class="docutils literal notranslate"><span class="pre">end_code</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.start_data"><code class="docutils literal notranslate"><span class="pre">start_data</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.end_data"><code class="docutils literal notranslate"><span class="pre">end_data</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.arg_start"><code class="docutils literal notranslate"><span class="pre">arg_start</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.arg_end"><code class="docutils literal notranslate"><span class="pre">arg_end</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.env_start"><code class="docutils literal notranslate"><span class="pre">env_start</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.env_end"><code class="docutils literal notranslate"><span class="pre">env_end</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.saved_auxv"><code class="docutils literal notranslate"><span class="pre">saved_auxv</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.mmap_base"><code class="docutils literal notranslate"><span class="pre">mmap_base</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.task_size"><code class="docutils literal notranslate"><span class="pre">task_size</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.uid"><code class="docutils literal notranslate"><span class="pre">uid</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.gid"><code class="docutils literal notranslate"><span class="pre">gid</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.euid"><code class="docutils literal notranslate"><span class="pre">euid</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.egid"><code class="docutils literal notranslate"><span class="pre">egid</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc.start_time"><code class="docutils literal notranslate"><span class="pre">start_time</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#c.osi_proc_node"><code class="docutils literal notranslate"><span class="pre">osi_proc_node</span></code></a><ul>
+<li><a class="reference internal" href="#c.osi_proc_node.pid"><code class="docutils literal notranslate"><span class="pre">pid</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc_node.ppid"><code class="docutils literal notranslate"><span class="pre">ppid</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc_node.create_time"><code class="docutils literal notranslate"><span class="pre">create_time</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc_node.uid"><code class="docutils literal notranslate"><span class="pre">uid</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc_node.gid"><code class="docutils literal notranslate"><span class="pre">gid</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc_node.euid"><code class="docutils literal notranslate"><span class="pre">euid</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc_node.egid"><code class="docutils literal notranslate"><span class="pre">egid</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_proc_node.comm"><code class="docutils literal notranslate"><span class="pre">comm</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#c.osi_fd_entry"><code class="docutils literal notranslate"><span class="pre">osi_fd_entry</span></code></a><ul>
+<li><a class="reference internal" href="#c.osi_fd_entry.fd"><code class="docutils literal notranslate"><span class="pre">fd</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_fd_entry.name_offset"><code class="docutils literal notranslate"><span class="pre">name_offset</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#c.vfs_open_result"><code class="docutils literal notranslate"><span class="pre">vfs_open_result</span></code></a><ul>
+<li><a class="reference internal" href="#c.vfs_open_result.error"><code class="docutils literal notranslate"><span class="pre">error</span></code></a></li>
+<li><a class="reference internal" href="#c.vfs_open_result.handle"><code class="docutils literal notranslate"><span class="pre">handle</span></code></a></li>
+<li><a class="reference internal" href="#c.vfs_open_result.fs_magic"><code class="docutils literal notranslate"><span class="pre">fs_magic</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#c.vfs_read_result"><code class="docutils literal notranslate"><span class="pre">vfs_read_result</span></code></a><ul>
+<li><a class="reference internal" href="#c.vfs_read_result.error"><code class="docutils literal notranslate"><span class="pre">error</span></code></a></li>
+<li><a class="reference internal" href="#c.vfs_read_result.nbytes"><code class="docutils literal notranslate"><span class="pre">nbytes</span></code></a></li>
+<li><a class="reference internal" href="#c.vfs_read_result.eof"><code class="docutils literal notranslate"><span class="pre">eof</span></code></a></li>
+<li><a class="reference internal" href="#c.vfs_read_result._pad"><code class="docutils literal notranslate"><span class="pre">_pad</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#c.vfs_close_result"><code class="docutils literal notranslate"><span class="pre">vfs_close_result</span></code></a><ul>
+<li><a class="reference internal" href="#c.vfs_close_result.error"><code class="docutils literal notranslate"><span class="pre">error</span></code></a></li>
+<li><a class="reference internal" href="#c.vfs_close_result._pad"><code class="docutils literal notranslate"><span class="pre">_pad</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#c.osi_result_header"><code class="docutils literal notranslate"><span class="pre">osi_result_header</span></code></a><ul>
+<li><a class="reference internal" href="#c.osi_result_header.result_count"><code class="docutils literal notranslate"><span class="pre">result_count</span></code></a></li>
+<li><a class="reference internal" href="#c.osi_result_header.total_count"><code class="docutils literal notranslate"><span class="pre">total_count</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#c.portal_ffi_call"><code class="docutils literal notranslate"><span class="pre">portal_ffi_call</span></code></a><ul>
+<li><a class="reference internal" href="#c.portal_ffi_call.func_ptr"><code class="docutils literal notranslate"><span class="pre">func_ptr</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_ffi_call.num_args"><code class="docutils literal notranslate"><span class="pre">num_args</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_ffi_call.sig_mask"><code class="docutils literal notranslate"><span class="pre">sig_mask</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_ffi_call.args"><code class="docutils literal notranslate"><span class="pre">args</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_ffi_call.result"><code class="docutils literal notranslate"><span class="pre">result</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#c.portal_tramp_generate"><code class="docutils literal notranslate"><span class="pre">portal_tramp_generate</span></code></a><ul>
+<li><a class="reference internal" href="#c.portal_tramp_generate.tramp_id"><code class="docutils literal notranslate"><span class="pre">tramp_id</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_tramp_generate.status"><code class="docutils literal notranslate"><span class="pre">status</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_tramp_generate.tramp_addr"><code class="docutils literal notranslate"><span class="pre">tramp_addr</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#c.portal_hyperfs_add_hyperfile_args"><code class="docutils literal notranslate"><span class="pre">portal_hyperfs_add_hyperfile_args</span></code></a><ul>
+<li><a class="reference internal" href="#c.portal_hyperfs_add_hyperfile_args.fs_name_offset"><code class="docutils literal notranslate"><span class="pre">fs_name_offset</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_hyperfs_add_hyperfile_args.file_name_offset"><code class="docutils literal notranslate"><span class="pre">file_name_offset</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_hyperfs_add_hyperfile_args.fops_ptr"><code class="docutils literal notranslate"><span class="pre">fops_ptr</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#c.igloo_proc_ops"><code class="docutils literal notranslate"><span class="pre">igloo_proc_ops</span></code></a><ul>
+<li><a class="reference internal" href="#c.igloo_proc_ops.open"><code class="docutils literal notranslate"><span class="pre">open</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_proc_ops.read"><code class="docutils literal notranslate"><span class="pre">read</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_proc_ops.read_iter"><code class="docutils literal notranslate"><span class="pre">read_iter</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_proc_ops.write"><code class="docutils literal notranslate"><span class="pre">write</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_proc_ops.lseek"><code class="docutils literal notranslate"><span class="pre">lseek</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_proc_ops.release"><code class="docutils literal notranslate"><span class="pre">release</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_proc_ops.poll"><code class="docutils literal notranslate"><span class="pre">poll</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_proc_ops.ioctl"><code class="docutils literal notranslate"><span class="pre">ioctl</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_proc_ops.mmap"><code class="docutils literal notranslate"><span class="pre">mmap</span></code></a></li>
+<li><a class="reference internal" href="#c.igloo_proc_ops.get_unmapped_area"><code class="docutils literal notranslate"><span class="pre">get_unmapped_area</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#c.portal_procfs_create_req"><code class="docutils literal notranslate"><span class="pre">portal_procfs_create_req</span></code></a><ul>
+<li><a class="reference internal" href="#c.portal_procfs_create_req.path"><code class="docutils literal notranslate"><span class="pre">path</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_procfs_create_req.fops"><code class="docutils literal notranslate"><span class="pre">fops</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_procfs_create_req.size"><code class="docutils literal notranslate"><span class="pre">size</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_procfs_create_req.mmap_phys_addr"><code class="docutils literal notranslate"><span class="pre">mmap_phys_addr</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_procfs_create_req.support_mmap"><code class="docutils literal notranslate"><span class="pre">support_mmap</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_procfs_create_req.parent_id"><code class="docutils literal notranslate"><span class="pre">parent_id</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_procfs_create_req.mode"><code class="docutils literal notranslate"><span class="pre">mode</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_procfs_create_req.replace"><code class="docutils literal notranslate"><span class="pre">replace</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#c.portal_procfs_entry"><code class="docutils literal notranslate"><span class="pre">portal_procfs_entry</span></code></a><ul>
+<li><a class="reference internal" href="#c.portal_procfs_entry.list"><code class="docutils literal notranslate"><span class="pre">list</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_procfs_entry.id"><code class="docutils literal notranslate"><span class="pre">id</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_procfs_entry.entry"><code class="docutils literal notranslate"><span class="pre">entry</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_procfs_entry.name"><code class="docutils literal notranslate"><span class="pre">name</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_procfs_entry.parent"><code class="docutils literal notranslate"><span class="pre">parent</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_procfs_entry.shm_file"><code class="docutils literal notranslate"><span class="pre">shm_file</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_procfs_entry.shm_lock"><code class="docutils literal notranslate"><span class="pre">shm_lock</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_procfs_entry.mmap_phys_addr"><code class="docutils literal notranslate"><span class="pre">mmap_phys_addr</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_procfs_entry.python_release"><code class="docutils literal notranslate"><span class="pre">python_release</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#c.portal_procfs_dir"><code class="docutils literal notranslate"><span class="pre">portal_procfs_dir</span></code></a><ul>
+<li><a class="reference internal" href="#c.portal_procfs_dir.list"><code class="docutils literal notranslate"><span class="pre">list</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_procfs_dir.entry"><code class="docutils literal notranslate"><span class="pre">entry</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_procfs_dir.path"><code class="docutils literal notranslate"><span class="pre">path</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_procfs_dir.id"><code class="docutils literal notranslate"><span class="pre">id</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_procfs_dir.synthetic_pid"><code class="docutils literal notranslate"><span class="pre">synthetic_pid</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#c.portal_sysctl_create_req"><code class="docutils literal notranslate"><span class="pre">portal_sysctl_create_req</span></code></a><ul>
+<li><a class="reference internal" href="#c.portal_sysctl_create_req.dir_path"><code class="docutils literal notranslate"><span class="pre">dir_path</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_sysctl_create_req.entry_name"><code class="docutils literal notranslate"><span class="pre">entry_name</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_sysctl_create_req.initial_value"><code class="docutils literal notranslate"><span class="pre">initial_value</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_sysctl_create_req.mode"><code class="docutils literal notranslate"><span class="pre">mode</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_sysctl_create_req.maxlen"><code class="docutils literal notranslate"><span class="pre">maxlen</span></code></a></li>
+<li><a class="reference internal" href="#c.portal_sysctl_create_req.handler"><code class="docutils literal notranslate"><span class="pre">handler</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="../_static/documentation_options.js?v=8a448e45"></script>
+    <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../_static/scripts/furo.js?v=46bd48cc"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=f281be69"></script>
+    </body>
+</html>

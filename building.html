@@ -1,0 +1,451 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="./">
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="genindex.html"><link rel="search" title="Search" href="search.html"><link rel="next" title="C API reference" href="api/index.html"><link rel="prev" title="Pseudo-files &amp; devices" href="pseudofiles.html">
+
+    <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
+        <title>Building - igloo_driver docs</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=d111a655" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=7bdb33bb" />
+    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo-extensions.css?v=8dab3a3b" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f2f2f2;
+  --color-code-foreground: #1e1e1e;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="index.html"><div class="brand">igloo_driver docs</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="index.html">
+  
+  <span class="sidebar-brand-text">igloo_driver docs</span>
+  
+</a><form class="sidebar-search-container" method="get" action="search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Guide</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="portal.html">Portal</a></li>
+<li class="toctree-l1"><a class="reference internal" href="hypercall_abi.html">The hypercall ABI</a></li>
+<li class="toctree-l1"><a class="reference internal" href="hooks.html">Hooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="hyperfs.html">hyperfs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pseudofiles.html">Pseudo-files &amp; devices</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Building</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">C API reference</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="api/index.html">C API reference</a><input aria-label="Toggle navigation of C API reference" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="api/portal_api.html">Portal (internals)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/types_api.html">Portal types</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/hypercall_api.html">Hypercall ABI</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/hooks_api.html">Hooks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/hyperfs_api.html">hyperfs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/scope_api.html">Analysis scoping</a></li>
+</ul>
+</li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="_sources/building.md.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="building">
+<h1>Building<a class="headerlink" href="#building" title="Link to this heading">¶</a></h1>
+<p><code class="docutils literal notranslate"><span class="pre">igloo.ko</span></code> is cross-compiled for ~13 architectures against multiple kernel
+versions. The build is a Nix flake: the kernels come from
+<a class="reference external" href="https://github.com/rehosting/linux_builder"><code class="docutils literal notranslate"><span class="pre">linux_builder</span></code></a>’s flake as
+<strong>derivations</strong>, and the cross compiler for each module comes from the kernel
+it is built against.</p>
+<p>There is no Docker image, no toolchain container, and no <code class="docutils literal notranslate"><span class="pre">local_packages/</span></code>
+download.</p>
+<section id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><strong>Nix</strong>, with flakes enabled.</p></li>
+</ul>
+<p>That is the whole list. Optionally add the shared binary cache so kernels are
+substituted rather than cross-built:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">extra</span><span class="o">-</span><span class="n">substituters</span> <span class="o">=</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">rehosting</span><span class="o">-</span><span class="n">tools</span><span class="o">.</span><span class="n">cachix</span><span class="o">.</span><span class="n">org</span>
+<span class="n">extra</span><span class="o">-</span><span class="n">trusted</span><span class="o">-</span><span class="n">public</span><span class="o">-</span><span class="n">keys</span> <span class="o">=</span> <span class="n">rehosting</span><span class="o">-</span><span class="n">tools</span><span class="o">.</span><span class="n">cachix</span><span class="o">.</span><span class="n">org</span><span class="o">-</span><span class="mi">1</span><span class="p">:</span><span class="n">iNKSaFwG7MfGn6Fk7oTmIcLHqfffQ</span><span class="o">+</span><span class="n">cQIE5gWc6MlY0</span><span class="o">=</span>
+</pre></div>
+</div>
+</section>
+<section id="build">
+<h2>Build<a class="headerlink" href="#build" title="Link to this heading">¶</a></h2>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>nix<span class="w"> </span>build<span class="w"> </span>.#igloo_driver<span class="w">     </span><span class="c1"># the release tarball, every cell</span>
+nix<span class="w"> </span>build<span class="w"> </span>.#all<span class="w">              </span><span class="c1"># every module, as a tree</span>
+</pre></div>
+</div>
+<p>One cell at a time — note the quoting, since cell names contain a <code class="docutils literal notranslate"><span class="pre">.</span></code> which Nix
+would otherwise read as an attribute-path separator:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>nix<span class="w"> </span>build<span class="w"> </span><span class="s1">&#39;.#packages.x86_64-linux.&quot;igloo-6.13-armel&quot;&#39;</span><span class="w">   </span><span class="c1"># the module</span>
+nix<span class="w"> </span>build<span class="w"> </span><span class="s1">&#39;.#packages.x86_64-linux.&quot;isf-6.13-armel&quot;&#39;</span><span class="w">     </span><span class="c1"># its ISF</span>
+nix<span class="w"> </span>build<span class="w"> </span><span class="s1">&#39;.#packages.x86_64-linux.&quot;ko-6.13-armel&quot;&#39;</span><span class="w">      </span><span class="c1"># stripped .ko</span>
+</pre></div>
+</div>
+<p>The matrix is <strong>not declared in this repo</strong>. It is read out of <code class="docutils literal notranslate"><span class="pre">linux_builder</span></code>’s
+kernel outputs, so this builds for exactly the kernels that exist — a target
+cannot be silently missing from one side.</p>
+</section>
+<section id="against-a-different-linux-builder">
+<h2>Against a different linux_builder<a class="headerlink" href="#against-a-different-linux-builder" title="Link to this heading">¶</a></h2>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>nix<span class="w"> </span>build<span class="w"> </span>.#igloo_driver<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--override-input<span class="w"> </span>linux-builder<span class="w"> </span>github:rehosting/linux_builder/&lt;ref&gt;
+</pre></div>
+</div>
+<p>For a kernel that is not in linux_builder’s matrix at all — a stock upstream
+one, say — use the <code class="docutils literal notranslate"><span class="pre">buildFor</span></code> seam rather than adding a cell:</p>
+<div class="highlight-nix notranslate"><div class="highlight"><pre><span></span>igloo-driver<span class="o">.</span>lib<span class="o">.</span>x86_64-linux<span class="o">.</span>buildFor <span class="p">{</span>
+  <span class="ss">kernel</span> <span class="o">=</span> kernelsmith<span class="o">.</span>buildKernel <span class="p">{</span> <span class="cm">/* ... */</span> <span class="p">};</span>
+  <span class="ss">version</span> <span class="o">=</span> <span class="s2">&quot;6.6&quot;</span><span class="p">;</span>
+  <span class="ss">target</span> <span class="o">=</span> <span class="s2">&quot;armel&quot;</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="checks">
+<h2>Checks<a class="headerlink" href="#checks" title="Link to this heading">¶</a></h2>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>nix<span class="w"> </span>flake<span class="w"> </span>check<span class="w">                      </span><span class="c1"># everything below</span>
+nix<span class="w"> </span>build<span class="w"> </span>.#modversions-check<span class="w">        </span><span class="c1"># module CRCs vs each kernel&#39;s Module.symvers</span>
+nix<span class="w"> </span>build<span class="w"> </span>.#shape-check<span class="w">              </span><span class="c1"># ELF class/endianness/machine per target</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">modversions-check</span></code> is the one that matters. A module is loadable only by the
+exact kernel build it was compiled against: its modversion CRCs come from that
+kernel’s headers, and the kernel’s own <code class="docutils literal notranslate"><span class="pre">.config</span></code> contains options Kconfig
+resolves <em>by probing the compiler</em> (<code class="docutils literal notranslate"><span class="pre">CONFIG_STACKPROTECTOR_PER_TASK</span></code>,
+<code class="docutils literal notranslate"><span class="pre">CONFIG_INIT_STACK_*</span></code>, the <code class="docutils literal notranslate"><span class="pre">CC_HAS_*</span></code> family). The ABI therefore moves when the
+toolchain moves, even with identical sources and identical config files.</p>
+<p>Building against a kernel <strong>derivation</strong> makes a mismatched pair
+unrepresentable, where building against an unpacked <code class="docutils literal notranslate"><span class="pre">kernel-devel</span></code> tree only
+made it unlikely. For scale: driver <code class="docutils literal notranslate"><span class="pre">v0.0.96</span></code>, Docker-built against different
+kernels, disagreed on <strong>129 of 221</strong> symbols when paired with Nix kernels —
+which a guest reports as <code class="docutils literal notranslate"><span class="pre">igloo:</span> <span class="pre">disagrees</span> <span class="pre">about</span> <span class="pre">version</span> <span class="pre">of</span> <span class="pre">symbol</span> <span class="pre">module_layout</span></code>, at load time, in a running rehost.</p>
+</section>
+<section id="output">
+<h2>Output<a class="headerlink" href="#output" title="Link to this heading">¶</a></h2>
+<p>A single archive, <code class="docutils literal notranslate"><span class="pre">igloo_driver.tar.gz</span></code>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">kernels</span><span class="o">/&lt;</span><span class="n">version</span><span class="o">&gt;/</span><span class="n">igloo</span><span class="o">.</span><span class="n">ko</span><span class="o">.&lt;</span><span class="n">target</span><span class="o">&gt;</span>
+<span class="n">kernels</span><span class="o">/&lt;</span><span class="n">version</span><span class="o">&gt;/</span><span class="n">igloo</span><span class="o">.</span><span class="n">ko</span><span class="o">.&lt;</span><span class="n">target</span><span class="o">&gt;.</span><span class="n">json</span><span class="o">.</span><span class="n">xz</span>    <span class="c1"># Volatility ISF</span>
+<span class="n">kernels</span><span class="o">/</span><span class="n">BUILT_AGAINST</span><span class="o">.</span><span class="n">txt</span>                      <span class="c1"># kernel store path per cell</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">BUILT_AGAINST.txt</span></code> records the exact kernel <strong>store path</strong> each module belongs
+to, not a version string — so the pairing can be verified by content rather
+than trusted by tag number.</p>
+</section>
+<section id="releases">
+<h2>Releases<a class="headerlink" href="#releases" title="Link to this heading">¶</a></h2>
+<p>Cut automatically on merge to <code class="docutils literal notranslate"><span class="pre">main</span></code>, by the same job that builds the matrix —
+so a release is only published if every module built, the shapes match, and the
+CRCs agree. The version comes from <code class="docutils literal notranslate"><span class="pre">reecetech/version-increment</span></code> with
+<code class="docutils literal notranslate"><span class="pre">use_api:</span> <span class="pre">true</span></code>, which reads git tags, takes the highest by <code class="docutils literal notranslate"><span class="pre">sort</span> <span class="pre">-V</span></code>, and bumps
+the patch.</p>
+<p>To move the version <em>line</em>, push a bare marker tag at main’s tip and let the
+patch increment continue from it. Do <strong>not</strong> set <code class="docutils literal notranslate"><span class="pre">increment:</span> <span class="pre">minor</span></code> in the
+workflow: it is not self-clearing, so it silently bumps the release after it as
+well.</p>
+<p><code class="docutils literal notranslate"><span class="pre">nixdev_*</span></code> tags publish <strong>prereleases</strong> instead, off the version line, for
+handing a downstream repo an immutable driver to test against.</p>
+</section>
+<section id="history-the-docker-path">
+<h2>History: the Docker path<a class="headerlink" href="#history-the-docker-path" title="Link to this heading">¶</a></h2>
+<p>Until linux_builder v4.0.1 this repo cross-compiled inside a Docker toolchain
+container via <code class="docutils literal notranslate"><span class="pre">build.sh</span></code> and <code class="docutils literal notranslate"><span class="pre">_in_container_build.sh</span></code>. Both are removed and
+live in git history.</p>
+<p>That path did not merely fall out of favour — it became unrunnable. It consumed
+linux_builder’s <code class="docutils literal notranslate"><span class="pre">releases/latest/download/kernel-devel-all.tar.gz</span></code>, and from
+v4.0.1 that asset is Nix-built. A Nix-built kernel-devel tree ships prebuilt
+host tools linked against the Nix store (<code class="docutils literal notranslate"><span class="pre">scripts/basic/fixdep</span></code> requests an
+interpreter under <code class="docutils literal notranslate"><span class="pre">/nix/store</span></code>), which cannot execute inside an Ubuntu image;
+every target failed within seconds of <code class="docutils literal notranslate"><span class="pre">make</span></code> starting. <code class="docutils literal notranslate"><span class="pre">build.sh</span></code> ended up with
+a guard that detected precisely that and refused, which is why the failure was
+legible at all.</p>
+<p>It is not a bug in the tarball — it is what “prebuilt host tools” means, and it
+is why a Nix <code class="docutils literal notranslate"><span class="pre">linux_builder</span></code> forces a Nix <code class="docutils literal notranslate"><span class="pre">igloo_driver</span></code>.</p>
+</section>
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="api/index.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">C API reference</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="pseudofiles.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">Pseudo-files &amp; devices</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; The IGLOO / Penguin rehosting team
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">Building</a><ul>
+<li><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li><a class="reference internal" href="#build">Build</a></li>
+<li><a class="reference internal" href="#against-a-different-linux-builder">Against a different linux_builder</a></li>
+<li><a class="reference internal" href="#checks">Checks</a></li>
+<li><a class="reference internal" href="#output">Output</a></li>
+<li><a class="reference internal" href="#releases">Releases</a></li>
+<li><a class="reference internal" href="#history-the-docker-path">History: the Docker path</a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="_static/documentation_options.js?v=8a448e45"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/scripts/furo.js?v=46bd48cc"></script>
+    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="_static/copybutton.js?v=f281be69"></script>
+    </body>
+</html>
