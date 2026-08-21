@@ -117,6 +117,40 @@ struct osi_fd_entry {
     uint64_t name_offset;        // Offset to the file name in the string buffer
 };
 
+/*
+ * Sequential VFS read bridge (handle_op_vfs_open / _read / _close).
+ *
+ * Synthetic filesystems -- procfs, sysfs, debugfs -- generate their contents on
+ * demand: the files report st_size 0 and only yield data through sequential
+ * reads of ONE open file. A stateless "open, seek to offset, read, close" op
+ * cannot read them coherently (each call re-generates the content, and for a
+ * seq_file the byte offset is not a stable cursor), which is why reading /proc
+ * through HYPER_OP_READ_FILE does not work. These ops keep the struct file open
+ * across reads so the kernel's own f_pos advances, exactly like a guest process
+ * cat-ing the file.
+ *
+ * Both results carry an explicit negative errno rather than signalling failure
+ * by returning no data: "the read failed" must be distinguishable from "the
+ * file is empty", on both sides of the portal.
+ */
+struct vfs_open_result {
+    int32_t  error;         // 0 on success, else -errno from filp_open
+    uint32_t handle;        // opaque read handle; 0 when error != 0
+    uint64_t fs_magic;      // sb->s_magic, so the host can name the filesystem
+};
+
+struct vfs_read_result {
+    int32_t  error;         // 0 on success, else -errno from kernel_read
+    uint32_t nbytes;        // bytes of payload following this struct
+    uint8_t  eof;           // 1 when the file returned 0 bytes (NOT an error)
+    uint8_t  _pad[7];
+};
+
+struct vfs_close_result {
+    int32_t  error;         // 0 on success, -EINVAL for an unknown handle
+    uint32_t _pad;
+};
+
 // Generic header for OSI responses with pagination
 struct osi_result_header {
     uint64_t result_count;      // Number of items returned in this response

@@ -50,4 +50,7 @@
     X(sockfs_create_socket, SOCKFS_CREATE_SOCKET) \
     X(mtd_nuke, MTD_NUKE) \
     X(mtd_create, MTD_CREATE) \
-    X(set_scope_enabled, SET_SCOPE_ENABLED)
+    X(set_scope_enabled, SET_SCOPE_ENABLED) \
+    X(vfs_open, VFS_OPEN) \
+    X(vfs_read, VFS_READ) \
+    X(vfs_close, VFS_CLOSE)
