@@ -86,14 +86,24 @@
  * user-address bounce buffer in the calling task, which touches guest state and
  * is a separate decision.
  *
- * Host-MODELLED pseudofiles are in the refused class too, and for a reason that
- * lives on the host rather than here: hyperfile/procfs.py builds igloo_proc_ops
- * out of whichever methods the model overrides, so a model with a read() method
- * produces .read with no .read_iter. igloo_proc_ops already carries read_iter
- * and igloo_convert_ops_to_{proc_ops,fops} already installs it, so a model that
- * implements ONLY read_iter is readable from both sides -- only, because
- * __kernel_read refuses any file with .read set. Nothing here special-cases
- * them, and nothing here can: it is a choice made at registration time.
+ * Host-MODELLED pseudofiles are in the refused class too, for a reason that
+ * lives on the host rather than here, and one worth stating precisely because
+ * the obvious reading of it is wrong. What the model supplies does not become
+ * the file's f_op -- PROCFS picks that. On 5.6+ (fs/proc/inode.c) the inode gets
+ * proc_iter_file_ops (.read_iter, no .read) iff proc_ops->proc_read_iter is
+ * non-NULL, and proc_reg_file_ops (.read, no .read_iter) otherwise; only the
+ * first passes the guard above. So a modelled pseudofile is host-readable iff
+ * its model defines read_iter, and defining read as well costs nothing, since
+ * the selection never looks at proc_read. It must keep read for 4.10, where
+ * every regular procfs file gets proc_reg_file_ops whatever the module supplied
+ * and proc_reg_read forwards only ->read -- read_iter alone is -EIO there, to
+ * the guest as much as to us. A model needs BOTH.
+ *
+ * That needs no change here: igloo_proc_ops already carries read_iter and
+ * igloo_convert_ops_to_{proc_ops,fops} already install it. Nothing in this file
+ * special-cases these, and nothing can -- it is decided at registration time.
+ * The rule is a truth table with citations in penguin's
+ * tests/unit/test_pseudofile_host_readability.py.
  *
  * WHAT THE LOCK DOES AND DOES NOT COVER
  * -------------------------------------
