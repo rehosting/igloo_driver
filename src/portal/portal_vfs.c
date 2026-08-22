@@ -85,6 +85,38 @@
  * guessing there would corrupt memory rather than fail. Reading those needs a
  * user-address bounce buffer in the calling task, which touches guest state and
  * is a separate decision.
+ *
+ * Host-MODELLED pseudofiles are in the refused class too, and for a reason that
+ * lives on the host rather than here: hyperfile/procfs.py builds igloo_proc_ops
+ * out of whichever methods the model overrides, so a model with a read() method
+ * produces .read with no .read_iter. igloo_proc_ops already carries read_iter
+ * and igloo_convert_ops_to_{proc_ops,fops} already installs it, so a model that
+ * implements ONLY read_iter is readable from both sides -- only, because
+ * __kernel_read refuses any file with .read set. Nothing here special-cases
+ * them, and nothing here can: it is a choice made at registration time.
+ *
+ * WHAT THE LOCK DOES AND DOES NOT COVER
+ * -------------------------------------
+ * vfs_lock protects the handle TABLE, not the read. The read itself runs with
+ * the lock dropped, because holding it there is a liveness bug in two distinct
+ * ways:
+ *
+ *   - A read that blocks (a FIFO with no writer, /proc/kmsg) would hold the
+ *     mutex for as long as it blocks, so every other handle -- every other
+ *     plugin's read -- stalls behind one unlucky path, with no timeout.
+ *   - A read of a hyperfs-modelled pseudofile issues a hypercall from inside
+ *     the read, which re-enters the portal. If that nested call touched the
+ *     table while we held the mutex it would deadlock against itself.
+ *
+ * With the lock dropped, the slot needs its own exclusion, so a read in flight
+ * marks its slot busy. Busy slots reject a concurrent read or close with -EBUSY
+ * and are never reclaimed, which is what keeps the struct file alive across the
+ * unlocked window (belt and braces: the read also holds its own reference).
+ *
+ * Opens use O_NONBLOCK. Without it filp_open() on a FIFO with no writer blocks
+ * in the OPEN -- before any of the above applies -- and wedges the guest task
+ * that made the hypercall, forever. With it, such a file opens and reads
+ * -EAGAIN, which the host can report. Synthetic filesystems ignore the flag.
  */
 
 #define VFS_SLOTS 16
@@ -93,6 +125,7 @@ struct vfs_slot {
     struct file *f;
     u32 gen;                  /* bumped on close, so a stale handle is rejected */
     unsigned long opened_at;  /* jiffies; used to reclaim the oldest slot */
+    bool busy;                /* a read is in flight with vfs_lock dropped */
 };
 
 static struct vfs_slot vfs_slots[VFS_SLOTS];
@@ -103,41 +136,71 @@ static DEFINE_MUTEX(vfs_lock);
  * so a zeroed/unset handle can never accidentally address slot 0, and the
  * generation makes a read after close fail loudly instead of hitting whatever
  * file has since taken the slot.
+ *
+ * The generation therefore only has the 24 bits left over in the u32 handle, so
+ * it must be compared masked. Unmasked, the stored u32 gen ran past what a
+ * handle can carry after 2^24 closes of one slot, no comparison could ever match
+ * again, and that slot became permanently -EBADF -- a slow leak that would
+ * surface as a mysterious dead slot on a long run, not on any test. Masked, it
+ * wraps and reuses instead: after 2^24 closes a stale handle can alias a live
+ * one, which is the standard generation-counter trade and vastly preferable to
+ * losing the slot.
  */
+#define VFS_GEN_MASK 0xffffffu
+
 static inline u32 vfs_mk_handle(u32 slot, u32 gen)
 {
-    return (gen << 8) | (slot + 1);
+    return ((gen & VFS_GEN_MASK) << 8) | (slot + 1);
 }
 
-static struct file *vfs_get(u32 handle)
+/* Caller holds vfs_lock. Returns the slot index for @handle, or -1. */
+static int vfs_slot_of(u32 handle)
 {
     int slot = (int)(handle & 0xff) - 1;
 
     if (slot < 0 || slot >= VFS_SLOTS)
-        return NULL;
+        return -1;
     if (!vfs_slots[slot].f)
-        return NULL;
-    if (vfs_slots[slot].gen != (handle >> 8))
-        return NULL;
-    return vfs_slots[slot].f;
+        return -1;
+    if ((vfs_slots[slot].gen & VFS_GEN_MASK) != (handle >> 8))
+        return -1;
+    return slot;
 }
 
-/* Caller holds vfs_lock. Returns a free slot, reclaiming the oldest if full. */
+/*
+ * Caller holds vfs_lock. Returns a free slot, reclaiming the oldest idle one if
+ * the table is full, or -1 if every slot has a read in flight.
+ */
 static int vfs_claim_slot(void)
 {
-    int i, oldest = 0;
+    int i, oldest = -1;
 
     for (i = 0; i < VFS_SLOTS; i++) {
         if (!vfs_slots[i].f)
             return i;
-        if (time_before(vfs_slots[i].opened_at, vfs_slots[oldest].opened_at))
+        if (vfs_slots[i].busy)
+            continue;   /* a read is in flight; reclaiming would pull the file
+                         * out from under it */
+        if (oldest < 0 ||
+            time_before(vfs_slots[i].opened_at, vfs_slots[oldest].opened_at))
             oldest = i;
     }
+    if (oldest < 0) {
+        /*
+         * Every slot is mid-read. Nothing to reclaim safely, so refuse the open
+         * and let the host retry -- VFS_SLOTS concurrent in-flight reads is a
+         * host that is hammering the portal, not a leak.
+         */
+        printk(KERN_WARNING "IGLOO: vfs handle table full, all %d slots "
+               "mid-read; refusing open\n", VFS_SLOTS);
+        return -1;
+    }
     /*
-     * All slots busy: the host leaked handles (a crashed generator, a plugin
-     * that forgot to close). Reclaim the oldest rather than failing forever --
-     * a leak must degrade into a stale-handle error for one reader, not a
-     * permanent inability to read any file. Loud, because it is a host bug.
+     * All slots taken but some idle: the host leaked handles (a crashed
+     * generator, a plugin that forgot to close). Reclaim the oldest idle one
+     * rather than failing forever -- a leak must degrade into a stale-handle
+     * error for one reader, not a permanent inability to read any file. Loud,
+     * because it is a host bug.
      */
     printk(KERN_WARNING "IGLOO: vfs handle table full, reclaiming slot %d "
            "(host leaked a handle?)\n", oldest);
@@ -161,7 +224,9 @@ void handle_op_vfs_open(portal_region *mem_region)
     res = (struct vfs_open_result *)PORTAL_DATA(mem_region);
     memset(res, 0, sizeof(*res));
 
-    f = filp_open(path, O_RDONLY, 0);
+    /* O_NONBLOCK so a FIFO with no writer cannot block us in the open itself,
+     * which would wedge the hypercalling guest task with nothing to time out. */
+    f = filp_open(path, O_RDONLY | O_NONBLOCK, 0);
     if (IS_ERR(f)) {
         res->error = (int32_t)PTR_ERR(f);
         igloo_pr_debug("igloo: vfs_open('%s') failed: %d\n", path, res->error);
@@ -173,8 +238,16 @@ void handle_op_vfs_open(portal_region *mem_region)
 
     mutex_lock(&vfs_lock);
     slot = vfs_claim_slot();
+    if (slot < 0) {
+        mutex_unlock(&vfs_lock);
+        filp_close(f, NULL);
+        res->error = -ENFILE;
+        res->fs_magic = 0;   /* we opened it, but the host gets no handle */
+        goto out;
+    }
     vfs_slots[slot].f = f;
     vfs_slots[slot].opened_at = jiffies;
+    vfs_slots[slot].busy = false;
     res->handle = vfs_mk_handle((u32)slot, vfs_slots[slot].gen);
     mutex_unlock(&vfs_lock);
 
@@ -237,14 +310,15 @@ void handle_op_vfs_read(portal_region *mem_region)
     struct file *f;
     loff_t pos;
     ssize_t n;
+    int slot;
 
     memset(res, 0, sizeof(*res));
     if (want == 0 || want > maxlen)
         want = maxlen;
 
     mutex_lock(&vfs_lock);
-    f = vfs_get(handle);
-    if (!f) {
+    slot = vfs_slot_of(handle);
+    if (slot < 0) {
         mutex_unlock(&vfs_lock);
         res->error = -EBADF;    /* unknown or already-closed handle; NOT
                                  * -EINVAL, which kernel_read() also returns
@@ -252,17 +326,34 @@ void handle_op_vfs_read(portal_region *mem_region)
         igloo_pr_debug("igloo: vfs_read: bad handle %u\n", handle);
         goto out;
     }
-
+    if (vfs_slots[slot].busy) {
+        mutex_unlock(&vfs_lock);
+        res->error = -EBUSY;    /* two readers on one handle would interleave
+                                 * chunks of one seq_file and corrupt both */
+        igloo_pr_debug("igloo: vfs_read: handle %u already reading\n", handle);
+        goto out;
+    }
+    f = vfs_slots[slot].f;
+    get_file(f);
+    vfs_slots[slot].busy = true;
     /*
      * Read from the file's own position and write it back, so consecutive reads
      * walk the file the way read(2) would. This is the whole point of the op:
      * a seq_file must be consumed sequentially from one open file.
      */
     pos = f->f_pos;
+    mutex_unlock(&vfs_lock);
+
+    /* Lock dropped: this can block, and for a hyperfs path it re-enters the
+     * portal. See the header comment. */
     n = vfs_read_chunk(f, payload, want, &pos);
+
+    mutex_lock(&vfs_lock);
     if (n >= 0)
         f->f_pos = pos;
+    vfs_slots[slot].busy = false;
     mutex_unlock(&vfs_lock);
+    fput(f);
 
     if (n < 0) {
         res->error = (int32_t)n;
@@ -284,13 +375,18 @@ void handle_op_vfs_close(portal_region *mem_region)
     u32 handle = (u32)mem_region->header.addr;
     struct vfs_close_result *res =
         (struct vfs_close_result *)PORTAL_DATA(mem_region);
-    int slot = (int)(handle & 0xff) - 1;
+    int slot;
 
     memset(res, 0, sizeof(*res));
 
     mutex_lock(&vfs_lock);
-    if (!vfs_get(handle)) {
+    slot = vfs_slot_of(handle);
+    if (slot < 0) {
         res->error = -EBADF;
+    } else if (vfs_slots[slot].busy) {
+        /* Closing under an in-flight read would free the file it is reading
+         * from. The read clears busy when it finishes, so the host can retry. */
+        res->error = -EBUSY;
     } else {
         filp_close(vfs_slots[slot].f, NULL);
         vfs_slots[slot].f = NULL;
