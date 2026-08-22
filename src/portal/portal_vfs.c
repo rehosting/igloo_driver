@@ -108,6 +108,11 @@
  *     the read, which re-enters the portal. If that nested call touched the
  *     table while we held the mutex it would deadlock against itself.
  *
+ * The payload buffer survives that re-entrancy for a reason worth stating,
+ * because the fix now depends on it: igloo_portal() takes a fresh page per call
+ * (__get_free_page), so a nested portal call gets its own region and cannot
+ * clobber the buffer this read is filling. The mutex was the only hazard.
+ *
  * With the lock dropped, the slot needs its own exclusion, so a read in flight
  * marks its slot busy. Busy slots reject a concurrent read or close with -EBUSY
  * and are never reclaimed, which is what keeps the struct file alive across the
