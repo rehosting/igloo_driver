@@ -3,6 +3,8 @@
 #include <linux/fs.h>
 #include <linux/file.h>
 #include <linux/mutex.h>
+#include <linux/seq_file.h>   /* seq_read / seq_read_iter, for the fallback below */
+#include <linux/uio.h>        /* iov_iter_kvec */
 
 /*
  * Sequential VFS read bridge: vfs_open / vfs_read / vfs_close.
@@ -31,8 +33,105 @@
  * diagnosable: -ENOENT means the path is not there, -EACCES a permission
  * problem, -EINVAL a file the kernel will not let us read this way.
  *
+ * A read/close against an unknown or already-closed handle reports -EBADF, not
+ * -EINVAL. That distinction is load-bearing rather than cosmetic: -EINVAL is
+ * also what kernel_read() itself returns for a file it will not serve this way,
+ * so using it for both made the two indistinguishable to the host. A live
+ * failure on /proc/self/status could not be attributed to either our handle
+ * table or the kernel's read path without a debug build, which CI does not run.
+ * -EBADF is the errno read(2) uses for a bad descriptor, so it is also simply
+ * the right answer.
+ *
  * fs_magic is reported on open so the host can name the filesystem it is
  * talking to (PROC_SUPER_MAGIC, SYSFS_MAGIC, ...) instead of guessing.
+ *
+ * WHY kernel_read() IS NOT ENOUGH ON MODERN KERNELS
+ * -------------------------------------------------
+ * Verified against 6.13 source, and measured live on all 10 6.13 CI combos:
+ * __kernel_read() refuses a whole class of file outright --
+ *
+ *     if (unlikely(!file->f_op->read_iter || file->f_op->read))
+ *             return warn_unsupported(file, "read");   // -EINVAL
+ *
+ * -- so any file that has ->read wired up, or lacks ->read_iter, comes back
+ * -EINVAL after zero bytes no matter how the read is framed. That is a property
+ * of the file's f_op, NOT of statefulness, and it is why some procfs files read
+ * fine here while others cannot be read at all:
+ *
+ *   readable   /proc/version, /proc/uptime, /proc/cmdline  proc_create_single*
+ *                -> proc_iter_file_ops (.read_iter only)
+ *              /proc/mounts   mounts_operations (.read_iter = seq_read_iter)
+ *              /sys/...       kernfs_file_fops (.read_iter)
+ *   -EINVAL    /proc/<pid>/status, /stat, ...  proc_single_file_operations
+ *                (.read = seq_read, no .read_iter)
+ *              /proc/net/tcp, /proc/net/*      proc_net_seq_ops.proc_read
+ *                = seq_read -> inode gets proc_reg_file_ops (.read, no
+ *                .read_iter)
+ *
+ * On 4.10 there is no such guard (kernel_read -> __vfs_read, which just calls
+ * ->read), which is exactly why the same paths read fine on 4.10 and fail on
+ * 6.13 -- both here and in the older stateless handle_op_read_file, which uses
+ * the same kernel_read.
+ *
+ * For the ->read == seq_read case we can do better safely: seq_read's contract
+ * is that file->private_data is a struct seq_file, so seq_read_iter can be
+ * called directly with a kvec iterator, skipping __kernel_read's guard. That
+ * covers /proc/<pid>/*.
+ *
+ * The proc_reg_file_ops case (/proc/net/*) is NOT covered and deliberately so:
+ * its ->read is proc_reg_read, which forwards to a proc_ops we cannot inspect
+ * from a module, so there is no way to prove private_data is a seq_file. It is
+ * not, for instance, in /proc/<pid>/mem, where private_data is an mm_struct --
+ * guessing there would corrupt memory rather than fail. Reading those needs a
+ * user-address bounce buffer in the calling task, which touches guest state and
+ * is a separate decision.
+ *
+ * Host-MODELLED pseudofiles are in the refused class too, for a reason that
+ * lives on the host rather than here, and one worth stating precisely because
+ * the obvious reading of it is wrong. What the model supplies does not become
+ * the file's f_op -- PROCFS picks that. On 5.6+ (fs/proc/inode.c) the inode gets
+ * proc_iter_file_ops (.read_iter, no .read) iff proc_ops->proc_read_iter is
+ * non-NULL, and proc_reg_file_ops (.read, no .read_iter) otherwise; only the
+ * first passes the guard above. So a modelled pseudofile is host-readable iff
+ * its model defines read_iter, and defining read as well costs nothing, since
+ * the selection never looks at proc_read. It must keep read for 4.10, where
+ * every regular procfs file gets proc_reg_file_ops whatever the module supplied
+ * and proc_reg_read forwards only ->read -- read_iter alone is -EIO there, to
+ * the guest as much as to us. A model needs BOTH.
+ *
+ * That needs no change here: igloo_proc_ops already carries read_iter and
+ * igloo_convert_ops_to_{proc_ops,fops} already install it. Nothing in this file
+ * special-cases these, and nothing can -- it is decided at registration time.
+ * The rule is a truth table with citations in penguin's
+ * tests/unit/test_pseudofile_host_readability.py.
+ *
+ * WHAT THE LOCK DOES AND DOES NOT COVER
+ * -------------------------------------
+ * vfs_lock protects the handle TABLE, not the read. The read itself runs with
+ * the lock dropped, because holding it there is a liveness bug in two distinct
+ * ways:
+ *
+ *   - A read that blocks (a FIFO with no writer, /proc/kmsg) would hold the
+ *     mutex for as long as it blocks, so every other handle -- every other
+ *     plugin's read -- stalls behind one unlucky path, with no timeout.
+ *   - A read of a hyperfs-modelled pseudofile issues a hypercall from inside
+ *     the read, which re-enters the portal. If that nested call touched the
+ *     table while we held the mutex it would deadlock against itself.
+ *
+ * The payload buffer survives that re-entrancy for a reason worth stating,
+ * because the fix now depends on it: igloo_portal() takes a fresh page per call
+ * (__get_free_page), so a nested portal call gets its own region and cannot
+ * clobber the buffer this read is filling. The mutex was the only hazard.
+ *
+ * With the lock dropped, the slot needs its own exclusion, so a read in flight
+ * marks its slot busy. Busy slots reject a concurrent read or close with -EBUSY
+ * and are never reclaimed, which is what keeps the struct file alive across the
+ * unlocked window (belt and braces: the read also holds its own reference).
+ *
+ * Opens use O_NONBLOCK. Without it filp_open() on a FIFO with no writer blocks
+ * in the OPEN -- before any of the above applies -- and wedges the guest task
+ * that made the hypercall, forever. With it, such a file opens and reads
+ * -EAGAIN, which the host can report. Synthetic filesystems ignore the flag.
  */
 
 #define VFS_SLOTS 16
@@ -41,6 +140,7 @@ struct vfs_slot {
     struct file *f;
     u32 gen;                  /* bumped on close, so a stale handle is rejected */
     unsigned long opened_at;  /* jiffies; used to reclaim the oldest slot */
+    bool busy;                /* a read is in flight with vfs_lock dropped */
 };
 
 static struct vfs_slot vfs_slots[VFS_SLOTS];
@@ -51,41 +151,71 @@ static DEFINE_MUTEX(vfs_lock);
  * so a zeroed/unset handle can never accidentally address slot 0, and the
  * generation makes a read after close fail loudly instead of hitting whatever
  * file has since taken the slot.
+ *
+ * The generation therefore only has the 24 bits left over in the u32 handle, so
+ * it must be compared masked. Unmasked, the stored u32 gen ran past what a
+ * handle can carry after 2^24 closes of one slot, no comparison could ever match
+ * again, and that slot became permanently -EBADF -- a slow leak that would
+ * surface as a mysterious dead slot on a long run, not on any test. Masked, it
+ * wraps and reuses instead: after 2^24 closes a stale handle can alias a live
+ * one, which is the standard generation-counter trade and vastly preferable to
+ * losing the slot.
  */
+#define VFS_GEN_MASK 0xffffffu
+
 static inline u32 vfs_mk_handle(u32 slot, u32 gen)
 {
-    return (gen << 8) | (slot + 1);
+    return ((gen & VFS_GEN_MASK) << 8) | (slot + 1);
 }
 
-static struct file *vfs_get(u32 handle)
+/* Caller holds vfs_lock. Returns the slot index for @handle, or -1. */
+static int vfs_slot_of(u32 handle)
 {
     int slot = (int)(handle & 0xff) - 1;
 
     if (slot < 0 || slot >= VFS_SLOTS)
-        return NULL;
+        return -1;
     if (!vfs_slots[slot].f)
-        return NULL;
-    if (vfs_slots[slot].gen != (handle >> 8))
-        return NULL;
-    return vfs_slots[slot].f;
+        return -1;
+    if ((vfs_slots[slot].gen & VFS_GEN_MASK) != (handle >> 8))
+        return -1;
+    return slot;
 }
 
-/* Caller holds vfs_lock. Returns a free slot, reclaiming the oldest if full. */
+/*
+ * Caller holds vfs_lock. Returns a free slot, reclaiming the oldest idle one if
+ * the table is full, or -1 if every slot has a read in flight.
+ */
 static int vfs_claim_slot(void)
 {
-    int i, oldest = 0;
+    int i, oldest = -1;
 
     for (i = 0; i < VFS_SLOTS; i++) {
         if (!vfs_slots[i].f)
             return i;
-        if (time_before(vfs_slots[i].opened_at, vfs_slots[oldest].opened_at))
+        if (vfs_slots[i].busy)
+            continue;   /* a read is in flight; reclaiming would pull the file
+                         * out from under it */
+        if (oldest < 0 ||
+            time_before(vfs_slots[i].opened_at, vfs_slots[oldest].opened_at))
             oldest = i;
     }
+    if (oldest < 0) {
+        /*
+         * Every slot is mid-read. Nothing to reclaim safely, so refuse the open
+         * and let the host retry -- VFS_SLOTS concurrent in-flight reads is a
+         * host that is hammering the portal, not a leak.
+         */
+        printk(KERN_WARNING "IGLOO: vfs handle table full, all %d slots "
+               "mid-read; refusing open\n", VFS_SLOTS);
+        return -1;
+    }
     /*
-     * All slots busy: the host leaked handles (a crashed generator, a plugin
-     * that forgot to close). Reclaim the oldest rather than failing forever --
-     * a leak must degrade into a stale-handle error for one reader, not a
-     * permanent inability to read any file. Loud, because it is a host bug.
+     * All slots taken but some idle: the host leaked handles (a crashed
+     * generator, a plugin that forgot to close). Reclaim the oldest idle one
+     * rather than failing forever -- a leak must degrade into a stale-handle
+     * error for one reader, not a permanent inability to read any file. Loud,
+     * because it is a host bug.
      */
     printk(KERN_WARNING "IGLOO: vfs handle table full, reclaiming slot %d "
            "(host leaked a handle?)\n", oldest);
@@ -109,7 +239,9 @@ void handle_op_vfs_open(portal_region *mem_region)
     res = (struct vfs_open_result *)PORTAL_DATA(mem_region);
     memset(res, 0, sizeof(*res));
 
-    f = filp_open(path, O_RDONLY, 0);
+    /* O_NONBLOCK so a FIFO with no writer cannot block us in the open itself,
+     * which would wedge the hypercalling guest task with nothing to time out. */
+    f = filp_open(path, O_RDONLY | O_NONBLOCK, 0);
     if (IS_ERR(f)) {
         res->error = (int32_t)PTR_ERR(f);
         igloo_pr_debug("igloo: vfs_open('%s') failed: %d\n", path, res->error);
@@ -121,8 +253,16 @@ void handle_op_vfs_open(portal_region *mem_region)
 
     mutex_lock(&vfs_lock);
     slot = vfs_claim_slot();
+    if (slot < 0) {
+        mutex_unlock(&vfs_lock);
+        filp_close(f, NULL);
+        res->error = -ENFILE;
+        res->fs_magic = 0;   /* we opened it, but the host gets no handle */
+        goto out;
+    }
     vfs_slots[slot].f = f;
     vfs_slots[slot].opened_at = jiffies;
+    vfs_slots[slot].busy = false;
     res->handle = vfs_mk_handle((u32)slot, vfs_slots[slot].gen);
     mutex_unlock(&vfs_lock);
 
@@ -131,6 +271,48 @@ void handle_op_vfs_open(portal_region *mem_region)
 out:
     mem_region->header.size = sizeof(*res);
     mem_region->header.op = HYPER_RESP_READ_OK;
+}
+
+/*
+ * One read of at most @want bytes at *@pos, advancing *@pos on success.
+ *
+ * Prefers kernel_read(), and falls back to calling seq_read_iter() directly for
+ * the ->read == seq_read files kernel_read() refuses (see the header comment).
+ * The fallback is gated on 5.10+, where seq_read_iter exists and where the
+ * refusal it works around was introduced.
+ */
+static ssize_t vfs_read_chunk(struct file *f, char *buf, size_t want, loff_t *pos)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
+    if (!f->f_op->read_iter && f->f_op->read == seq_read) {
+        struct kvec kv = { .iov_base = buf, .iov_len = want };
+        struct iov_iter it;
+        struct kiocb kio;
+        ssize_t n;
+
+        init_sync_kiocb(&kio, f);
+        kio.ki_pos = *pos;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+        iov_iter_kvec(&it, ITER_DEST, &kv, 1, want);
+#else
+        iov_iter_kvec(&it, READ, &kv, 1, want);
+#endif
+        n = seq_read_iter(&kio, &it);
+        if (n > 0)
+            *pos = kio.ki_pos;
+        return n;
+    }
+#endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+    return kernel_read(f, buf, want, pos);
+#else
+    {
+        ssize_t n = kernel_read(f, *pos, buf, want);
+        if (n > 0)
+            *pos += n;
+        return n;
+    }
+#endif
 }
 
 void handle_op_vfs_read(portal_region *mem_region)
@@ -143,36 +325,50 @@ void handle_op_vfs_read(portal_region *mem_region)
     struct file *f;
     loff_t pos;
     ssize_t n;
+    int slot;
 
     memset(res, 0, sizeof(*res));
     if (want == 0 || want > maxlen)
         want = maxlen;
 
     mutex_lock(&vfs_lock);
-    f = vfs_get(handle);
-    if (!f) {
+    slot = vfs_slot_of(handle);
+    if (slot < 0) {
         mutex_unlock(&vfs_lock);
-        res->error = -EINVAL;   /* unknown or already-closed handle */
+        res->error = -EBADF;    /* unknown or already-closed handle; NOT
+                                 * -EINVAL, which kernel_read() also returns
+                                 * and which would hide which one failed */
         igloo_pr_debug("igloo: vfs_read: bad handle %u\n", handle);
         goto out;
     }
-
+    if (vfs_slots[slot].busy) {
+        mutex_unlock(&vfs_lock);
+        res->error = -EBUSY;    /* two readers on one handle would interleave
+                                 * chunks of one seq_file and corrupt both */
+        igloo_pr_debug("igloo: vfs_read: handle %u already reading\n", handle);
+        goto out;
+    }
+    f = vfs_slots[slot].f;
+    get_file(f);
+    vfs_slots[slot].busy = true;
     /*
      * Read from the file's own position and write it back, so consecutive reads
      * walk the file the way read(2) would. This is the whole point of the op:
      * a seq_file must be consumed sequentially from one open file.
      */
     pos = f->f_pos;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
-    n = kernel_read(f, payload, want, &pos);
-#else
-    n = kernel_read(f, pos, payload, want);
-    if (n > 0)
-        pos += n;
-#endif
+    mutex_unlock(&vfs_lock);
+
+    /* Lock dropped: this can block, and for a hyperfs path it re-enters the
+     * portal. See the header comment. */
+    n = vfs_read_chunk(f, payload, want, &pos);
+
+    mutex_lock(&vfs_lock);
     if (n >= 0)
         f->f_pos = pos;
+    vfs_slots[slot].busy = false;
     mutex_unlock(&vfs_lock);
+    fput(f);
 
     if (n < 0) {
         res->error = (int32_t)n;
@@ -194,13 +390,18 @@ void handle_op_vfs_close(portal_region *mem_region)
     u32 handle = (u32)mem_region->header.addr;
     struct vfs_close_result *res =
         (struct vfs_close_result *)PORTAL_DATA(mem_region);
-    int slot = (int)(handle & 0xff) - 1;
+    int slot;
 
     memset(res, 0, sizeof(*res));
 
     mutex_lock(&vfs_lock);
-    if (!vfs_get(handle)) {
-        res->error = -EINVAL;
+    slot = vfs_slot_of(handle);
+    if (slot < 0) {
+        res->error = -EBADF;
+    } else if (vfs_slots[slot].busy) {
+        /* Closing under an in-flight read would free the file it is reading
+         * from. The read clears busy when it finishes, so the host can retry. */
+        res->error = -EBUSY;
     } else {
         filp_close(vfs_slots[slot].f, NULL);
         vfs_slots[slot].f = NULL;
