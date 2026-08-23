@@ -38,6 +38,12 @@ bool igloo_is_kernel_addr(unsigned long addr);
 
 #define CHUNK_SIZE (PAGE_SIZE - sizeof(region_header))
 
+// Fixed staging-buffer size for seeding/flushing mmap'd pseudofiles. The shmem backing
+// is sparse, so the seed/flush trampoline copies in bounded chunks instead of allocating
+// a single buffer the size of the (guest-controlled) mmap length. This keeps kernel memory
+// O(1) regardless of mmap size and avoids unbounded (k)vzalloc() failures on 32-bit donors.
+#define IGLOO_DEVFS_STAGE_SZ (64 * 1024)
+
 // Define handler function type
 typedef void (*portal_op_handler)(portal_region *mem_region);
 
