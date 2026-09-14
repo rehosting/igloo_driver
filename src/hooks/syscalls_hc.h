@@ -72,6 +72,13 @@ struct syscall_hook {
      * everywhere. */
     bool scope_filter_enabled;
 
+    /* Fuzzing process pin: when set, this hook only fires for the pinned task
+     * and its descendants (see portal/fuzzpin.h). Off by default, and inert
+     * unless the host has actually pinned something, so a hook that does not
+     * ask for it is unaffected and a Penguin that never pins behaves exactly
+     * as before. */
+    bool pin_filter_enabled;
+
     /* Argument filtering with complex comparisons */
     struct value_filter arg_filters[IGLOO_SYSCALL_MAXARGS]; /* Argument filters */
     

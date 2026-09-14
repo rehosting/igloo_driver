@@ -58,6 +58,64 @@ scoping](architecture.md#analysis-scoping): logging (read-only) hooks set it so
 they only fire for the firmware-under-analysis subtree, skipping Penguin's own
 infrastructure; intervention hooks leave it clear so they apply everywhere.
 
+### Fuzzing process pin
+
+`comm` is a name, not an identity. lighttpd forks workers that all carry it,
+and a victim that dies and is restarted comes back with the same name and a
+different pid. A snapshot-fuzzing loop that arms in one process and then closes
+its iterations on another process's syscalls is not measuring iterations of
+anything — it is measuring the interval between two unrelated processes, and it
+reports that as a rate.
+
+`HYPER_OP_SET_FUZZ_PIN` pins one task subtree:
+
+| field | meaning |
+|---|---|
+| `pid` | task to pin; `0` clears the pin (and thaws — see below) |
+| `addr` | that task's `start_time`, verified; `0` skips the check |
+| `size` | bit 0 `F_CHILDREN` (follow descendants), bit 1 `F_EXCLUSIVE` |
+
+Identity is a `struct pid` reference, not a number, so a recycled pid resolves
+to a different struct and does not match — a restarted victim is correctly seen
+as a different process rather than silently inherited. A stale pid from the
+host is refused (`-EINVAL`) rather than pinning whatever now holds the number.
+
+Hooks opt in with `pin_filter_enabled`; everything else is unaffected, and the
+whole mechanism is inert until the host actually pins something.
+
+**Exclusive mode** (`F_EXCLUSIVE`) goes further: it stops every userspace task
+outside the subtree, so the only thing left runnable is the victim, its
+children, and kernel threads. This is not a scheduler modification — the
+scheduler runs normally, its runqueue simply has nothing else on it. "Never
+switches to another process" falls out as a consequence rather than as a rule
+enforced in `pick_next_task`, which avoids the deadlock that version has when
+the victim blocks in `read()`.
+
+Deliberate holes: kernel threads stay runnable (stopping them starves RCU, the
+softirq workers and the portal itself) and so does init (a guest whose reaper
+is stopped accumulates zombies). It is "nothing else in userspace runs", not
+"nothing else runs".
+
+Two costs worth knowing. `SIGSTOP` is **observable** — a parent in `waitpid()`
+sees `WIFSTOPPED`. And it is **asynchronous**: a task stops at its next signal
+check, not at the call, so poll `HYPER_OP_GET_FUZZ_PIN_STATS` until
+`frozen_pending` is 0 before relying on it. Clearing the pin thaws first and
+unpins second, so the guest can never be left frozen with nothing holding the
+list of tasks to release.
+
+**Set it immediately before taking a snapshot.** The pin and the stopped task
+states live in driver and `task_struct` memory, which is guest RAM, so they are
+captured by the snapshot and restored with it — every replayed iteration then
+begins with the same pin and the same tasks stopped. Set after the snapshot,
+the first restore rewinds it away.
+
+`HYPER_OP_GET_FUZZ_PIN_STATS` returns a `struct igloo_fuzz_pin_report`:
+hook firings inside and outside the subtree, parent walks that hit the depth
+bound (non-zero means the bound is too low and real descendants are being
+treated as outsiders), tasks signalled and still pending, and whether the
+frozen-task table overflowed — an unstopped task still runs inside the
+iteration, so that is reported rather than dropped.
+
 ### Portalcall fast path
 
 For very hot paths, a **portalcall fast path** avoids full Portal round trips.
