@@ -53,4 +53,12 @@
     X(set_scope_enabled, SET_SCOPE_ENABLED) \
     X(vfs_open, VFS_OPEN) \
     X(vfs_read, VFS_READ) \
-    X(vfs_close, VFS_CLOSE)
+    X(vfs_close, VFS_CLOSE) \
+    /* APPENDED, NOT INSERTED. These values are the wire protocol between this
+     * module and Penguin, and inserting mid-list silently renumbers every op
+     * below the insertion point -- here it moved VFS_OPEN/READ/CLOSE by two.
+     * The host reads the enum from DWARF so a matched pair is fine, but a
+     * mismatched pair would not fail: it would call a different op and report
+     * whatever that returned. New ops go at the end. */ \
+    X(set_fuzz_pin, SET_FUZZ_PIN) \
+    X(get_fuzz_pin_stats, GET_FUZZ_PIN_STATS)

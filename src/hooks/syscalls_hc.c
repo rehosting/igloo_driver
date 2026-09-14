@@ -18,6 +18,7 @@
 #include "args.h"
 #include "portal/portal.h"
 #include "portal/scope.h"
+#include "portal/fuzzpin.h"
 #include "igloo_hypercall_consts.h"
 #include <linux/kallsyms.h>
 #include <linux/list.h>
@@ -318,6 +319,12 @@ static inline bool hook_matches_syscall(struct kernel_syscall_hook *hook,
         }
     }
     if (hook->hook.scope_filter_enabled && !igloo_in_scope(current)) {
+        return false;
+    }
+    /* Last of the task filters because it is the most expensive -- a bounded
+     * walk up real_parent, where the others are an int compare, a 16-byte
+     * strncmp and a pointer compare. */
+    if (hook->hook.pin_filter_enabled && !igloo_in_fuzz_pin(current)) {
         return false;
     }
     // Unrolled argument filter checks for IGLOO_SYSCALL_MAXARGS == 6
