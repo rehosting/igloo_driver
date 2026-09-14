@@ -4,10 +4,15 @@
 #include <linux/rcupdate.h>
 #include <linux/spinlock.h>
 #include <linux/errno.h>
+#include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+/* Split out of linux/sched.h in 4.11. On 4.10 -- which this driver still
+ * targets -- for_each_process and send_sig_info come from linux/sched.h
+ * itself, already included above. */
 #include <linux/sched/signal.h>
 #include <linux/sched/task.h>
+#endif
 #include <linux/signal.h>
-#include <linux/version.h>
 #include <linux/string.h>
 #include "fuzzpin.h"
 
