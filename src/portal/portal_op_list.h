@@ -61,4 +61,5 @@
      * mismatched pair would not fail: it would call a different op and report
      * whatever that returned. New ops go at the end. */ \
     X(set_fuzz_pin, SET_FUZZ_PIN) \
-    X(get_fuzz_pin_stats, GET_FUZZ_PIN_STATS)
+    X(get_fuzz_pin_stats, GET_FUZZ_PIN_STATS) \
+    X(syscall_cost_stats, SYSCALL_COST_STATS)
