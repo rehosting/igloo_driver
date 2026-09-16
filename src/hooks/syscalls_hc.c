@@ -18,6 +18,8 @@
 #include "args.h"
 #include "portal/portal.h"
 #include "portal/scope.h"
+#include <linux/ktime.h>
+#include "portal/syscost_stats.h"
 #include "portal/fuzzpin.h"
 #include "igloo_hypercall_consts.h"
 #include <linux/kallsyms.h>
@@ -222,6 +224,23 @@ static inline void fill_handler(struct syscall_event *args, int argc, const unsi
 static inline void do_hyp(bool is_enter, struct syscall_event* args) {
     // Add the hook_id and metadata to the call so the hypervisor knows which hook was triggered
     // and has access to syscall metadata - pass the hook_id as third argument
+    //
+    // THIS CALL IS THE 95 us. A hooked syscall was measured at 95.880 us
+    // against an unhooked one's 1.161 us, and everything the driver does
+    // around this line -- the hash lookup, the filters, the batch fill -- is
+    // inside that 1.161 us. The gap is the guest stopping here and the host
+    // running Python. igloo_syscost_record() brackets exactly that, and only
+    // when someone has asked: the unmeasured path below is one READ_ONCE and
+    // a predictable branch, because an always-on instrument in the hot path
+    // would be one more thing of the kind this exists to price.
+    if (unlikely(igloo_syscost_enabled())) {
+        u64 t0 = ktime_get_ns();
+
+        igloo_portal(is_enter ? IGLOO_HYP_SYSCALL_ENTER : IGLOO_HYP_SYSCALL_RETURN,
+                    (unsigned long)args, 0);
+        igloo_syscost_record(args->syscall_name, ktime_get_ns() - t0);
+        return;
+    }
     igloo_portal(is_enter ? IGLOO_HYP_SYSCALL_ENTER : IGLOO_HYP_SYSCALL_RETURN,
                 (unsigned long)args, 0);
 }
