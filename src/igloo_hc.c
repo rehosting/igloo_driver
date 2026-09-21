@@ -15,6 +15,7 @@
 #include "igloo_hypercall_consts.h"
 #include "hyperfs/hyperfs.h"
 #include "portal/scope.h"
+#include "portal/kl_faithful.h"
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("IGLOO Kernel Inspection/Interventions");
@@ -25,8 +26,16 @@ MODULE_SOFTDEP("post: hyperfs");  // Load hyperfs after igloo
  * Report the base address of the module by picking a function in the .text
  * section (just not init or exit)
  */
+int igloo_test_function(int a, int b, int c, int d, int e, int f, int g, int h);
 static void report_base_addr(void){
+#ifdef CONFIG_IGLOO_FAITHFUL_NO_KALLSYMS
+    /* Hardened vendor kernel with no kallsyms_lookup_name export: take the
+     * symbol's address directly (it is in-module), which is what penguin's
+     * igloodriver correlates against the ISF to find igloo's load base. */
+    unsigned long igloo_hc_addr = (unsigned long)&igloo_test_function;
+#else
     unsigned long igloo_hc_addr = kallsyms_lookup_name("igloo_test_function");
+#endif
     igloo_hypercall(IGLOO_MODULE_BASE, igloo_hc_addr);
 }
 
@@ -45,6 +54,11 @@ int init_module(void) {
     int ret;
     printk(KERN_EMERG "IGLOO: Initializing\n");
     report_base_addr();
+
+    /* Faithful path: resolve otherwise-unexported kernel helpers via kallsyms
+     * (and supply igloo_debug) before anything uses them, so igloo loads into
+     * an unmodified vendor kernel. No-op names on donor kernels. */
+    kl_faithful_resolve();
 
     /* Capture the initial UTS namespace before init.sh unshares the firmware. */
     igloo_scope_init();

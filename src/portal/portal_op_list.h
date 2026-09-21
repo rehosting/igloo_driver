@@ -53,4 +53,5 @@
     X(set_scope_enabled, SET_SCOPE_ENABLED) \
     X(vfs_open, VFS_OPEN) \
     X(vfs_read, VFS_READ) \
-    X(vfs_close, VFS_CLOSE)
+    X(vfs_close, VFS_CLOSE) \
+    X(set_offsets, SET_OFFSETS)
