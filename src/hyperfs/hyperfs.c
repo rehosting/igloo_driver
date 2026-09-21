@@ -16,6 +16,22 @@
 #include "hyperfs.h"
 #include <linux/version.h>
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0) && LINUX_VERSION_CODE < KERNEL_VERSION(6,3,0)
+/*
+ * hyperfs's post-4.10 code path assumes 6.x VFS: idmapped-mount inode-op
+ * signatures (`struct mnt_idmap *`, vfs_create/vfs_link/... with an idmap arg,
+ * `mnt_idmap()`) and the folio API (folio_*, kmap_local_folio, ...). Those are
+ * absent on the intermediate eras (4.11 .. 6.2), including the faithful
+ * MikroTik RouterOS 5.6.3/aarch64 Tier-A target. Carried-in-guest hyperfs is
+ * therefore gated OFF here (penguin's host-side path serves shared files);
+ * stub init/exit so the module links. portal_hyperfs.c (the HYPERFS_ADD op's
+ * hash table) is a separate unit and is unaffected. The <=4.10 donor and the
+ * >=6.3 donor keep their existing hyperfs implementation via the #else below.
+ */
+int hyperfs_init(void) { return 0; }
+void hyperfs_exit(void) { }
+#else
+
 #define HYPERFS_DEBUG 0
 
 // Function pointer declarations for vfs_read and vfs_write
@@ -1610,3 +1626,5 @@ void hyperfs_exit(void)
 {
 	unregister_filesystem(&hyperfs_fs_type);
 }
+
+#endif /* hyperfs 6.x-VFS era gate (stub for 4.11 .. 6.2) */
