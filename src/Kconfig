@@ -2,4 +2,44 @@ config IGLOO
 	bool "IGLOO module support"
 	default y
 	help
-      Support for IGLOO analysis
+	  Support for IGLOO analysis
+
+config IGLOO_FAITHFUL
+	bool "Faithful rehost: load igloo.ko into an unmodified vendor kernel"
+	depends on IGLOO
+	default n
+	help
+	  Build igloo so it can be loaded as a module into an UNMODIFIED vendor
+	  kernel (Tier-A faithful rehosting) rather than one of penguin's donor
+	  kernels, which are patched to EXPORT_SYMBOL igloo's helpers and to carry
+	  the igloo_debug global.
+
+	  Enables the kl_faithful unit: otherwise-unexported helpers are resolved at
+	  init (see IGLOO_FAITHFUL_NO_KALLSYMS), igloo_debug is provided in-module on
+	  the eras that need it, and struct offsets are recovered from live memory
+	  when the vendor layout differs from the build headers.
+
+	  Out-of-tree builds that do not process this Kconfig pass CONFIG_IGLOO_*=y
+	  on the make command line instead (src/Makefile mirrors them to -D defines).
+
+config IGLOO_FAITHFUL_NO_KALLSYMS
+	bool "Faithful: vendor kernel does not export kallsyms_lookup_name"
+	depends on IGLOO_FAITHFUL
+	default n
+	help
+	  Some hardened vendor kernels (e.g. MikroTik RouterOS) ship a minimal
+	  ksymtab that does not even export kallsyms_lookup_name. Select this so
+	  igloo never references it (which would fail modpost): it takes its own
+	  symbol addresses in-module and relies entirely on runtime offset recovery
+	  for OSI. Implies IGLOO_OSI_MINIMAL unless that is explicitly overridden.
+
+config IGLOO_OSI_MINIMAL
+	bool "Faithful: OSI-minimal object set"
+	depends on IGLOO_FAITHFUL
+	default y if IGLOO_FAITHFUL_NO_KALLSYMS
+	default n
+	help
+	  Build only the units that link against a bare vendor kernel (OSI, Portal,
+	  runtime offsets, scope). Feature units that need otherwise-unexported
+	  symbols are omitted and their ops return FAIL at runtime; the full op ENUM
+	  is preserved for the penguin/ISF contract via kl_min_stubs.c.

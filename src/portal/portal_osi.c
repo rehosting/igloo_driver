@@ -1,4 +1,6 @@
 #include "portal_internal.h"
+#include "portal_offsets.h"
+#include "kl_faithful.h"
 #include <linux/fdtable.h>
 #include <linux/path.h>
 #include <linux/version.h>
@@ -10,6 +12,7 @@
 #include <linux/mm.h>
 #include <linux/fs.h>
 #include <linux/sched.h>
+#include <linux/sched/mm.h>  // mmput/mmget (split out of sched.h; not transitively pulled in on 5.6)
 #include <linux/dcache.h>
 #include <linux/mm_types.h>
 #include <linux/ptrace.h>
@@ -87,7 +90,7 @@ static void portal_get_vma_name(struct vm_area_struct *vma, char *buf, size_t bu
     }
 
     // 3. Architecture specific
-    arch_name = arch_vma_name(vma);
+    arch_name = kl_arch_vma_name ? kl_arch_vma_name(vma) : NULL;
     if (arch_name) {
         strncpy(buf, arch_name, buf_size - 1);
         buf[buf_size - 1] = '\0';
@@ -147,57 +150,65 @@ void handle_op_osi_proc(portal_region *mem_region)
     // Now we can safely use task->pid
     igloo_debug_osi("igloo: Handling HYPER_OP_OSI_PROC for PID %d\n", task->pid);
 
-    mm = task->mm;
+    /* Runtime-offset reads (KFIELD): use the host-injected offset when present,
+     * else the compile-time offsetof — see portal_offsets.h. */
+    mm = KFIELD(struct mm_struct *, task, task_struct, mm);
 
     // Initialize the OSI proc structure at the beginning of data buffer
     proc = (struct osi_proc *)data_buf;
     proc->taskd = ((unsigned long)task);
 
-    if (mm && mm->pgd) {
-        proc->pgd = ((unsigned long)mm->pgd);
-        proc->map_count = (mm->map_count);
-        proc->start_brk = (mm->start_brk);
-        proc->brk = (mm->brk);
-        proc->start_stack = (mm->start_stack);
-        proc->start_code = (mm->start_code);
-        proc->end_code = (mm->end_code);
-        proc->start_data = (mm->start_data);
-        proc->end_data = (mm->end_data);
-        proc->arg_start = (mm->arg_start);
-        proc->arg_end = (mm->arg_end);
-        proc->env_start = (mm->env_start);
-        proc->env_end = (mm->env_end);
+    if (mm && KFIELD(void *, mm, mm_struct, pgd)) {
+        proc->pgd = ((unsigned long)KFIELD(void *, mm, mm_struct, pgd));
+        proc->map_count = KFIELD(int, mm, mm_struct, map_count);
+        proc->start_brk = KFIELD(unsigned long, mm, mm_struct, start_brk);
+        proc->brk = KFIELD(unsigned long, mm, mm_struct, brk);
+        proc->start_stack = KFIELD(unsigned long, mm, mm_struct, start_stack);
+        proc->start_code = KFIELD(unsigned long, mm, mm_struct, start_code);
+        proc->end_code = KFIELD(unsigned long, mm, mm_struct, end_code);
+        proc->start_data = KFIELD(unsigned long, mm, mm_struct, start_data);
+        proc->end_data = KFIELD(unsigned long, mm, mm_struct, end_data);
+        proc->arg_start = KFIELD(unsigned long, mm, mm_struct, arg_start);
+        proc->arg_end = KFIELD(unsigned long, mm, mm_struct, arg_end);
+        proc->env_start = KFIELD(unsigned long, mm, mm_struct, env_start);
+        proc->env_end = KFIELD(unsigned long, mm, mm_struct, env_end);
         // saved_auxv is now a pointer to an array, not an integer
         proc->saved_auxv = 0; // Don't try to cast pointer to integer
-        proc->mmap_base = (mm->mmap_base);
-        proc->task_size = (mm->task_size);
+        proc->mmap_base = KFIELD(unsigned long, mm, mm_struct, mmap_base);
+        proc->task_size = KFIELD(unsigned long, mm, mm_struct, task_size);
     } else {
         proc->pgd = 0;
     }
-    proc->start_time = (task->start_time);
-    proc->pid = (task->pid);
-    proc->ppid = (task->real_parent ? task->real_parent->pid : 0);
-    proc->uid = (task->cred->uid.val);
-    proc->gid = (task->cred->gid.val);
-    proc->euid = (task->cred->euid.val);
-    proc->egid = (task->cred->egid.val);
+    {
+        struct task_struct *rp = KFIELD(struct task_struct *, task, task_struct, real_parent);
+        const struct cred *cred = KFIELD(const struct cred *, task, task_struct, cred);
+        const char *comm = (const char *)KFIELD_PTR(task, task_struct, comm);
 
-    // Put name after the struct
-    proc->name_offset = (sizeof(struct osi_proc));
-    name_len = strnlen(task->comm, TASK_COMM_LEN);
-    // Ensure we don't overflow our buffer
-    if (sizeof(struct osi_proc) + name_len + 1 > CHUNK_SIZE) {
-        name_len = CHUNK_SIZE - sizeof(struct osi_proc) - 1;
+        proc->start_time = KFIELD(u64, task, task_struct, start_time);
+        proc->pid = KFIELD(pid_t, task, task_struct, pid);
+        proc->ppid = rp ? KFIELD(pid_t, rp, task_struct, pid) : 0;
+        proc->uid = KFIELD(u32, cred, cred, uid);
+        proc->gid = KFIELD(u32, cred, cred, gid);
+        proc->euid = KFIELD(u32, cred, cred, euid);
+        proc->egid = KFIELD(u32, cred, cred, egid);
+
+        // Put name after the struct
+        proc->name_offset = (sizeof(struct osi_proc));
+        name_len = strnlen(comm, TASK_COMM_LEN);
+        // Ensure we don't overflow our buffer
+        if (sizeof(struct osi_proc) + name_len + 1 > CHUNK_SIZE) {
+            name_len = CHUNK_SIZE - sizeof(struct osi_proc) - 1;
+        }
+        strncpy(data_buf + sizeof(struct osi_proc), comm, name_len);
+        data_buf[sizeof(struct osi_proc) + name_len] = '\0';
+        igloo_debug_osi("igloo: proc name: %s\n", comm);
+        igloo_debug_osi("igloo: proc name in buf: %s\n", data_buf + sizeof(struct osi_proc));
+
+        total_size += name_len; // do not null terminator
     }
-    strncpy(data_buf + sizeof(struct osi_proc), task->comm, name_len);
-    data_buf[sizeof(struct osi_proc) + name_len] = '\0';
-    igloo_debug_osi("igloo: proc name: %s\n", task->comm);
-    igloo_debug_osi("igloo: proc name in buf: %s\n", data_buf + sizeof(struct osi_proc));
-
-    total_size += name_len; // do not null terminator
 
     // Set create time
-    proc->create_time = (task->start_time);
+    proc->create_time = KFIELD(u64, task, task_struct, start_time);
 
     mem_region->header.size = (total_size);
     mem_region->header.op = (HYPER_RESP_READ_OK);
@@ -230,7 +241,7 @@ void handle_op_osi_proc_handles(portal_region *mem_region)
     // First pass: count total number of processes
     rcu_read_lock();
     for_each_process(task) {
-        struct mm_struct *mm = task->mm;
+        struct mm_struct *mm = KFIELD(struct mm_struct *, task, task_struct, mm);
         if (mm) {  // Only count user processes (with mm)
             total_count++;
         }
@@ -244,14 +255,14 @@ void handle_op_osi_proc_handles(portal_region *mem_region)
             break;  // Reached capacity
         }
 
-        mm = task->mm;
+        mm = KFIELD(struct mm_struct *, task, task_struct, mm);
         if (!mm) {
             continue; // Skip kernel threads
         }
 
-        handle->pid = ((unsigned long)task->pid);
+        handle->pid = ((unsigned long)KFIELD(pid_t, task, task_struct, pid));
         handle->taskd = ((unsigned long)task);
-        handle->start_time = (task->start_time);
+        handle->start_time = (KFIELD(u64, task, task_struct, start_time));
 
         handle++;
         count++;
@@ -315,18 +326,49 @@ void handle_op_osi_proc_all(portal_region *mem_region)
     header->total_count = 0;
     node_arr = (struct osi_proc_node *)(data_buf + sizeof(struct osi_result_header));
 
+    /* One-time: recover the real task_struct.tasks offset from live memory on a
+     * faithful vendor kernel (config differs from our modkernel baseline), then
+     * the KFIELD walk below uses the recovered offset. No-op once recovered. */
+    { static int __kl_recovered; if (!__kl_recovered) { __kl_recovered = 1; kl_recover_offsets(); } }
+
     rcu_read_lock();
-    for_each_process(task) {
-        struct mm_struct *mm = task->mm;
+    /*
+     * KFIELD-driven task-list walk: traverse the task ring through the
+     * RUNTIME-injected task_struct.tasks offset (KOFF), anchored on `current`,
+     * instead of the for_each_process() macro (which bakes in the COMPILE-TIME
+     * offset and so breaks on a faithful vendor kernel whose layout differs).
+     * This makes the WALK itself correctable by the injected offsets, closing
+     * the limitation noted for the stridelinx target. `current` is in the ring,
+     * so the __started flag includes it exactly once.
+     */
+    {
+    unsigned long __toff = KOFF(task_struct, tasks);
+    struct list_head *__head = (struct list_head *)((const char *)current + __toff);
+    struct list_head *__pos = __head;
+    int __started = 0;
+    for (; !__started || __pos != __head; __started = 1, __pos = __pos->next) {
+        struct mm_struct *mm;
+        struct task_struct *rp;
+        const struct cred *cred;
+        const char *comm;
         struct osi_proc_node *node;
         size_t name_len;
         int ord;
 
-        if (!mm) {
-            continue; /* user processes only; kthreads are slice 2 */
+        task = (struct task_struct *)((const char *)__pos - __toff);
+
+        /* Only dereference a field when its offset is TRUSTED (koff_set): on a
+         * faithful vendor kernel we trust only offsets recovered from live
+         * memory (tasks/pid/comm), so untrusted pointer fields (mm/real_parent/
+         * cred) are never dereferenced with a wrong offset. On a donor kernel
+         * all offsets are trusted and the full record is produced as before. */
+        if (koff_set[KF_task_struct__mm]) {
+            mm = KFIELD(struct mm_struct *, task, task_struct, mm);
+            if (!mm)
+                continue; /* user processes only; kthreads are slice 2 */
         }
 
-        ord = total_count;   /* 0-based ordinal among user procs */
+        ord = total_count;
         total_count++;
 
         if (ord < skip || (size_t)count >= max_nodes) {
@@ -334,19 +376,37 @@ void handle_op_osi_proc_all(portal_region *mem_region)
         }
 
         node = &node_arr[count];
-        node->pid = (task->pid);
-        node->ppid = (task->real_parent ? task->real_parent->pid : 0);
-        node->create_time = (task->start_time);
-        node->uid = (task->cred->uid.val);
-        node->gid = (task->cred->gid.val);
-        node->euid = (task->cred->euid.val);
-        node->egid = (task->cred->egid.val);
+        node->pid = koff_set[KF_task_struct__pid]
+            ? KFIELD(pid_t, task, task_struct, pid) : 0;
+        if (koff_set[KF_task_struct__real_parent]) {
+            rp = KFIELD(struct task_struct *, task, task_struct, real_parent);
+            node->ppid = (rp ? KFIELD(pid_t, rp, task_struct, pid) : 0);
+        } else {
+            node->ppid = 0;
+        }
+        node->create_time = koff_set[KF_task_struct__start_time]
+            ? KFIELD(u64, task, task_struct, start_time) : 0;
+        if (koff_set[KF_cred__uid]) {
+            cred = KFIELD(const struct cred *, task, task_struct, cred);
+            node->uid = (KFIELD(u32, cred, cred, uid));
+            node->gid = (KFIELD(u32, cred, cred, gid));
+            node->euid = (KFIELD(u32, cred, cred, euid));
+            node->egid = (KFIELD(u32, cred, cred, egid));
+        } else {
+            node->uid = node->gid = node->euid = node->egid = 0;
+        }
 
-        name_len = strnlen(task->comm, sizeof(node->comm) - 1);
-        memcpy(node->comm, task->comm, name_len);
-        node->comm[name_len] = '\0';
+        if (koff_set[KF_task_struct__comm]) {
+            comm = (const char *)KFIELD_PTR(task, task_struct, comm);
+            name_len = strnlen(comm, sizeof(node->comm) - 1);
+            memcpy(node->comm, comm, name_len);
+            node->comm[name_len] = '\0';
+        } else {
+            node->comm[0] = '\0';
+        }
 
         count++;
+    }
     }
     rcu_read_unlock();
 
@@ -381,15 +441,17 @@ void handle_op_osi_proc_exe(portal_region *mem_region)
     // Now we can safely use task->pid
     igloo_debug_osi("igloo: Handling HYPER_OP_OSI_PROC_EXE for PID %d\n", task->pid);
 
-    mm = task->mm;
-    if(mm && mm->exe_file) {
+    mm = KFIELD(struct mm_struct *, task, task_struct, mm);
+    {
+    struct file *exe_file = mm ? KFIELD(struct file *, mm, mm_struct, exe_file) : NULL;
+    if(mm && exe_file) {
         char *path_buf = kmalloc(CHUNK_SIZE, GFP_KERNEL);
         if (!path_buf) {
             igloo_debug_osi("igloo: Failed to allocate memory for path buffer!\n");
             mem_region->header.op = (HYPER_RESP_READ_FAIL);
             return;
         }
-        path = d_path(&mm->exe_file->f_path, path_buf, CHUNK_SIZE);
+        path = d_path(&exe_file->f_path, path_buf, CHUNK_SIZE);
         if (!IS_ERR(path)) {
             strncpy(data_buf, path, CHUNK_SIZE-1);
             data_buf[CHUNK_SIZE-1] = '\0';
@@ -405,6 +467,7 @@ void handle_op_osi_proc_exe(portal_region *mem_region)
         igloo_debug_osi("igloo: no mm or mm->exe_file HYPER_OP_OSI_PROC_EXE, not reading a user process?\n");
         data_buf[0] = '\0';
         mem_region->header.op = (HYPER_RESP_READ_FAIL);
+    }
     }
 
     mem_region->header.size = pathlen;
@@ -441,7 +504,7 @@ void handle_op_osi_mappings(portal_region *mem_region)
     // Now we can safely use task->pid
     igloo_debug_osi("igloo: Handling HYPER_OP_OSI_MAPPINGS for PID %d\n", task->pid);
 
-    mm = task->mm;
+    mm = KFIELD(struct mm_struct *, task, task_struct, mm);
 
     // Reserve space for count at beginning (now two counts: returned mappings and total mappings)
     max_mappings = (CHUNK_SIZE / 2) / sizeof(struct osi_module);
@@ -458,8 +521,8 @@ void handle_op_osi_mappings(portal_region *mem_region)
     }
 
     // Store total number of VMAs in the process
-    header->total_count = (mm->map_count);
-    igloo_debug_osi("igloo: Process has %d total VMAs\n", mm->map_count);
+    header->total_count = (KFIELD(int, mm, mm_struct, map_count));
+    igloo_debug_osi("igloo: Process has %d total VMAs\n", KFIELD(int, mm, mm_struct, map_count));
 
     // Start filling mappings after the header
     mapping = (struct osi_module *)(data_buf + sizeof(struct osi_result_header));
@@ -584,7 +647,7 @@ void handle_op_osi_mappings(portal_region *mem_region)
     }
 
     // If we processed all VMAs, set next count to 0 to indicate completion
-    if (total_count >= mm->map_count) {
+    if (total_count >= KFIELD(int, mm, mm_struct, map_count)) {
         mem_region->header.addr = 0;
         igloo_debug_osi("igloo: All VMAs processed\n");
     }
@@ -599,7 +662,7 @@ void handle_op_osi_mappings(portal_region *mem_region)
     mem_region->header.op = (HYPER_RESP_READ_OK);
 
     igloo_debug_osi("igloo: Returned %d VMA mappings (total VMAs: %d), buffer used: %zu bytes\n",
-                  count, mm->map_count, string_offset);
+                  count, KFIELD(int, mm, mm_struct, map_count), string_offset);
 }
 
 void handle_op_osi_proc_mem(portal_region *mem_region)
@@ -627,7 +690,7 @@ void handle_op_osi_proc_mem(portal_region *mem_region)
     // Now we can safely use task->pid
     igloo_debug_osi("igloo: Handling HYPER_OP_OSI_PROC_MEM for PID %d\n", task->pid);
 
-    mm = task->mm;
+    mm = KFIELD(struct mm_struct *, task, task_struct, mm);
 
     // Check if we have enough buffer space for the structure
     if (sizeof(struct osi_proc_mem) > CHUNK_SIZE) {
@@ -644,8 +707,8 @@ void handle_op_osi_proc_mem(portal_region *mem_region)
         return;
     }
 
-    proc_mem->start_brk = (mm->start_brk);
-    proc_mem->brk = (mm->brk);
+    proc_mem->start_brk = (KFIELD(unsigned long, mm, mm_struct, start_brk));
+    proc_mem->brk = (KFIELD(unsigned long, mm, mm_struct, brk));
 
     mem_region->header.size = (sizeof(struct osi_proc_mem));
     mem_region->header.op = (HYPER_RESP_READ_OK);
@@ -666,14 +729,14 @@ void handle_op_read_procargs(portal_region *mem_region)
     igloo_debug_osi("igloo: Handling HYPER_OP_READ_PROCARGS (pid=%llu, is_current=%d)\n",
                    (unsigned long long)(mem_region->header.pid), is_current);
 
-    if (!mm || !mm->arg_end || !mm->arg_start || mm->arg_end <= mm->arg_start) {
+    arg_start = mm ? KFIELD(unsigned long, mm, mm_struct, arg_start) : 0;
+    arg_end   = mm ? KFIELD(unsigned long, mm, mm_struct, arg_end)   : 0;
+    if (!mm || !arg_end || !arg_start || arg_end <= arg_start) {
         igloo_debug_osi("igloo: Invalid memory area for procargs\n");
         goto fail;
     }
 
     /* Implementation inspired by fs/proc/base.c:get_mm_cmdline() */
-    arg_start = mm->arg_start;
-    arg_end = mm->arg_end;
 
     /* Calculate max length to read, similar to get_mm_cmdline */
     len = min_t(size_t, arg_end - arg_start, CHUNK_SIZE - 1);
@@ -687,7 +750,8 @@ void handle_op_read_procargs(portal_region *mem_region)
     if (!is_current) {
         /* For other processes, use access_remote_vm */
         igloo_debug_osi("igloo: Using access_remote_vm for target process\n");
-        if (access_remote_vm(mm, arg_start, buf, len, FOLL_FORCE) != len) {
+        if (!kl_access_remote_vm ||
+            kl_access_remote_vm(mm, arg_start, buf, len, FOLL_FORCE) != len) {
             igloo_debug_osi("igloo: Failed to read arguments area\n");
             goto fail;
         }
@@ -755,12 +819,12 @@ void handle_op_read_procenv(portal_region *mem_region)
     igloo_debug_osi("igloo: Handling HYPER_OP_READ_PROCENV (pid=%llu, is_current=%d)\n",
                    (unsigned long long)(mem_region->header.pid), is_current);
 
-    if (!mm || !mm->env_end || !mm->env_start || mm->env_end <= mm->env_start) {
+    env_start = mm ? KFIELD(unsigned long, mm, mm_struct, env_start) : 0;
+    env_end   = mm ? KFIELD(unsigned long, mm, mm_struct, env_end)   : 0;
+    if (!mm || !env_end || !env_start || env_end <= env_start) {
         goto fail;
     }
 
-    env_start = mm->env_start;
-    env_end = mm->env_end;
     len = env_end - env_start;
 
     // Ensure we don't overflow our buffer, leave space for null terminator
@@ -774,7 +838,8 @@ void handle_op_read_procenv(portal_region *mem_region)
         // For other processes, use access_remote_vm
         igloo_debug_osi("igloo: Using access_remote_vm for target process\n");
         ret = 0;
-        if (access_remote_vm(mm, env_start, buf, len, FOLL_FORCE) != len) {
+        if (!kl_access_remote_vm ||
+            kl_access_remote_vm(mm, env_start, buf, len, FOLL_FORCE) != len) {
             igloo_debug_osi("igloo: access_remote_vm failed for procenv at %#lx (len %lu)\n",
                          env_start, len);
             ret = -EFAULT;
