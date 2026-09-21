@@ -11,6 +11,28 @@
 #include <linux/workqueue.h>
 #include <linux/sched.h>
 
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0) && LINUX_VERSION_CODE < KERNEL_VERSION(6,12,0)
+/*
+ * This unit's post-4.10 code path targets the 6.12+ uprobe API: handle-returning
+ * uprobe_register()/uprobe_unregister() and uprobe_consumer handlers that take a
+ * trailing __u64 *data. The intermediate eras (4.11 .. 6.11) — including the
+ * faithful MikroTik RouterOS 5.6.3/aarch64 Tier-A target — use the classic
+ * inode/offset uprobe API with different handler signatures. Per the
+ * version-portable plan, uprobes on these eras degrade to penguin's host-side
+ * (TCG) engine; carry stub op handlers so igloo links and the REGISTER/
+ * UNREGISTER_UPROBE portal ops fail gracefully at runtime. The <=4.10 and
+ * >=6.12 donor kernels keep the real implementation via the #else below.
+ */
+void handle_op_register_uprobe(portal_region *mem_region)
+{
+	mem_region->header.op = HYPER_RESP_READ_FAIL;
+}
+void handle_op_unregister_uprobe(portal_region *mem_region)
+{
+	mem_region->header.op = HYPER_RESP_READ_FAIL;
+}
+#else
+
 // Helper macro for uprobe debug logs (using the designated uprobe module)
 #define uprobe_debug(fmt, ...) igloo_debug_uprobe(fmt, ##__VA_ARGS__)
 
@@ -364,3 +386,5 @@ void handle_op_unregister_uprobe(portal_region *mem_region)
     // Return success
     mem_region->header.op = HYPER_RESP_READ_OK;
 }
+
+#endif /* uprobe 6.12+ API era gate (stub for 4.11 .. 6.11) */

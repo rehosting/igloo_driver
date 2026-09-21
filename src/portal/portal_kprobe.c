@@ -115,7 +115,10 @@ static int portal_kprobe_pre_handler(struct kprobe *p, struct pt_regs *regs)
 // Return handler
 static int portal_kretprobe_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,2,0)
+/* get_kretprobe() was introduced in 5.11; before that the kretprobe_instance
+ * carries the kretprobe directly as ri->rp (so on the faithful 5.6.3 target we
+ * take the ri->rp path). */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,11,0)
     struct kretprobe *rp = get_kretprobe(ri);
     struct portal_kprobe *pk = container_of(rp, struct portal_kprobe, rp);
 #else
