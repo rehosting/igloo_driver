@@ -14,6 +14,7 @@
 #include "igloo_hypercall.h"
 #include "igloo_hypercall_consts.h"
 #include "portal/scope.h"
+#include "igloo_debug.h"
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("IGLOO Kernel Inspection/Interventions");
@@ -40,6 +41,7 @@ int exit_hc_init(void);
 int init_module(void) {
     int ret;
     printk(KERN_EMERG "IGLOO: Initializing\n");
+    igloo_debug_init();
     report_base_addr();
 
     /* Capture the initial UTS namespace before init.sh unshares the firmware. */
