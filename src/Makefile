@@ -13,8 +13,8 @@ obj-m := igloo.o
 PORTAL_SRCS := $(filter-out $(src)/portal/portal_tramp_gen.c, $(wildcard $(src)/portal/*.c))
 PORTAL_OBJS := $(patsubst $(src)/%.c,%.o,$(PORTAL_SRCS))
 
-igloo-objs += igloo_hc.o hooks/syscalls_hc.o hooks/ioctl_hc.o \
-        hooks/sock_hc.o hooks/uname_hc.o hooks/block_mounts.o \
+igloo-objs += igloo_hc.o hooks/syscalls_hc.o \
+        hooks/sock_hc.o hooks/uname_hc.o \
 		hooks/igloo_open.o hooks/signal_hc.o hooks/exit_hc.o \
 		abi_consts.o \
 		netdevs/igloonet.o \

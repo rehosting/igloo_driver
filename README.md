@@ -135,7 +135,7 @@ built modules.
 | `src/igloo_hc.c` | Module entry point and subsystem init order. |
 | `src/ehypercall.h`, `src/igloo_hypercall_consts.h` | The per-arch hypercall primitive and its numbers. |
 | `src/portal/` | The Portal protocol: dispatch loop, op handlers, shared-memory types. |
-| `src/hooks/` | Syscall / ioctl / signal / socket / uname / mount / open hooks. |
+| `src/hooks/` | Syscall / signal / exit / socket / uname / open hooks. |
 | `src/hyperfs/` | `hyperfs_consts.h` only: host-ABI enums Penguin still reads from the ISF (the filesystem itself was removed). |
 | `src/netdevs/` | Synthetic network devices (`igloonet`). |
 | `scripts/` | Build-time helpers (e.g. trampoline codegen). |

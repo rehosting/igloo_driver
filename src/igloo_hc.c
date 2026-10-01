@@ -30,10 +30,8 @@ static void report_base_addr(void){
 
 /* Forward declarations for init functions */
 int syscalls_hc_init(void);
-int ioctl_hc_init(void);
 int sock_hc_init(void);
 int uname_hc_init(void);
-int block_mounts_init(void);
 int igloo_open_init(void);
 int signal_hc_init(void);
 int exit_hc_init(void);
@@ -62,11 +60,6 @@ int init_module(void) {
         return ret;
     }
 
-    if ((ret = ioctl_hc_init()) != 0) {
-        printk(KERN_ERR "Failed to register ioctl_hc returning %d\n", ret);
-        return ret;
-    }
-
     if ((ret = sock_hc_init()) != 0) {
         printk(KERN_ERR "Failed to register sock_hc returning %d\n", ret);
         return ret;
@@ -84,11 +77,6 @@ int init_module(void) {
 
     if ((ret = igloo_procfs_compat_init()) != 0) {
         printk(KERN_ERR "Failed to register procfs compat hooks returning %d\n", ret);
-        return ret;
-    }
-
-    if ((ret = block_mounts_init()) != 0) {
-        printk(KERN_ERR "Failed to register block_mounts returning %d\n", ret);
         return ret;
     }
 

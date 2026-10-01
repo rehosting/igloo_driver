@@ -107,13 +107,10 @@ reads (see {doc}`api/portal_api`).
 | `osi_proc_all` | Bulk-walk **all** live processes in one operation (slimmer per-process node than `osi_proc`). |
 | `osi_proc_handles` | Enumerate live processes as lightweight handles. |
 | `osi_mappings` | The process's memory mappings (`struct osi_module` list). |
-| `osi_proc_mem` | Access a process's memory via its OSI handle. |
 | `osi_proc_exe` | The process's executable path. |
-| `osi_proc_ptregs` | The process's saved `pt_regs`. |
 | `read_procargs` | The process's `argv`. |
 | `read_procenv` | The process's `environ`. |
 | `read_fds` | The process's open file descriptors. |
-| `read_time` | Read guest time. |
 
 Implemented in `portal_osi.c`. The OSI structs are defined in `portal_types.h`
 and rendered in {doc}`api/types_api`.

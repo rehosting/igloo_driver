@@ -15,8 +15,3 @@ Syscall, signal, and ioctl hook structures and entry points. See
 :project: igloo_driver
 ```
 
-## ioctl hooks — `ioctl_hc.h`
-
-```{doxygenfile} ioctl_hc.h
-:project: igloo_driver
-```

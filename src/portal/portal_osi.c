@@ -602,55 +602,6 @@ void handle_op_osi_mappings(portal_region *mem_region)
                   count, mm->map_count, string_offset);
 }
 
-void handle_op_osi_proc_mem(portal_region *mem_region)
-{
-    struct task_struct *task;
-    struct mm_struct *mm;
-    struct osi_proc_mem {
-        __le64 start_brk;
-        __le64 brk;
-    };
-    struct osi_proc_mem *proc_mem;
-
-    task = get_target_task_by_id(mem_region);
-
-    // Check for NULL task before using task->pid
-    if (!task) {
-        igloo_debug_osi("igloo: Handling HYPER_OP_OSI_PROC_MEM for NULL task\n");
-        proc_mem = (struct osi_proc_mem *)PORTAL_DATA(mem_region);
-        proc_mem->start_brk = 0;
-        proc_mem->brk = 0;
-        mem_region->header.op = (HYPER_RESP_READ_FAIL);
-        return;
-    }
-
-    // Now we can safely use task->pid
-    igloo_debug_osi("igloo: Handling HYPER_OP_OSI_PROC_MEM for PID %d\n", task->pid);
-
-    mm = task->mm;
-
-    // Check if we have enough buffer space for the structure
-    if (sizeof(struct osi_proc_mem) > CHUNK_SIZE) {
-        mem_region->header.op = (HYPER_RESP_READ_FAIL);
-        return;
-    }
-
-    proc_mem = (struct osi_proc_mem *)PORTAL_DATA(mem_region);
-
-    if (!mm) {
-        proc_mem->start_brk = 0;
-        proc_mem->brk = 0;
-        mem_region->header.op = (HYPER_RESP_READ_FAIL);
-        return;
-    }
-
-    proc_mem->start_brk = (mm->start_brk);
-    proc_mem->brk = (mm->brk);
-
-    mem_region->header.size = (sizeof(struct osi_proc_mem));
-    mem_region->header.op = (HYPER_RESP_READ_OK);
-}
-
 void handle_op_read_procargs(portal_region *mem_region)
 {
     bool is_current = false;
@@ -1135,45 +1086,4 @@ void handle_op_read_fds(portal_region *mem_region)
 
     igloo_debug_osi("igloo: Returned %d file descriptors (total: %d), buffer used: %zu bytes\n",
                   count, total_count, string_offset);
-}
-
-void handle_op_read_time(portal_region *mem_region)
-{
-    mem_region->header.size = ktime_get_ns();
-    mem_region->header.op = HYPER_RESP_READ_NUM;
-}
-
-void handle_op_osi_proc_ptregs(portal_region *mem_region)
-{
-    struct task_struct *task = current;
-    struct pt_regs *regs = NULL;
-
-    igloo_debug_osi("igloo: Handling HYPER_OP_OSI_PROC_PTREGS (pid=%d)\n", task ? task->pid : -1);
-
-    if (!task) {
-        igloo_debug_osi("igloo: No task found for ptregs\n");
-        mem_region->header.size = 0;
-        mem_region->header.op = HYPER_RESP_READ_FAIL;
-        return;
-    }
-
-#if defined(current_pt_regs)
-    regs = current_pt_regs();
-#elif defined(task_pt_regs)
-    regs = task_pt_regs(task);
-#elif defined(ARCH_HAS_GET_CURRENT_REGS)
-    regs = get_current_regs();
-#else
-    regs = NULL;
-#endif
-    if (!regs) {
-        igloo_debug_osi("igloo: Could not get ptregs pointer for current task\n");
-        mem_region->header.size = 0;
-        mem_region->header.op = HYPER_RESP_READ_FAIL;
-        return;
-    }
-    mem_region->header.size = (uint64_t)(uintptr_t)regs;
-    mem_region->header.op = HYPER_RESP_READ_NUM;
-    igloo_debug_osi("igloo: ptregs pointer returned for current task: %p\n", regs);
-    return;
 }
