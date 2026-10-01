@@ -13,13 +13,11 @@
 #include "portal/portal.h"
 #include "igloo_hypercall.h"
 #include "igloo_hypercall_consts.h"
-#include "hyperfs/hyperfs.h"
 #include "portal/scope.h"
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("IGLOO Kernel Inspection/Interventions");
 MODULE_VERSION("0.1");
-MODULE_SOFTDEP("post: hyperfs");  // Load hyperfs after igloo
 
 /**
  * Report the base address of the module by picking a function in the .text
@@ -99,11 +97,6 @@ int init_module(void) {
         return ret;
     }
 
-    /* Now, load hyperfs if not already loaded */
-	if ((ret = hyperfs_init()) != 0) {
-		printk(KERN_ERR "Failed to initialize hyperfs, returning %d\n", ret);
-        return ret;
-    }
     igloo_portal(IGLOO_INIT_MODULE, 0, 0);
     return 0;
 }

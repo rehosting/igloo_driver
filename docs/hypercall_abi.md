@@ -68,6 +68,6 @@ Hypercall numbers are enumerated in
 | Syscall / signal | `IGLOO_HYP_SYSCALL_ENTER` (0x1338), `IGLOO_HYP_SYSCALL_RETURN` (0x1339), `IGLOO_HYP_SIGNAL_DELIVER` (0x133b), `IGLOO_HYP_SETUP_TASK_COMM` (0x133a) | Syscall and signal hook event delivery. |
 | Uprobe / kprobe | `IGLOO_HYP_UPROBE_ENTER/RETURN` (0x6901/0x6902), `IGLOO_HYP_KPROBE_ENTER/RETURN` (0x6903/0x6904) | Probe hit reporting. |
 | Portal | `IGLOO_HYPER_REGISTER_MEM_REGION` (0xbebebebe), `IGLOO_HYPER_ENABLE_PORTAL_INTERRUPT` (0x7901), `IGLOO_HYPER_PORTAL_INTERRUPT` (0x7902), `IGLOO_HYP_TRAMP_HIT` (0x7903) | Portal region registration and the interrupt path. |
-| Lifecycle / misc | `IGLOO_MODULE_BASE` (0x6408400C), `IGLOO_INIT_MODULE` (0x6408400D), `IGLOO_SYSCALL` (0x6408400B), `IGLOO_HYPERFS_MAGIC`, the `IGLOO_SIGSTOP_*` values | Module base reporting, init-complete signalling, hyperfs magic, kthread sigstop coordination. |
+| Lifecycle / misc | `IGLOO_MODULE_BASE` (0x6408400C), `IGLOO_INIT_MODULE` (0x6408400D), `IGLOO_SYSCALL` (0x6408400B), `IGLOO_HYPERFS_MAGIC`, the `IGLOO_SIGSTOP_*` values | Module base reporting, init-complete signalling, the hyperfs magic (no longer issued by the driver; kept for the host ABI), kthread sigstop coordination. |
 
 See the full extracted enum in {doc}`api/hypercall_api`.

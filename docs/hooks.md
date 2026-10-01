@@ -84,5 +84,5 @@ rehosting:
 - **block_mounts** (`block_mounts.c`) — suppresses mounts that would interfere
   with rehosting.
 - **igloo_open** (`igloo_open.c`) — open() interception, coordinating with the
-  `IGLOO_OPEN` hypercall and hyperfs.
+  `IGLOO_OPEN` hypercall.
 - **sockets** (`sock_hc.c`) — socket-related hooks feeding the networking model.

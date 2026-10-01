@@ -173,13 +173,6 @@ struct portal_tramp_generate {
     unsigned long tramp_addr;          /* Function address */
 };
 
-/* Arguments for HYPER_OP_HYPERFS_ADD_HYPERFILE */
-struct portal_hyperfs_add_hyperfile_args {
-    uint64_t fs_name_offset;   // Offset to filesystem name string in data buffer
-    uint64_t file_name_offset; // Offset to file name string in data buffer
-    uint64_t fops_ptr;         // Pointer to struct file_operations
-};
-
 
 #define PROCFS_MAX_PATH 256
 #define PROCFS_PID_PARENT_ID -1

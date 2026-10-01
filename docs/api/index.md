@@ -22,6 +22,5 @@ portal_api
 types_api
 hypercall_api
 hooks_api
-hyperfs_api
 scope_api
 ```

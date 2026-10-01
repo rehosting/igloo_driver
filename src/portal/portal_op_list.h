@@ -33,7 +33,6 @@
     X(ffi_exec, FFI_EXEC) \
     X(kallsyms_lookup, KALLSYMS_LOOKUP) \
     X(tramp_generate, TRAMP_GENERATE) \
-    X(hyperfs_add_hyperfile, HYPERFS_ADD_HYPERFILE) \
     X(register_netdev, REGISTER_NETDEV) \
     X(lookup_netdev, LOOKUP_NETDEV) \
     X(set_netdev_state, SET_NETDEV_STATE) \

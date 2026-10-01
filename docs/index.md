@@ -15,7 +15,7 @@ QEMU analysis plugin) you can, at runtime, reach into the running guest and:
   `kallsyms` lookup and generated trampolines.
 - **Synthesize pseudo-files and devices** — create `/proc`, `/sys`, `/dev`,
   `sysctl`, anonymous-inode, socket and MTD nodes on demand, backed by
-  host-side models via **hyperfs**.
+  host-side models over the Portal.
 
 All of this is driven over a single cooperative, shared-memory protocol called
 **Portal**, carried on top of a tiny per-architecture **hypercall** ABI. The
@@ -43,7 +43,6 @@ architecture
 portal
 hypercall_abi
 hooks
-hyperfs
 pseudofiles
 building
 ```

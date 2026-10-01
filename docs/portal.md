@@ -157,7 +157,6 @@ the `src/hooks/` subsystem. Probe types are enumerated by `enum portal_type`
 
 | Op | Purpose |
 |---|---|
-| `hyperfs_add_hyperfile` | Register a host-backed file with hyperfs. |
 | `procfs_create_file` / `procfs_create_or_lookup_dir` | Synthesize `/proc` entries. |
 | `sysfs_create_file` / `sysfs_create_or_lookup_dir` | Synthesize `/sys` entries. |
 | `devfs_create_device` / `devfs_create_or_lookup_dir` | Synthesize `/dev` nodes. |
@@ -167,9 +166,8 @@ the `src/hooks/` subsystem. Probe types are enumerated by `enum portal_type`
 | `mtd_create` / `mtd_nuke` | Create / tear down synthetic MTD (flash) devices. |
 
 Implemented in `portal_procfs.c`, `portal_sysfs.c`, `portal_devfs.c`,
-`portal_sysctl.c`, `portal_anon.c`, `portal_net.c`, `portal_mtd.c`,
-`portal_hyperfs.c`. See [Pseudo-files & devices](pseudofiles.md) and
-[hyperfs](hyperfs.md).
+`portal_sysctl.c`, `portal_anon.c`, `portal_net.c`, `portal_mtd.c`. See
+[Pseudo-files & devices](pseudofiles.md).
 
 ### Synthetic network devices
 
