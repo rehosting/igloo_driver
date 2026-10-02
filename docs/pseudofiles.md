@@ -3,7 +3,7 @@
 A large fraction of firmware rehosting is making the guest believe that hardware
 and kernel interfaces it expects are present. igloo_driver can **synthesize**
 entries across every major kernel namespace on demand, driven by Portal
-operations from the host and backed by [hyperfs](hyperfs.md) models.
+operations from the host and backed by host-side models.
 
 ## What can be synthesized
 
@@ -18,7 +18,7 @@ operations from the host and backed by [hyperfs](hyperfs.md) models.
 | MTD (flash) | `mtd_create`, `mtd_nuke` | `portal_mtd.c` |
 
 Each `*_create_file` / `*_create_device` op registers the node and wires its
-read/write/ioctl operations back to a host model through hyperfs, so accessing
+read/write/ioctl operations back to a host model through Portal trampolines, so accessing
 the file from guest userland produces host-controlled behavior. The
 `*_create_or_lookup_dir` variants create intermediate directories idempotently,
 so a deep path can be materialized one component at a time.
@@ -42,6 +42,6 @@ present synthetic interfaces and track what the firmware binds to them.
 
 The guest module only implements the *mechanism*. Which pseudo-files exist,
 what they contain, and how they respond is decided entirely by the host: Penguin
-issues the `*_create_*` operations and answers the subsequent hyperfs reads and
+issues the `*_create_*` operations and answers the subsequent reads and
 writes. From a rehoster's point of view you configure these through Penguin's
 pseudo-file / device models, not by editing the kernel module.

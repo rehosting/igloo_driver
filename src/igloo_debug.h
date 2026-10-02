@@ -13,26 +13,28 @@ struct igloo_debug_config {
     bool osi;          // Enable debug for OSI features
 };
 
-// Global debug configuration (defined in igloo_hc.c)
-extern struct igloo_debug_config igloo_debug;
+// Global debug configuration (defined in igloo_debug.c)
+extern struct igloo_debug_config igloo_debug_flags;
+
+void igloo_debug_init(void);
 
 // Debug print macros for each module
 #define igloo_debug_portal(fmt, ...) \
-    do { if (igloo_debug.portal) pr_emerg("IGLOO-PORTAL: " fmt, ##__VA_ARGS__); } while (0)
+    do { if (igloo_debug_flags.portal) pr_emerg("IGLOO-PORTAL: " fmt, ##__VA_ARGS__); } while (0)
 
 #define igloo_debug_uprobe(fmt, ...) \
-    do { if (igloo_debug.uprobe) pr_emerg("IGLOO-UPROBE: " fmt, ##__VA_ARGS__); } while (0)
+    do { if (igloo_debug_flags.uprobe) pr_emerg("IGLOO-UPROBE: " fmt, ##__VA_ARGS__); } while (0)
 
 #define igloo_debug_kprobe(fmt, ...) \
-    do { if (igloo_debug.kprobe) pr_emerg("IGLOO-KPROBE: " fmt, ##__VA_ARGS__); } while (0)
+    do { if (igloo_debug_flags.kprobe) pr_emerg("IGLOO-KPROBE: " fmt, ##__VA_ARGS__); } while (0)
 
 #define igloo_debug_vma(fmt, ...) \
-    do { if (igloo_debug.vma) pr_emerg("IGLOO-VMA: " fmt, ##__VA_ARGS__); } while (0)
+    do { if (igloo_debug_flags.vma) pr_emerg("IGLOO-VMA: " fmt, ##__VA_ARGS__); } while (0)
 
 #define igloo_debug_syscall(fmt, ...) \
-    do { if (igloo_debug.syscall) pr_emerg("IGLOO-SYSCALL: " fmt, ##__VA_ARGS__); } while (0)
+    do { if (igloo_debug_flags.syscall) pr_emerg("IGLOO-SYSCALL: " fmt, ##__VA_ARGS__); } while (0)
 
 #define igloo_debug_osi(fmt, ...) \
-    do { if (igloo_debug.osi) pr_emerg("IGLOO-OSI: " fmt, ##__VA_ARGS__); } while (0)
+    do { if (igloo_debug_flags.osi) pr_emerg("IGLOO-OSI: " fmt, ##__VA_ARGS__); } while (0)
 
 #endif /* _IGLOO_DEBUG_H */

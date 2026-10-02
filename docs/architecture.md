@@ -15,7 +15,7 @@ engine.
   │      ▼                             │           │    kprobe / uprobe / syscall    │
   │  ┌─────────────────────────────┐   │  hypercall│    pseudo-file models           │
   │  │        igloo_driver         │◀──┼───────────┼──▶  Portal host handler         │
-  │  │  hooks · portal · hyperfs   │   │  (shared  │                                 │
+  │  │  hooks · portal             │   │  (shared  │                                 │
   │  │  netdevs · scope            │   │   memory) │                                 │
   │  └─────────────────────────────┘   │           │                                 │
   │      guest Linux kernel            │           │                                 │
@@ -44,8 +44,8 @@ Two layers carry every interaction:
 | `src/ehypercall.h` | The per-architecture hypercall instruction (`igloo_hypercall4`). |
 | `src/igloo_hypercall_consts.h` | Hypercall number constants (network setup, uname, syscall/uprobe/kprobe events, memory-region registration, …). |
 | `src/portal/` | The Portal protocol: dispatch loop, the op handlers, and the shared-memory types. |
-| `src/hooks/` | Guest-kernel hooks: syscalls, ioctl, signals, sockets, uname, mount blocking, open interception. |
-| `src/hyperfs/` | Host-backed pseudo-filesystem (`hyperfs`) — files whose reads/writes are answered by the host. |
+| `src/hooks/` | Guest-kernel hooks: syscalls, signals, process exit, sockets, uname, open interception. |
+| `src/hyperfs/` | `hyperfs_consts.h` only — host-ABI enums Penguin reads from the ISF (`src/abi_consts.c` keeps them in the DWARF). The `hyperfs` filesystem itself was removed. |
 | `src/netdevs/` | Synthetic network devices (`igloonet`). |
 | `src/portal/scope.c` (+ `scope.h`) | **Analysis scoping** — gates event emission to the firmware-under-analysis process subtree. |
 | `scripts/gen_portal_tramp.py` | Generates per-architecture trampoline code used by `tramp_generate`. |
@@ -61,15 +61,13 @@ any one aborts module init:
 2. `igloo_scope_init()` — captures the **initial UTS namespace** while `current`
    is still Penguin's boot context, before `init.sh` unshares a fresh namespace
    for the real guest init. See [Analysis scoping](#analysis-scoping).
-3. Hook subsystems: `syscalls_hc_init` → `signal_hc_init` → `ioctl_hc_init` →
+3. Hook subsystems: `syscalls_hc_init` → `signal_hc_init` → `exit_hc_init` →
    `sock_hc_init` → `uname_hc_init`.
 4. `igloo_portal_init()` — registers the Portal shared-memory region and enables
    the interrupt path.
 5. `igloo_procfs_compat_init()` — procfs compatibility hooks.
-6. `block_mounts_init()`, `igloo_open_init()` — mount blocking and open
-   interception.
-7. `hyperfs_init()` — brings up the host-backed pseudo-filesystem.
-8. A final `IGLOO_INIT_MODULE` hypercall tells the host the guest is fully up.
+6. `igloo_open_init()` — open interception.
+7. A final `IGLOO_INIT_MODULE` hypercall tells the host the guest is fully up.
 
 ## Analysis scoping
 

@@ -114,7 +114,7 @@
  *   - A read that blocks (a FIFO with no writer, /proc/kmsg) would hold the
  *     mutex for as long as it blocks, so every other handle -- every other
  *     plugin's read -- stalls behind one unlucky path, with no timeout.
- *   - A read of a hyperfs-modelled pseudofile issues a hypercall from inside
+ *   - A read of a host-modelled pseudofile issues a hypercall from inside
  *     the read, which re-enters the portal. If that nested call touched the
  *     table while we held the mutex it would deadlock against itself.
  *
@@ -359,7 +359,7 @@ void handle_op_vfs_read(portal_region *mem_region)
     pos = f->f_pos;
     mutex_unlock(&vfs_lock);
 
-    /* Lock dropped: this can block, and for a hyperfs path it re-enters the
+    /* Lock dropped: this can block, and for a host-modelled path it re-enters the
      * portal. See the header comment. */
     n = vfs_read_chunk(f, payload, want, &pos);
 

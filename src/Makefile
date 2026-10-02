@@ -13,12 +13,15 @@ obj-m := igloo.o
 PORTAL_SRCS := $(filter-out $(src)/portal/portal_tramp_gen.c, $(wildcard $(src)/portal/*.c))
 PORTAL_OBJS := $(patsubst $(src)/%.c,%.o,$(PORTAL_SRCS))
 
-igloo-objs += igloo_hc.o hooks/syscalls_hc.o hooks/ioctl_hc.o \
-        hooks/sock_hc.o hooks/uname_hc.o hooks/block_mounts.o \
+igloo-objs += igloo_hc.o igloo_debug.o hooks/syscalls_hc.o \
+        hooks/sock_hc.o hooks/uname_hc.o \
 		hooks/igloo_open.o hooks/signal_hc.o hooks/exit_hc.o \
-		hyperfs/hyperfs.o \
+		abi_consts.o \
 		netdevs/igloonet.o \
 		$(PORTAL_OBJS)
+
+# abi_consts.c only exists to put unreferenced enums in the DWARF (see the file).
+CFLAGS_abi_consts.o := -fno-eliminate-unused-debug-types
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
 PWD := $(shell pwd)
@@ -27,7 +30,6 @@ CROSS_COMPILE ?=
 EXTRA_CFLAGS += -I$(srctree)/drivers/igloobase \
 			 -I$(PWD)/ \
 			 -I$(PWD)/portal \
-			 -I$(PWD)/hyperfs \
 			 -I$(PWD)/hooks
 
 PORTAL_TRAMP_GEN := $(src)/portal/portal_tramp_gen.h

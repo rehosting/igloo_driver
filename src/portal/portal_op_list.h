@@ -9,13 +9,10 @@
     X(osi_proc_handles, OSI_PROC_HANDLES) \
     X(osi_proc_all, OSI_PROC_ALL) \
     X(osi_mappings, OSI_MAPPINGS) \
-    X(osi_proc_mem, OSI_PROC_MEM) \
     X(osi_proc_exe, OSI_PROC_EXE) \
-    X(osi_proc_ptregs, OSI_PROC_PTREGS) \
     X(read_procargs, READ_PROCARGS) \
     X(read_procenv, READ_PROCENV) \
     X(read_fds, READ_FDS) \
-    X(read_time, READ_TIME) \
     X(read_file, READ_FILE) \
     X(write_file, WRITE_FILE) \
     X(register_uprobe, REGISTER_UPROBE) \
@@ -33,7 +30,6 @@
     X(ffi_exec, FFI_EXEC) \
     X(kallsyms_lookup, KALLSYMS_LOOKUP) \
     X(tramp_generate, TRAMP_GENERATE) \
-    X(hyperfs_add_hyperfile, HYPERFS_ADD_HYPERFILE) \
     X(register_netdev, REGISTER_NETDEV) \
     X(lookup_netdev, LOOKUP_NETDEV) \
     X(set_netdev_state, SET_NETDEV_STATE) \

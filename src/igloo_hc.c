@@ -13,13 +13,12 @@
 #include "portal/portal.h"
 #include "igloo_hypercall.h"
 #include "igloo_hypercall_consts.h"
-#include "hyperfs/hyperfs.h"
 #include "portal/scope.h"
+#include "igloo_debug.h"
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("IGLOO Kernel Inspection/Interventions");
 MODULE_VERSION("0.1");
-MODULE_SOFTDEP("post: hyperfs");  // Load hyperfs after igloo
 
 /**
  * Report the base address of the module by picking a function in the .text
@@ -32,10 +31,8 @@ static void report_base_addr(void){
 
 /* Forward declarations for init functions */
 int syscalls_hc_init(void);
-int ioctl_hc_init(void);
 int sock_hc_init(void);
 int uname_hc_init(void);
-int block_mounts_init(void);
 int igloo_open_init(void);
 int signal_hc_init(void);
 int exit_hc_init(void);
@@ -44,6 +41,7 @@ int exit_hc_init(void);
 int init_module(void) {
     int ret;
     printk(KERN_EMERG "IGLOO: Initializing\n");
+    igloo_debug_init();
     report_base_addr();
 
     /* Capture the initial UTS namespace before init.sh unshares the firmware. */
@@ -61,11 +59,6 @@ int init_module(void) {
 
     if ((ret = exit_hc_init()) != 0) {
         printk(KERN_ERR "Failed to register exit_hc returning %d\n", ret);
-        return ret;
-    }
-
-    if ((ret = ioctl_hc_init()) != 0) {
-        printk(KERN_ERR "Failed to register ioctl_hc returning %d\n", ret);
         return ret;
     }
 
@@ -89,21 +82,11 @@ int init_module(void) {
         return ret;
     }
 
-    if ((ret = block_mounts_init()) != 0) {
-        printk(KERN_ERR "Failed to register block_mounts returning %d\n", ret);
-        return ret;
-    }
-
     if ((ret = igloo_open_init()) != 0) {
         printk(KERN_ERR "Failed to register igloo_open returning %d\n", ret);
         return ret;
     }
 
-    /* Now, load hyperfs if not already loaded */
-	if ((ret = hyperfs_init()) != 0) {
-		printk(KERN_ERR "Failed to initialize hyperfs, returning %d\n", ret);
-        return ret;
-    }
     igloo_portal(IGLOO_INIT_MODULE, 0, 0);
     return 0;
 }

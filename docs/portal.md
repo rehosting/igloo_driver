@@ -107,13 +107,10 @@ reads (see {doc}`api/portal_api`).
 | `osi_proc_all` | Bulk-walk **all** live processes in one operation (slimmer per-process node than `osi_proc`). |
 | `osi_proc_handles` | Enumerate live processes as lightweight handles. |
 | `osi_mappings` | The process's memory mappings (`struct osi_module` list). |
-| `osi_proc_mem` | Access a process's memory via its OSI handle. |
 | `osi_proc_exe` | The process's executable path. |
-| `osi_proc_ptregs` | The process's saved `pt_regs`. |
 | `read_procargs` | The process's `argv`. |
 | `read_procenv` | The process's `environ`. |
 | `read_fds` | The process's open file descriptors. |
-| `read_time` | Read guest time. |
 
 Implemented in `portal_osi.c`. The OSI structs are defined in `portal_types.h`
 and rendered in {doc}`api/types_api`.
@@ -157,7 +154,6 @@ the `src/hooks/` subsystem. Probe types are enumerated by `enum portal_type`
 
 | Op | Purpose |
 |---|---|
-| `hyperfs_add_hyperfile` | Register a host-backed file with hyperfs. |
 | `procfs_create_file` / `procfs_create_or_lookup_dir` | Synthesize `/proc` entries. |
 | `sysfs_create_file` / `sysfs_create_or_lookup_dir` | Synthesize `/sys` entries. |
 | `devfs_create_device` / `devfs_create_or_lookup_dir` | Synthesize `/dev` nodes. |
@@ -167,9 +163,8 @@ the `src/hooks/` subsystem. Probe types are enumerated by `enum portal_type`
 | `mtd_create` / `mtd_nuke` | Create / tear down synthetic MTD (flash) devices. |
 
 Implemented in `portal_procfs.c`, `portal_sysfs.c`, `portal_devfs.c`,
-`portal_sysctl.c`, `portal_anon.c`, `portal_net.c`, `portal_mtd.c`,
-`portal_hyperfs.c`. See [Pseudo-files & devices](pseudofiles.md) and
-[hyperfs](hyperfs.md).
+`portal_sysctl.c`, `portal_anon.c`, `portal_net.c`, `portal_mtd.c`. See
+[Pseudo-files & devices](pseudofiles.md).
 
 ### Synthetic network devices
 
