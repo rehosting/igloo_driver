@@ -4,8 +4,11 @@
 #include <linux/wait.h>
 #include <linux/sched.h>
 #include "portal_op_list.h"
+#include "mailbox.h"
 
-uint64_t portal_interrupt = 0;
+/* Points into the mailbox shared page once that is up, so the host can set it by PA. */
+static uint64_t portal_interrupt_static;
+static uint64_t *portal_interrupt = &portal_interrupt_static;
 
 // Operation handler table
 static const portal_op_handler op_handlers[] = {
@@ -55,14 +58,37 @@ static bool handle_post_memregion(portal_region *mem_region){
 }
 
 void check_portal_interrupt(void){
-    if (unlikely(portal_interrupt != 0)) {
+    if (unlikely(READ_ONCE(*portal_interrupt) != 0)) {
         // Clear the interrupt flag
-        igloo_portal(IGLOO_HYPER_PORTAL_INTERRUPT, (unsigned long) &portal_interrupt, 0);
+        igloo_portal(IGLOO_HYPER_PORTAL_INTERRUPT, (unsigned long) portal_interrupt, 0);
     }
+}
+
+static inline unsigned long portal_hypercall(unsigned long num, unsigned long arg1,
+                                             unsigned long arg2, portal_region *region,
+                                             unsigned long event_pa, unsigned long event_len)
+{
+    /* The mailbox carries the same four values the registers do, plus the region's PA. */
+    if (igloo_mb_enabled())
+        return igloo_mb_call(num, arg1, arg2, (unsigned long) region, region->header.op,
+                             (unsigned long) virt_to_phys(region), event_pa, event_len,
+                             NULL, 0);
+    return igloo_hypercall4(num, arg1, arg2, (unsigned long) region, region->header.op);
 }
 
 int igloo_portal(unsigned long num, unsigned long arg1, unsigned long arg2)
 {
+    return igloo_portal_ev(num, arg1, arg2, NULL, 0);
+}
+
+/*
+ * igloo_portal(), plus a linear-map buffer the host may read and write by
+ * physical address on every round trip of this call (mailbox mode only).
+ */
+int igloo_portal_ev(unsigned long num, unsigned long arg1, unsigned long arg2,
+                    void *event, size_t event_len)
+{
+    unsigned long event_pa = event ? (unsigned long) virt_to_phys(event) : 0;
     unsigned long ret, page;
     portal_region *region;
     igloo_pr_debug("IGLOO: igloo_portal entry num=%lu arg1=%lx arg2=%lx\n", num, arg1, arg2);
@@ -87,7 +113,7 @@ int igloo_portal(unsigned long num, unsigned long arg1, unsigned long arg2)
 
     for (;;) {
         // Make the hypercall to get the next operation from the hypervisor
-        ret = igloo_hypercall4(num, arg1, arg2, (unsigned long) region, region->header.op);
+        ret = portal_hypercall(num, arg1, arg2, region, event_pa, event_len);
         // if no responses -> break
         if (!handle_post_memregion(region)) {
             break;
@@ -107,8 +133,10 @@ int igloo_portal(unsigned long num, unsigned long arg1, unsigned long arg2)
 
 int igloo_portal_init(void)
 {
+    igloo_mailbox_init();
+    portal_interrupt = igloo_mb_portal_interrupt();
     igloo_hypercall2(IGLOO_HYPER_REGISTER_MEM_REGION, (unsigned long) PAGE_SIZE - sizeof(region_header), 0);
-    igloo_hypercall2(IGLOO_HYPER_ENABLE_PORTAL_INTERRUPT, (unsigned long) &portal_interrupt, 0);
+    igloo_hypercall2(IGLOO_HYPER_ENABLE_PORTAL_INTERRUPT, (unsigned long) portal_interrupt, 0);
     igloo_portal(IGLOO_HYPER_PORTAL_INTERRUPT, 1, 0);
     return 0;
 }

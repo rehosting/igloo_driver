@@ -11,6 +11,7 @@
 #include <linux/binfmts.h>
 #include <trace/syscall.h>
 #include "igloo_hypercall_consts.h"
+#include "portal/mailbox.h"
 
 #ifndef LINUX_VERSION_CODE
 #include <linux/version.h>
@@ -67,7 +68,11 @@ void igloo_hc_open(int dfd, struct filename *tmp, int fd)
 		strlcat(resolved_path, tmp->name, PATH_MAX);
 	}
 	// 100 = open/openat with args: open target, resulting fd
-	igloo_hypercall2(IGLOO_OPEN, (unsigned long)resolved_path, (unsigned long)fd);
+	if (igloo_mb_enabled())
+		igloo_mb_call(IGLOO_OPEN, (unsigned long)resolved_path, (unsigned long)fd,
+			      0, 0, 0, 0, 0, resolved_path, 1);
+	else
+		igloo_hypercall2(IGLOO_OPEN, (unsigned long)resolved_path, (unsigned long)fd);
 
 	kfree(resolved_path);
 }

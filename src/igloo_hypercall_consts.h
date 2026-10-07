@@ -45,6 +45,10 @@ enum igloo_hypercall_constants {
     IGLOO_HYPER_PORTAL_INTERRUPT = 0x7902,
 
     IGLOO_HYP_TRAMP_HIT = 0x7903,
+
+    /* Hypercall mailbox (portal/mailbox.h) */
+    IGLOO_HYPER_REGISTER_MAILBOX = 0x7904,
+    IGLOO_HYPER_MAILBOX = 0x7905,
     
     /* Miscellaneous operations */
     IGLOO_SIGSTOP_KTHREAD   = 0x0c6ea29a,

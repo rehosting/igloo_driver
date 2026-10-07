@@ -17,6 +17,7 @@
 #include "syscalls_hc.h"
 #include "args.h"
 #include "portal/portal.h"
+#include "portal/mailbox.h"
 #include "portal/scope.h"
 #include "igloo_hypercall_consts.h"
 #include <linux/kallsyms.h>
@@ -219,10 +220,31 @@ static inline void fill_handler(struct syscall_event *args, int argc, const unsi
 }
 
 static inline void do_hyp(bool is_enter, struct syscall_event* args) {
+    unsigned long num = is_enter ? IGLOO_HYP_SYSCALL_ENTER : IGLOO_HYP_SYSCALL_RETURN;
+
+    /*
+     * Mailbox mode: the host reads the event and the caller's pt_regs from a
+     * linear-map bounce copy by physical address, instead of translating this
+     * stack address (vmapped on newer kernels), and writes the event back there.
+     */
+    if (igloo_mb_enabled()) {
+        size_t regs_len = args->regs ? sizeof(struct pt_regs) : 0;
+        size_t len = sizeof(*args) + regs_len;
+        u8 *bounce = kmalloc(len, GFP_KERNEL);
+
+        if (bounce) {
+            memcpy(bounce, args, sizeof(*args));
+            if (regs_len)
+                memcpy(bounce + sizeof(*args), args->regs, regs_len);
+            igloo_portal_ev(num, (unsigned long)args, 0, bounce, len);
+            memcpy(args, bounce, sizeof(*args));
+            kfree(bounce);
+            return;
+        }
+    }
     // Add the hook_id and metadata to the call so the hypervisor knows which hook was triggered
     // and has access to syscall metadata - pass the hook_id as third argument
-    igloo_portal(is_enter ? IGLOO_HYP_SYSCALL_ENTER : IGLOO_HYP_SYSCALL_RETURN,
-                (unsigned long)args, 0);
+    igloo_portal(num, (unsigned long)args, 0);
 }
 
 /* Check if a value matches a filter that is assumed to be enabled */
