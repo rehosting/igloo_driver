@@ -34,6 +34,18 @@ static char *resolve_dfd_to_path(int dfd, char *buf, int buflen) {
 	return path;
 }
 
+/*
+ * IGLOO_OPEN fires from the kernel's open path on every open. Its only
+ * consumer (penguin's health plugin) looks at /dev paths alone, and every
+ * hypercall is a VM exit under KVM: on a rehosted router firmware,
+ * libnvram's per-key file opens alone made it ~2,500/s. Only report opens
+ * whose resolved path starts with this prefix; an empty string reports all.
+ */
+static char *open_prefix = "/dev/";
+module_param(open_prefix, charp, 0644);
+MODULE_PARM_DESC(open_prefix,
+		 "Only issue IGLOO_OPEN for paths with this prefix (\"\" = all)");
+
 /**
  * Called from do_sys_openat2 in fs/open.c
  */
@@ -41,6 +53,13 @@ void igloo_hc_open(int dfd, struct filename *tmp, int fd);
 void igloo_hc_open(int dfd, struct filename *tmp, int fd)
 {
     char *resolved_path;
+	size_t prefix_len = open_prefix ? strlen(open_prefix) : 0;
+
+	// Absolute paths outside the prefix can be dropped before resolving.
+	if (prefix_len && tmp->name[0] == '/' &&
+	    strncmp(tmp->name, open_prefix, prefix_len) != 0)
+		return;
+
 	// Allocate memory for resolved_path only when necessary
 	resolved_path = kmalloc(PATH_MAX, GFP_KERNEL);
 	if (!resolved_path) {
@@ -66,6 +85,11 @@ void igloo_hc_open(int dfd, struct filename *tmp, int fd)
 			strlcat(resolved_path, "/", PATH_MAX);
 		strlcat(resolved_path, tmp->name, PATH_MAX);
 	}
+	if (prefix_len && strncmp(resolved_path, open_prefix, prefix_len) != 0) {
+		kfree(resolved_path);
+		return;
+	}
+
 	// 100 = open/openat with args: open target, resulting fd
 	igloo_hypercall2(IGLOO_OPEN, (unsigned long)resolved_path, (unsigned long)fd);
 
