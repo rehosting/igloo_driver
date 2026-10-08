@@ -38,6 +38,20 @@ struct igloo_mailbox {
     u8  payload[];      /* one-shot data for this call */
 };
 
+/*
+ * The shared page (one per guest, not per CPU), as u64 indices:
+ *   [0]                 the portal-interrupt flag
+ *   [FILTER_ON]         1 when the table below is authoritative, else 0
+ *   [FILTER ... +SLOTS) the hypercall numbers the host handles: an open-
+ *                       addressed set the host fills; 0 marks an empty slot
+ * A call whose number isn't in the set never leaves the guest and returns
+ * argument 0, which is what an unhandled call returns anyway.
+ */
+#define IGLOO_MB_SH_FILTER_ON  8
+#define IGLOO_MB_SH_FILTER     16
+#define IGLOO_MB_FILTER_SLOTS  256
+#define IGLOO_MB_FILTER_HASH(nr) ((unsigned int)(((u64)(nr) * 0x9E3779B97F4A7C15ULL) >> 56))
+
 #define IGLOO_MB_PAYLOAD_MAX (PAGE_SIZE - sizeof(struct igloo_mailbox))
 
 extern int igloo_mb_mode;

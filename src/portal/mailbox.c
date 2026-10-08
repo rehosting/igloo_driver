@@ -4,6 +4,7 @@
 #include <linux/string.h>
 #include <linux/preempt.h>
 #include <asm/io.h>
+#include <asm/barrier.h>
 #include "portal_internal.h"
 #include "mailbox.h"
 
@@ -45,6 +46,30 @@ static inline void igloo_mb_doorbell(void)
     igloo_hypercall4(IGLOO_HYPER_MAILBOX, 0, 0, 0, 0);
 }
 
+/*
+ * Whether the host handles nr. The host fills the set before the mode is
+ * turned on, and only adds to it afterwards; a number added while a CPU is
+ * reading may be missed once, the same as a call made just before the plugin
+ * registered it.
+ */
+static bool igloo_mb_wanted(u64 nr)
+{
+    const u64 *set = igloo_mb_shared + IGLOO_MB_SH_FILTER;
+    unsigned int h = IGLOO_MB_FILTER_HASH(nr), i;
+
+    if (smp_load_acquire(&igloo_mb_shared[IGLOO_MB_SH_FILTER_ON]) != 1)
+        return true;
+    for (i = 0; i < IGLOO_MB_FILTER_SLOTS; i++) {
+        u64 v = READ_ONCE(set[(h + i) & (IGLOO_MB_FILTER_SLOTS - 1)]);
+
+        if (v == nr)
+            return true;
+        if (!v)
+            return false;
+    }
+    return true;
+}
+
 unsigned long igloo_mb_call(unsigned long nr,
                             unsigned long a0, unsigned long a1,
                             unsigned long a2, unsigned long a3,
@@ -54,6 +79,9 @@ unsigned long igloo_mb_call(unsigned long nr,
 {
     struct igloo_mailbox *mb;
     unsigned long ret;
+
+    if (!igloo_mb_wanted(nr))
+        return a0;
 
     /*
      * The mailbox is per CPU and only has to hold this call's data across the
