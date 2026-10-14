@@ -48,6 +48,7 @@ int block_mounts_init(void);
 int igloo_open_init(void);
 int signal_hc_init(void);
 int exit_hc_init(void);
+int kl_bridge_init(void);
 
 /* Register probes for mmap and munmap */
 int init_module(void) {
@@ -119,6 +120,10 @@ int init_module(void) {
         return ret;
     }
     igloo_portal(IGLOO_INIT_MODULE, 0, 0);
+#ifdef KL_HAVE_BRIDGE
+    /* host<->guest TCP streams over hypercalls (no vsock before 3.9) */
+    kl_bridge_init();
+#endif
     return 0;
 }
 

@@ -39,6 +39,8 @@ static const struct kl_sc kl_tab[] = {
     {122, "uname",      1 },
     {192, "mmap2",      6 },
     {322, "openat",     4 },
+    {282, "bind",       3 },   /* netbinds: ARM EABI has direct bind/listen, so */
+    {284, "listen",     2 },   /* socketcall alone never sees them (calls.S) */
 };
 #define KL_N ((int)(sizeof(kl_tab)/sizeof(kl_tab[0])))
 
@@ -102,11 +104,11 @@ static long kl_dispatch(int idx, unsigned long a0, unsigned long a1,
     { return kl_dispatch((i), a0, a1, a2, a3, a4, a5); }
 KL_TRAMP(0)  KL_TRAMP(1)  KL_TRAMP(2)  KL_TRAMP(3)  KL_TRAMP(4)
 KL_TRAMP(5)  KL_TRAMP(6)  KL_TRAMP(7)  KL_TRAMP(8)  KL_TRAMP(9)
-KL_TRAMP(10) KL_TRAMP(11) KL_TRAMP(12)
+KL_TRAMP(10) KL_TRAMP(11) KL_TRAMP(12) KL_TRAMP(13) KL_TRAMP(14)
 static const kl_sysfn kl_tramps[KL_N] = {
     kl_tramp_0, kl_tramp_1, kl_tramp_2, kl_tramp_3, kl_tramp_4,
     kl_tramp_5, kl_tramp_6, kl_tramp_7, kl_tramp_8, kl_tramp_9,
-    kl_tramp_10, kl_tramp_11, kl_tramp_12,
+    kl_tramp_10, kl_tramp_11, kl_tramp_12, kl_tramp_13, kl_tramp_14,
 };
 
 int kl_syscall_backup_init(void)
