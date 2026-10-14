@@ -124,9 +124,11 @@ $(PORTAL_FFI_GEN): $(src)/../scripts/gen_ffi_stubs.py
 	python3 $< $@
 
 ifeq ($(CONFIG_IGLOO_OSI_MINIMAL),y)
-# The minimal object set includes neither portal_tramp.c nor portal_ffi.c, so
-# the generated headers are not needed -- skip codegen (it also needs python3).
-all:
+# The minimal object set includes neither portal_tramp.c nor, unless
+# CONFIG_IGLOO_KL_FFI adds it back, portal_ffi.c, so skip the codegen they
+# don't need (it also needs python3; pre-generate the header where the build
+# has none).
+all: $(if $(filter y,$(CONFIG_IGLOO_KL_FFI)),$(PORTAL_FFI_GEN))
 	$(MAKE) -C $(KDIR) M=$(PWD) ARCH=$(ARCH) EXTRA_CFLAGS="$(EXTRA_CFLAGS)" \
 		CROSS_COMPILE=$(CROSS_COMPILE) modules
 else
