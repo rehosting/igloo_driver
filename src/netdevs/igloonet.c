@@ -238,8 +238,11 @@ struct net_device* igloonet_init_one(const char *devname, bool allow_delete)
 	if (err < 0)
 		goto netdev_error;
 
-	/* Destructor is safely assigned ONLY after successful registration */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
+	/* Destructor is safely assigned ONLY after successful registration.
+	 * net_device->destructor was replaced by ->priv_destructor + the
+	 * ->needs_free_netdev flag in 4.12, so anything >= 4.12 (incl. the
+	 * faithful 5.6.3 target) must use needs_free_netdev, not ->destructor. */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
 	dev_igloonet->needs_free_netdev = true;
 #else
 	dev_igloonet->destructor = free_netdev;

@@ -1,4 +1,5 @@
 #include "portal_internal.h"
+#include "kl_faithful.h"
 #include <linux/proc_fs.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
@@ -115,7 +116,9 @@ int igloo_proxy_mmap(struct file *file, struct vm_area_struct *vma)
     if (!pe->shm_file) {
         // LAZY INITIALIZATION: Create the backing file on first use
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
-        shm_file = shmem_kernel_file_setup(pe->name, size, vma->vm_flags | VM_NORESERVE);
+        shm_file = kl_shmem_kernel_file_setup
+                 ? kl_shmem_kernel_file_setup(pe->name, size, vma->vm_flags | VM_NORESERVE)
+                 : ERR_PTR(-ENOSYS);
 #else
         shm_file = shmem_file_setup(pe->name, size, vma->vm_flags | VM_NORESERVE);
 #endif
@@ -231,10 +234,14 @@ static void igloo_flush_shm_to_hypervisor(struct file *file, struct portal_procf
         if (bytes > 0) {
             pos = 0;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
-            old_fs = get_fs();
-            set_fs(KERNEL_DS);
-            file->f_op->write(file, (const char __user *)buffer, bytes, &pos);
-            set_fs(old_fs);
+            /* old_fs is out of scope here for 4.14 <= v < 5.10 (the read path
+             * above used kernel_read); declare it in this branch's own block. */
+            {
+                mm_segment_t old_fs = get_fs();
+                set_fs(KERNEL_DS);
+                file->f_op->write(file, (const char __user *)buffer, bytes, &pos);
+                set_fs(old_fs);
+            }
 #else
             // In newer kernels, our python hypercall still accepts this kernel pointer 
             // because dwarffi reads virtual memory seamlessly.
@@ -286,7 +293,10 @@ igloo_convert_ops_to_proc_ops(const struct igloo_proc_ops *ops, struct proc_ops 
     memset(out, 0, sizeof(*out));
     out->proc_open    = ops->open;
     out->proc_read    = ops->read;
+    /* proc_ops.proc_read_iter was added in 5.8; absent in 5.6's proc_ops. */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,8,0)
     out->proc_read_iter = ops->read_iter;
+#endif
     out->proc_write   = ops->write;
     out->proc_lseek   = ops->lseek;
     
@@ -639,7 +649,9 @@ static struct dentry *instantiate_pid_template(struct inode *dir, struct dentry 
     if (!pe || !pe->entry)
         return ERR_PTR(-ENOENT);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
+/* proc_dir_entry's use-count field is refcount_t refcnt since 5.6 (it was
+ * atomic_t count at 4.10); the 5.6 layout added above uses refcnt. */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0)
     refcount_inc(&pe->entry->refcnt);
 #else
     atomic_inc(&pe->entry->count);

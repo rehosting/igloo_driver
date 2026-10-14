@@ -1,4 +1,5 @@
 #include "portal_internal.h"
+#include "kl_faithful.h"
 #include <linux/fs.h>
 #include <linux/cdev.h>
 #include <linux/device.h>
@@ -195,10 +196,15 @@ static void igloo_devfs_flush_shm_to_hypervisor(struct file *file, struct portal
         if (bytes > 0) {
             pos = 0;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
-            old_fs = get_fs();
-            set_fs(KERNEL_DS);
-            file->f_op->write(file, (const char __user *)buffer, bytes, &pos);
-            set_fs(old_fs);
+            /* old_fs is not in scope here for 4.14 <= v < 5.10 (the read path
+             * above used kernel_read and did not declare it), so declare it in
+             * this branch's own block. set_fs/KERNEL_DS still exist pre-5.10. */
+            {
+                mm_segment_t old_fs = get_fs();
+                set_fs(KERNEL_DS);
+                file->f_op->write(file, (const char __user *)buffer, bytes, &pos);
+                set_fs(old_fs);
+            }
 #else
             file->f_op->write(file, (const char __user *)buffer, bytes, &pos);
 #endif
@@ -265,7 +271,9 @@ static int igloo_devfs_proxy_mmap(struct file *file, struct vm_area_struct *vma)
     if (!pe->shm_file) {
         // LAZY INITIALIZATION: Create the backing file on first use
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
-        shm_file = shmem_kernel_file_setup(pe->name, size, vma->vm_flags | VM_NORESERVE);
+        shm_file = kl_shmem_kernel_file_setup
+                 ? kl_shmem_kernel_file_setup(pe->name, size, vma->vm_flags | VM_NORESERVE)
+                 : ERR_PTR(-ENOSYS);
 #else
         shm_file = shmem_file_setup(pe->name, size, vma->vm_flags | VM_NORESERVE);
 #endif

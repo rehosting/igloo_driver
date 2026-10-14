@@ -1,4 +1,5 @@
 #include "portal_internal.h"
+#include "kl_faithful.h"
 #include <linux/version.h>
 #include <linux/sched.h>
 
@@ -14,7 +15,14 @@ static long do_snapshot_and_coredump(void)
     };
 
     printk(KERN_DEBUG "snapshot_module: (MinimalParent) Calling kernel_clone with exit_signal=%lu\n", (unsigned long)args.exit_signal);
+    /* kernel_clone() is the 5.10+ name for _do_fork(); both take a
+     * struct kernel_clone_args* (that struct exists since 5.3). On the faithful
+     * 5.6.3 target the entry point is still _do_fork(). */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,10,0)
     child_kpid_from_clone = kernel_clone(&args); // Assuming returns pid_t
+#else
+    child_kpid_from_clone = kl_do_fork ? kl_do_fork(&args) : -ENOSYS;
+#endif
     printk(KERN_DEBUG "snapshot_module: (MinimalParent) kernel_clone returned kernel PID %d\n", child_kpid_from_clone);
 
     if (child_kpid_from_clone < 0) {
@@ -42,7 +50,7 @@ static long do_snapshot_and_coredump(void)
 
         printk(KERN_DEBUG "snapshot_module: (MinimalParent) Sending SIGABRT to child (kernel PID %d, struct pid %p)\n",
                child_kpid_from_clone, actual_child_pid_struct);
-        if (kill_pid_info(SIGABRT, &info, actual_child_pid_struct) < 0) {
+        if (!kl_kill_pid_info || kl_kill_pid_info(SIGABRT, &info, actual_child_pid_struct) < 0) {
             printk(KERN_WARNING "snapshot_module: (MinimalParent) kill_pid_info failed for child kernel PID %d\n", child_kpid_from_clone);
         } else {
             printk(KERN_DEBUG "snapshot_module: (MinimalParent) kill_pid_info for SIGABRT sent successfully to child kernel PID %d\n", child_kpid_from_clone);
