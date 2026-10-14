@@ -97,6 +97,18 @@ extern u8   koff_set[KF_MAX];
 #define KFIELD_PTR(base, s, f) \
 	((void *)((const char *)(base) + KOFF(s, f)))
 
+/* task_struct.start_time in ns: a u64 since 3.17, a monotonic struct timespec
+ * before (2.6.36 vendor kernels). Reading the old field as u64 would pack
+ * tv_sec/tv_nsec into one garbage value and break (pid, create_time) identity. */
+#include <linux/version.h>
+#include <linux/time.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 17, 0)
+#define KTASK_START_NS(task) \
+	((u64)timespec_to_ns((const struct timespec *)KFIELD_PTR(task, task_struct, start_time)))
+#else
+#define KTASK_START_NS(task) KFIELD(u64, task, task_struct, start_time)
+#endif
+
 /* Wire entry the host writes into the SET_OFFSETS region's data buffer: a dense
  * or sparse list of (field_id, offset). field_id indexes enum koff_field, so the
  * host must serialize using the SAME KOFF_FIELD_LIST ordering. */

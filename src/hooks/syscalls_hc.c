@@ -203,7 +203,7 @@ static inline void fill_handler(struct syscall_event *args, int argc, const unsi
     // Denormalize identity so host-side hooks (e.g. process-tree exit tracking)
     // can attribute the event without a separate OSI_PROC portal round-trip.
     args->pid = task_pid_nr(current);
-    args->create_time = current->start_time;
+    args->create_time = KL_TASK_START_NS(current);
     args->retval = 0; // Initialize to 0, will be set by hypercall
 
     regs = task_pt_regs(current);
@@ -651,6 +651,10 @@ static long syscall_ret_handler(const char *syscall_name, long orig_ret, int arg
     return process_syscall_hooks(false, syscall_name, NULL, argc, args, NULL, NULL, orig_ret);
 }
 
+#ifdef CONFIG_IGLOO_FAITHFUL
+#include "../portal/kl_syscall_backup.c"
+#endif
+
 int syscalls_hc_init(void) {
     igloo_syscall_enter_t *enter_hook_ptr;
     igloo_syscall_return_t *ret_hook_ptr;
@@ -676,5 +680,11 @@ int syscalls_hc_init(void) {
 
     /* Initialize the hash table */
     hash_init(syscall_hook_table);
+#ifdef CONFIG_IGLOO_FAITHFUL
+    /* Unmodified vendor kernel: no built-in enter/return hooks to set, so fall
+     * back to overriding sys_call_table entries (kl_syscall_backup.c). */
+    if (!enter_hook_ptr && !ret_hook_ptr)
+        kl_syscall_backup_init();
+#endif
     return 0;
 }

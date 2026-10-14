@@ -33,9 +33,11 @@
 // igloo_debug is a built-in global on the donor kernels (drivers/igloobase), so
 // define it here ONLY on the faithful path AND only on the eras where the kernel
 // does not otherwise provide it -- otherwise it would clash with the built-in.
+// A pre-4.10 vendor kernel (e.g. 2.6.36) never carries it either.
 #if defined(CONFIG_IGLOO_FAITHFUL) && \
-	LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0) && \
-	LINUX_VERSION_CODE < KERNEL_VERSION(6,12,0)
+	(LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0) || \
+	 (LINUX_VERSION_CODE > KERNEL_VERSION(4,10,0) && \
+	  LINUX_VERSION_CODE < KERNEL_VERSION(6,12,0)))
 struct igloo_debug_config igloo_debug;
 #endif
 
@@ -47,11 +49,47 @@ struct file *(*kl_shmem_kernel_file_setup)(const char *, loff_t, unsigned long);
 long (*kl_do_fork)(struct kernel_clone_args *);
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 39)
+/* access_remote_vm() (2.6.39) does not exist yet. Read-only equivalent of the
+ * mm-based core of access_process_vm(), over the exported get_user_pages()
+ * (2.6.x 8-arg form, tsk may be NULL); the 2.6.36 ARM vendor config has no
+ * HIGHMEM, so page_address() is the kmap. Returns bytes read, like the original. */
+#include <linux/highmem.h>
+static int kl_access_remote_vm_old(struct mm_struct *mm, unsigned long addr,
+				   void *buf, int len, unsigned int gup_flags)
+{
+	void *old_buf = buf;
+
+	down_read(&mm->mmap_sem);
+	while (len) {
+		struct vm_area_struct *vma;
+		struct page *page = NULL;
+		int bytes, offset;
+
+		if (get_user_pages(NULL, mm, addr, 1, 0, 1, &page, &vma) <= 0)
+			break;
+		offset = addr & (PAGE_SIZE - 1);
+		bytes = min_t(int, len, PAGE_SIZE - offset);
+		memcpy(buf, (char *)page_address(page) + offset, bytes);
+		put_page(page);
+		len -= bytes;
+		buf += bytes;
+		addr += bytes;
+	}
+	up_read(&mm->mmap_sem);
+	return buf - old_buf;
+}
+#endif
+
 void kl_faithful_resolve(void)
 {
 #ifndef CONFIG_IGLOO_FAITHFUL_NO_KALLSYMS  /* kernel exports kallsyms_lookup_name */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 39)
+	kl_access_remote_vm = kl_access_remote_vm_old;
+#else
 	kl_access_remote_vm =
 		(void *)kallsyms_lookup_name("access_remote_vm");
+#endif
 	kl_arch_vma_name =
 		(void *)kallsyms_lookup_name("arch_vma_name");
 	kl_kill_pid_info =
@@ -151,8 +189,9 @@ static bool kl_ptr_is_task(unsigned long p, unsigned long pid_off, unsigned long
 
 void kl_recover_offsets(void)
 {
-#ifndef CONFIG_IGLOO_FAITHFUL
-	/* Donor kernels: build-header offsets are correct; recovery would only risk
+#if !defined(CONFIG_IGLOO_FAITHFUL) || defined(CONFIG_IGLOO_EXACT_HEADERS)
+	/* Donor kernels, or a faithful build compiled against the vendor kernel's
+	 * own exact tree: build-header offsets are correct; recovery would only risk
 	 * mis-firing. No-op (koff_set stays clear -> KFIELD uses offsetof). */
 	return;
 #else

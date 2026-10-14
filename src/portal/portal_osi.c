@@ -80,6 +80,7 @@ static void portal_get_vma_name(struct vm_area_struct *vma, char *buf, size_t bu
     }
 
     // 2. Specific VMA Operations
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 16, 0)  /* vm_operations_struct.name */
     if (vma->vm_ops && vma->vm_ops->name) {
         const char *name = vma->vm_ops->name(vma);
         if (name) {
@@ -88,6 +89,7 @@ static void portal_get_vma_name(struct vm_area_struct *vma, char *buf, size_t bu
             return;
         }
     }
+#endif
 
     // 3. Architecture specific
     arch_name = kl_arch_vma_name ? kl_arch_vma_name(vma) : NULL;
@@ -184,7 +186,7 @@ void handle_op_osi_proc(portal_region *mem_region)
         const struct cred *cred = KFIELD(const struct cred *, task, task_struct, cred);
         const char *comm = (const char *)KFIELD_PTR(task, task_struct, comm);
 
-        proc->start_time = KFIELD(u64, task, task_struct, start_time);
+        proc->start_time = KTASK_START_NS(task);
         proc->pid = KFIELD(pid_t, task, task_struct, pid);
         proc->ppid = rp ? KFIELD(pid_t, rp, task_struct, pid) : 0;
         proc->uid = KFIELD(u32, cred, cred, uid);
@@ -208,7 +210,7 @@ void handle_op_osi_proc(portal_region *mem_region)
     }
 
     // Set create time
-    proc->create_time = KFIELD(u64, task, task_struct, start_time);
+    proc->create_time = KTASK_START_NS(task);
 
     mem_region->header.size = (total_size);
     mem_region->header.op = (HYPER_RESP_READ_OK);
@@ -262,7 +264,7 @@ void handle_op_osi_proc_handles(portal_region *mem_region)
 
         handle->pid = ((unsigned long)KFIELD(pid_t, task, task_struct, pid));
         handle->taskd = ((unsigned long)task);
-        handle->start_time = (KFIELD(u64, task, task_struct, start_time));
+        handle->start_time = (KTASK_START_NS(task));
 
         handle++;
         count++;
@@ -385,7 +387,7 @@ void handle_op_osi_proc_all(portal_region *mem_region)
             node->ppid = 0;
         }
         node->create_time = koff_set[KF_task_struct__start_time]
-            ? KFIELD(u64, task, task_struct, start_time) : 0;
+            ? KTASK_START_NS(task) : 0;
         if (koff_set[KF_cred__uid]) {
             cred = KFIELD(const struct cred *, task, task_struct, cred);
             node->uid = (KFIELD(u32, cred, cred, uid));

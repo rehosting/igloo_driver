@@ -26,11 +26,30 @@ endif
 ifeq ($(CONFIG_IGLOO_FAITHFUL),y)
   EXTRA_CFLAGS += -DCONFIG_IGLOO_FAITHFUL=1
 endif
+# Pre-3.x vendor kernels (2.6.36): headers the 4.x+ sources expect, forced-in
+# API shims, and C99 (the era's default is gnu89) with gnu89 inline semantics
+# so the kernel's own extern-inline headers keep their meaning.
+ifneq ($(IGLOO_COMPAT_DIR),)
+  EXTRA_CFLAGS += -I$(IGLOO_COMPAT_DIR) -include $(IGLOO_COMPAT_DIR)/kl_compat.h \
+                  -std=gnu99 -fgnu89-inline
+endif
 ifeq ($(CONFIG_IGLOO_FAITHFUL_NO_KALLSYMS),y)
   EXTRA_CFLAGS += -DCONFIG_IGLOO_FAITHFUL_NO_KALLSYMS=1
 endif
 ifeq ($(CONFIG_IGLOO_OSI_MINIMAL),y)
   EXTRA_CFLAGS += -DCONFIG_IGLOO_OSI_MINIMAL=1 -fno-stack-protector
+endif
+ifeq ($(CONFIG_IGLOO_EXACT_HEADERS),y)
+  EXTRA_CFLAGS += -DCONFIG_IGLOO_EXACT_HEADERS=1
+endif
+ifeq ($(CONFIG_IGLOO_KL_MEM),y)
+  EXTRA_CFLAGS += -DKL_HAVE_MEM=1
+endif
+ifeq ($(CONFIG_IGLOO_KL_SYSCALLS),y)
+  EXTRA_CFLAGS += -DKL_HAVE_SYSCALLS=1
+endif
+ifeq ($(CONFIG_IGLOO_KL_FFI),y)
+  EXTRA_CFLAGS += -DKL_HAVE_FFI=1
 endif
 
 # Faithful builds have no drivers/igloobase in the vendor kernel tree, so the
@@ -58,6 +77,18 @@ ifeq ($(CONFIG_IGLOO_OSI_MINIMAL),y)
 igloo-objs := igloo_hc.o \
 	portal/portal.o portal/portal_osi.o portal/portal_offsets.o \
 	portal/scope.o portal/kl_faithful.o portal/kl_min_stubs.o
+
+# Optional real units on top of the minimal set (CONFIG_IGLOO_KL_<UNIT>=y on the
+# make command line); each replaces its FAIL-stubs in kl_min_stubs.c.
+ifeq ($(CONFIG_IGLOO_KL_MEM),y)
+  igloo-objs += portal/portal_mem.o
+endif
+ifeq ($(CONFIG_IGLOO_KL_SYSCALLS),y)
+  igloo-objs += hooks/syscalls_hc.o portal/portal_syscall.o portal/portalcall_fastpath.o
+endif
+ifeq ($(CONFIG_IGLOO_KL_FFI),y)
+  igloo-objs += portal/portal_ffi.o
+endif
 
 else
 

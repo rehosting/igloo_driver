@@ -18,10 +18,18 @@
 
 #include "portal_internal.h"
 
+#ifndef KL_HAVE_MEM
 void handle_op_read(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
+#endif
+#ifndef KL_HAVE_MEM
 void handle_op_write(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
+#endif
+#ifndef KL_HAVE_MEM
 void handle_op_read_str(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
+#endif
+#ifndef KL_HAVE_MEM
 void handle_op_read_ptr_array(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
+#endif
 void handle_op_dump(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
 void handle_op_exec(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
 void handle_op_read_file(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
@@ -30,21 +38,35 @@ void handle_op_register_uprobe(portal_region *r){ r->header.op = HYPER_RESP_READ
 void handle_op_unregister_uprobe(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
 void handle_op_register_kprobe(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
 void handle_op_unregister_kprobe(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
+#ifndef KL_HAVE_SYSCALLS
 void handle_op_register_syscall_hook(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
+#endif
+#ifndef KL_HAVE_SYSCALLS
 void handle_op_unregister_syscall_hook(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
+#endif
+#ifndef KL_HAVE_SYSCALLS
 void handle_op_register_portalcall_magic(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
+#endif
+#ifndef KL_HAVE_SYSCALLS
 void handle_op_set_portalcall_fastpath(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
+#endif
 void handle_op_register_signal_hook(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
 void handle_op_unregister_signal_hook(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
+#ifndef KL_HAVE_FFI
 void handle_op_ffi_exec(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
+#endif
+#ifndef KL_HAVE_FFI
 void handle_op_kallsyms_lookup(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
+#endif
 void handle_op_tramp_generate(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
 void handle_op_hyperfs_add_hyperfile(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
 void handle_op_register_netdev(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
 void handle_op_lookup_netdev(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
 void handle_op_set_netdev_state(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
 void handle_op_get_netdev_state(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
+#ifndef KL_HAVE_MEM
 void handle_op_copy_buf_guest(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
+#endif
 void handle_op_procfs_create_file(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
 void handle_op_procfs_create_or_lookup_dir(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
 void handle_op_sysfs_create_file(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
@@ -56,9 +78,17 @@ void handle_op_anonfs_create_file(portal_region *r){ r->header.op = HYPER_RESP_R
 void handle_op_sockfs_create_socket(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
 void handle_op_mtd_nuke(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
 void handle_op_mtd_create(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
+// ops added after the 3.4 backport (exit hooks, sequential VFS bridge)
+void handle_op_register_exit_hook(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
+void handle_op_unregister_exit_hook(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
+void handle_op_vfs_open(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
+void handle_op_vfs_read(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
+void handle_op_vfs_close(portal_region *r){ r->header.op = HYPER_RESP_READ_FAIL; }
 
 // init stubs for excluded subsystems (real ones live in dropped .o files)
+#ifndef KL_HAVE_SYSCALLS
 int syscalls_hc_init(void){ return 0; }
+#endif
 int signal_hc_init(void){ return 0; }
 int ioctl_hc_init(void){ return 0; }
 int sock_hc_init(void){ return 0; }
@@ -67,6 +97,7 @@ int igloo_procfs_compat_init(void){ return 0; }
 int block_mounts_init(void){ return 0; }
 int igloo_open_init(void){ return 0; }
 int hyperfs_init(void){ return 0; }
+int exit_hc_init(void){ return 0; }
 
 // Minimal task-lookup helpers (the real ones in portal_mem.c use the
 // unexported pid_task/find_pid_ns/init_pid_ns). On a hardened vendor kernel
@@ -79,6 +110,7 @@ int hyperfs_init(void){ return 0; }
 #include <linux/sched/mm.h>
 #include <linux/sched/signal.h>
 
+#ifndef KL_HAVE_MEM
 struct task_struct *get_target_task_by_id(portal_region *mem_region)
 {
 	pid_t target = (pid_t)(mem_region->header.pid);
@@ -107,9 +139,12 @@ struct mm_struct *get_target_task_mm(portal_region *mem_region, bool *is_current
 	return mm;
 }
 
+#endif /* !KL_HAVE_MEM */
+
 // igloo_test_function normally lives in portal_ffi.c (excluded here). penguin's
 // igloodriver computes igloo's load base from this symbol's runtime address vs
 // its ISF offset, so keep it in the minimal profile.
+#ifndef KL_HAVE_FFI
 int igloo_test_function(int a, int b, int c, int d, int e, int f, int g, int h);
 int igloo_test_function(int a, int b, int c, int d, int e, int f, int g, int h)
 {
@@ -117,6 +152,7 @@ int igloo_test_function(int a, int b, int c, int d, int e, int f, int g, int h)
 	       a, b, c, d, e, f, g, h);
 	return a + b + c + d + e + f + g + h;
 }
+#endif /* !KL_HAVE_FFI */
 
 /* --- ISF enum completeness for penguin's hyper.consts (fixed enum contract) ---
  * dwarf2json only emits enums a compiled object references. The OSI-minimal

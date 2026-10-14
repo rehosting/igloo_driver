@@ -122,8 +122,16 @@ int init_module(void) {
     return 0;
 }
 
+#ifndef CONFIG_IGLOO_FAITHFUL
 /* Unregister probes */
 void cleanup_module(void) {
     // Unreachable, module is built in
     printk(KERN_ERR "TODO\n");
 }
+#else
+/* Faithful builds load igloo.ko as a real module, so it must not be unloadable:
+ * a task blocked inside a hooked syscall (e.g. read()) holds a return address in
+ * kl_syscall_backup's trampolines, so restoring sys_call_table and freeing the
+ * module text would oops on that task's return. No exit function => the kernel
+ * treats the module as permanent and rmmod refuses. */
+#endif
