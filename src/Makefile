@@ -54,6 +54,9 @@ endif
 ifeq ($(CONFIG_IGLOO_KL_BRIDGE),y)
   EXTRA_CFLAGS += -DKL_HAVE_BRIDGE=1
 endif
+ifeq ($(CONFIG_IGLOO_KL_SOCK),y)
+  EXTRA_CFLAGS += -DKL_HAVE_SOCK=1
+endif
 
 # Faithful builds have no drivers/igloobase in the vendor kernel tree, so the
 # base API headers (igloo.h, igloo_syscall_macros.h) that donor builds pick up
@@ -94,6 +97,9 @@ ifeq ($(CONFIG_IGLOO_KL_FFI),y)
 endif
 ifeq ($(CONFIG_IGLOO_KL_BRIDGE),y)
   igloo-objs += portal/kl_bridge.o
+endif
+ifeq ($(CONFIG_IGLOO_KL_SOCK),y)
+  igloo-objs += hooks/sock_hc.o portal/kl_sock_ops.o
 endif
 
 else

@@ -91,7 +91,9 @@ int syscalls_hc_init(void){ return 0; }
 #endif
 int signal_hc_init(void){ return 0; }
 int ioctl_hc_init(void){ return 0; }
+#ifndef KL_HAVE_SOCK
 int sock_hc_init(void){ return 0; }
+#endif
 int uname_hc_init(void){ return 0; }
 int igloo_procfs_compat_init(void){ return 0; }
 int block_mounts_init(void){ return 0; }

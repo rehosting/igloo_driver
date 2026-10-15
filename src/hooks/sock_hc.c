@@ -129,11 +129,22 @@ void igloo_sock_release(struct socket *sock){
 	mutex_unlock(&release_mutex);
 }
 
+#ifdef KL_HAVE_SOCK
+int kl_sock_ops_init(void);
+#endif
+
 int sock_hc_init(void){
     void (**release_mod_ptr)(struct socket *);
     void (**bind_mod_ptr)(struct socket *, struct sockaddr_storage *);
     // printk(KERN_EMERG "IGLOO: Initializing sock hypercalls\n");
     release_mod_ptr = (void (**)(struct socket *))kallsyms_lookup_name("igloo_sock_release_module");
+#ifdef KL_HAVE_SOCK
+    // A faithful vendor kernel has neither hook pointer: wrap the inet
+    // proto_ops tables instead (portal/kl_sock_ops.c), which calls the same
+    // two functions above.
+    if (!release_mod_ptr && !kallsyms_lookup_name("igloo_sock_bind_module"))
+        return kl_sock_ops_init();
+#endif
     if (release_mod_ptr) {
         *release_mod_ptr = igloo_sock_release;
         // printk(KERN_INFO "IGLOO: Set igloo_sock_release_module via kallsyms\n");
