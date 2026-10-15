@@ -9,6 +9,7 @@
 #include <linux/atomic.h>
 #include <linux/version.h>
 #include <linux/kallsyms.h>
+#include <linux/nsproxy.h>
 
 /* * -------------------------------------------------------------------------
  * Internal Sysfs/Kernfs Symbol Resolution
@@ -246,6 +247,83 @@ void handle_op_sysfs_create_file(portal_region *mem_region)
  * -------------------------------------------------------------------------
  */
 
+/*
+ * kobject_create_and_add() builds its kobject with dynamic_kobj_ktype, whose
+ * .namespace op is NULL. That is fine under most parents, but when the new dir's
+ * parent is network-namespaced -- anything under /sys/class/net/<if> or
+ * /sys/devices/virtual/net/<if>, where the parent's ktype->child_ns_type reports
+ * KOBJ_NS_TYPE_NET -- the kernel's create_dir() -> kobject_namespace() path calls
+ * kobj->ktype->namespace(kobj) unconditionally. With a NULL op that is a NULL-deref
+ * Oops (seen landing on PID 1 / preinit and killing the boot). Non-net parents
+ * (/sys/bus/usb, other /sys/class/*) have no child_ns_type, so the op is never
+ * invoked -- which is why only netdev-anchored portal dirs crashed.
+ *
+ * Give portal-created dirs a real ktype with a non-NULL .namespace that reports the
+ * creating task's network namespace (the guest's init_net), so a dir under a
+ * net-namespaced parent is created and visible in that namespace. .sysfs_ops stays
+ * kobj_sysfs_ops so the kobj_attribute files created inside still dispatch show/store.
+ */
+static void portal_dir_release(struct kobject *kobj)
+{
+	kfree(kobj);
+}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
+static const void *portal_dir_namespace(const struct kobject *kobj)
+#else
+static const void *portal_dir_namespace(struct kobject *kobj)
+#endif
+{
+	return current->nsproxy ? current->nsproxy->net_ns : NULL;
+}
+
+static const struct kobj_type portal_dir_ktype = {
+	.release   = portal_dir_release,
+	.sysfs_ops = &kobj_sysfs_ops,
+	.namespace = portal_dir_namespace,
+};
+
+/*
+ * Network-namespaced sysfs dirs (under /sys/class/net or /sys/devices/virtual/net) tag their
+ * children with a net namespace, so a kernfs lookup with ns==NULL misses an existing child like
+ * <if> -- the portal would then fail to HOOK it and instead try to CREATE it, hitting -EEXIST.
+ * Return the namespace a child of `parent` is tagged with (the creating task's net ns for a
+ * net-namespaced parent, else NULL), so both the lookup here and portal_dir_namespace() on create
+ * agree with what the kernel already did.
+ */
+static const void *portal_child_ns(struct kobject *parent)
+{
+	const struct kobj_ns_type_operations *ops;
+
+	if (!parent || !parent->ktype || !parent->ktype->child_ns_type)
+		return NULL;
+	ops = parent->ktype->child_ns_type(parent);
+	if (ops && ops->type != KOBJ_NS_TYPE_NONE)
+		return current->nsproxy ? current->nsproxy->net_ns : NULL;
+	return NULL;
+}
+
+/*
+ * Namespace-safe replacement for kobject_create_and_add() (see portal_dir_ktype).
+ * Returns a kobject held by sysfs (caller keeps the returned reference), or NULL.
+ */
+static struct kobject *portal_create_dir_kobj(const char *name, struct kobject *parent)
+{
+	struct kobject *kobj;
+	int ret;
+
+	kobj = kzalloc(sizeof(*kobj), GFP_KERNEL);
+	if (!kobj)
+		return NULL;
+
+	ret = kobject_init_and_add(kobj, &portal_dir_ktype, parent, "%s", name);
+	if (ret) {
+		kobject_put(kobj); /* drops the last ref -> portal_dir_release() frees it */
+		return NULL;
+	}
+	return kobj;
+}
+
 void handle_op_sysfs_create_or_lookup_dir(portal_region *mem_region)
 {
     struct portal_sysfs_create_req *req = (struct portal_sysfs_create_req *)PORTAL_DATA(mem_region);
@@ -297,7 +375,7 @@ void handle_op_sysfs_create_or_lookup_dir(portal_region *mem_region)
         }
         
         if (kn_parent) {
-            kn_target = internal_kernfs_find_and_get_ns(kn_parent, dir_name, NULL);
+            kn_target = internal_kernfs_find_and_get_ns(kn_parent, dir_name, portal_child_ns(parent_kobj));
             if (kn_target) {
                 // In sysfs, for directories, the priv data is the kobject.
                 if (kn_target->priv) {
@@ -316,7 +394,7 @@ void handle_op_sysfs_create_or_lookup_dir(portal_region *mem_region)
             force_remove_sysfs_entry(parent_kobj, dir_name);
         }
 
-        new_kobj = kobject_create_and_add(dir_name, parent_kobj);
+        new_kobj = portal_create_dir_kobj(dir_name, parent_kobj);
     }
 
     if (!new_kobj) {
