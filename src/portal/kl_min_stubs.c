@@ -119,7 +119,7 @@ struct task_struct *get_target_task_by_id(portal_region *mem_region)
 	struct task_struct *task;
 	if (target == CURRENT_PID_NUM)
 		return current;
-	for_each_process(task) {
+	kl_for_each_process(task) {
 		if (KFIELD(pid_t, task, task_struct, pid) == target)
 			return task;
 	}

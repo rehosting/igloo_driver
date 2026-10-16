@@ -422,3 +422,99 @@ void kl_recover_offsets(void)
 	}
 #endif /* CONFIG_IGLOO_FAITHFUL */
 }
+
+/* /proc/<pid>/<name> read in the kernel, through the exported filp_open and
+ * kernel_read: the kernel's own procfs formats it, so no mm_struct offset and
+ * no access_remote_vm (unexported on a hardened vendor kernel) are needed.
+ * Returns the bytes read, or a negative errno. */
+#include <linux/fs.h>
+#include <linux/file.h>
+#include <linux/err.h>
+#if defined(CONFIG_IGLOO_FAITHFUL) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+#include <linux/namei.h>
+#include <linux/fs_struct.h>
+/* exported from fs/namei.c; its prototype is not in a public header here */
+extern int vfs_path_lookup(struct dentry *, struct vfsmount *, const char *,
+			   unsigned int, struct path *);
+/* Open @rel relative to task @pid's own root, as that task would see it.
+ * Our kthread's root is init_task's (rootfs); a firmware that chroots its
+ * daemons (RouterOS: /init stays in rootfs, the rest run in /system) has
+ * /proc only inside the chroot. The fs and fs_struct.root offsets come through KOFF; both
+ * pointers of the path are sanity-checked before use. Exported calls only:
+ * path_get/path_put, vfs_path_lookup, dentry_open. */
+static struct file *kl_open_in_task_root(int pid, const char *rel)
+{
+	struct task_struct *t, *init = NULL;
+	struct fs_struct *fs;
+	struct path root, p;
+	const struct cred *cred;
+	struct file *f;
+	int err;
+
+	rcu_read_lock();
+	kl_for_each_process(t) {
+		if (KFIELD(pid_t, t, task_struct, pid) == pid) {
+			init = t;
+			break;
+		}
+	}
+	if (!init || !koff_set[KF_task_struct__fs]) {
+		rcu_read_unlock();
+		return ERR_PTR(-ENOENT);
+	}
+	fs = KFIELD(struct fs_struct *, init, task_struct, fs);
+	if (!kl_is_kptr((unsigned long)fs)) {
+		rcu_read_unlock();
+		return ERR_PTR(-EFAULT);
+	}
+	root = *(struct path *)KFIELD_PTR(fs, fs_struct, root);
+	if (!kl_is_kptr((unsigned long)root.mnt) || !kl_is_kptr((unsigned long)root.dentry)) {
+		rcu_read_unlock();
+		return ERR_PTR(-EFAULT);
+	}
+	path_get(&root);
+	rcu_read_unlock();
+	err = vfs_path_lookup(root.dentry, root.mnt, rel, 0, &p);
+	path_put(&root);
+	if (err)
+		return ERR_PTR(err);
+	/* current_cred() bakes in task_struct.cred's compile-time offset */
+	cred = KFIELD(const struct cred *, current, task_struct, cred);
+	f = dentry_open(&p, O_RDONLY, cred);
+	path_put(&p);
+	return f;
+}
+#endif
+
+long kl_read_proc_file(int pid, const char *name, char *buf, size_t len)
+{
+#if defined(CONFIG_IGLOO_FAITHFUL) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+	char path[48];
+	struct file *f;
+	loff_t pos = 0;
+	long n;
+
+	snprintf(path, sizeof(path), "/proc/%d/%s", pid, name);
+	f = filp_open(path, O_RDONLY, 0);
+	if (IS_ERR(f))
+		f = kl_open_in_task_root(pid, path + 1);
+	if (IS_ERR(f))
+		return PTR_ERR(f);
+	n = kernel_read(f, buf, len, &pos);
+	filp_close(f, NULL);
+	return n;
+#else
+	return -ENOSYS;
+#endif
+}
+
+/* mm->exe_file through the exported get_mm_exe_file (it takes a reference;
+ * the caller fput()s it), so no mm_struct.exe_file offset is needed. */
+struct file *kl_mm_exe_file(struct mm_struct *mm)
+{
+#if defined(CONFIG_IGLOO_FAITHFUL) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+	return get_mm_exe_file(mm);
+#else
+	return NULL;
+#endif
+}

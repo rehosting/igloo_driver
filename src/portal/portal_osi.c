@@ -131,6 +131,12 @@ static void portal_get_vma_name(struct vm_area_struct *vma, char *buf, size_t bu
 #endif
 }
 
+#ifdef CONFIG_IGLOO_FAITHFUL
+#define IGLOO_FOR_EACH_PROCESS(t) kl_for_each_process(t)
+#else
+#define IGLOO_FOR_EACH_PROCESS(t) for_each_process(t)
+#endif
+
 void handle_op_osi_proc(portal_region *mem_region)
 {
     struct task_struct *task;
@@ -242,7 +248,7 @@ void handle_op_osi_proc_handles(portal_region *mem_region)
 
     // First pass: count total number of processes
     rcu_read_lock();
-    for_each_process(task) {
+    IGLOO_FOR_EACH_PROCESS(task) {
         struct mm_struct *mm = KFIELD(struct mm_struct *, task, task_struct, mm);
         if (mm) {  // Only count user processes (with mm)
             total_count++;
@@ -250,7 +256,7 @@ void handle_op_osi_proc_handles(portal_region *mem_region)
     }
 
     // Second pass: fill handles up to max_handles
-    for_each_process(task) {
+    IGLOO_FOR_EACH_PROCESS(task) {
         struct mm_struct *mm;
 
         if (count >= max_handles) {
@@ -444,9 +450,19 @@ void handle_op_osi_proc_exe(portal_region *mem_region)
     // Now we can safely use task->pid
     igloo_debug_osi("igloo: Handling HYPER_OP_OSI_PROC_EXE for PID %d\n", task->pid);
 
+#if defined(CONFIG_IGLOO_FAITHFUL) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+    /* faithful: pin the mm and take exe_file through exported functions, so
+     * neither task_struct.mm's nor mm_struct.exe_file's offset is needed */
+    mm = get_task_mm(task);
+    {
+    struct file *exe_file = mm ? kl_mm_exe_file(mm) : NULL;
+    if (mm)
+        mmput(mm);
+#else
     mm = KFIELD(struct mm_struct *, task, task_struct, mm);
     {
     struct file *exe_file = mm ? KFIELD(struct file *, mm, mm_struct, exe_file) : NULL;
+#endif
     if(mm && exe_file) {
         char *path_buf = kmalloc(CHUNK_SIZE, GFP_KERNEL);
         if (!path_buf) {
@@ -466,6 +482,9 @@ void handle_op_osi_proc_exe(portal_region *mem_region)
             mem_region->header.op = (HYPER_RESP_READ_FAIL);
         }
         kfree(path_buf);
+#if defined(CONFIG_IGLOO_FAITHFUL) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+        fput(exe_file);
+#endif
     } else {
         igloo_debug_osi("igloo: no mm or mm->exe_file HYPER_OP_OSI_PROC_EXE, not reading a user process?\n");
         data_buf[0] = '\0';
@@ -717,8 +736,37 @@ void handle_op_osi_proc_mem(portal_region *mem_region)
     mem_region->header.op = (HYPER_RESP_READ_OK);
 }
 
+#ifdef CONFIG_IGLOO_FAITHFUL
+/* Faithful, no access_remote_vm: serve a by-pid args/env read from the
+ * kernel's own /proc/<pid>/<name> (filp_open + kernel_read, both exported),
+ * so no mm_struct offset is needed. sep replaces the inner NULs ('\0' keeps
+ * them). Returns true when it answered the request. */
+static bool kl_serve_proc_file(portal_region *mem_region, const char *name, char sep)
+{
+    char *pbuf = PORTAL_DATA(mem_region);
+    long pn, pi;
+
+    if (kl_access_remote_vm || mem_region->header.pid == CURRENT_PID_NUM)
+        return false;
+    pn = kl_read_proc_file((int)mem_region->header.pid, name, pbuf, CHUNK_SIZE - 1);
+    if (pn <= 0) {
+        igloo_debug_osi("igloo: /proc/%llu/%s read failed: %ld\n",
+                        (unsigned long long)mem_region->header.pid, name, pn);
+        return false;
+    }
+    for (pi = 0; pi < pn - 1; pi++)
+        if (pbuf[pi] == '\0')
+            pbuf[pi] = sep;
+    pbuf[pn] = '\0';
+    mem_region->header.size = pn;
+    mem_region->header.op = HYPER_RESP_READ_OK;
+    return true;
+}
+#endif
+
 void handle_op_read_procargs(portal_region *mem_region)
 {
+
     bool is_current = false;
     /* Pin the target's mm (get_task_mm) so access_remote_vm never runs against
      * a kernel-thread/exiting/reaped mm -- see get_target_task_mm(). */
@@ -729,6 +777,13 @@ void handle_op_read_procargs(portal_region *mem_region)
     int i;
     int ret;
 
+#ifdef CONFIG_IGLOO_FAITHFUL
+    if (kl_serve_proc_file(mem_region, "cmdline", ' ')) {
+        if (mm)
+            mmput(mm);
+        return;
+    }
+#endif
     igloo_debug_osi("igloo: Handling HYPER_OP_READ_PROCARGS (pid=%llu, is_current=%d)\n",
                    (unsigned long long)(mem_region->header.pid), is_current);
 
@@ -811,6 +866,7 @@ fail:
 
 void handle_op_read_procenv(portal_region *mem_region)
 {
+
     bool is_current = false;
     /* Pin the target's mm (get_task_mm) so access_remote_vm never runs against
      * a kernel-thread/exiting/reaped mm -- see get_target_task_mm(). */
@@ -818,6 +874,14 @@ void handle_op_read_procenv(portal_region *mem_region)
     unsigned long env_start, env_end, len;
     char *buf = PORTAL_DATA(mem_region);
     int ret;
+
+#ifdef CONFIG_IGLOO_FAITHFUL
+    if (kl_serve_proc_file(mem_region, "environ", '\0')) {
+        if (mm)
+            mmput(mm);
+        return;
+    }
+#endif
 
     igloo_debug_osi("igloo: Handling HYPER_OP_READ_PROCENV (pid=%llu, is_current=%d)\n",
                    (unsigned long long)(mem_region->header.pid), is_current);

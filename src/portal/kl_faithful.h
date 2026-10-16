@@ -25,5 +25,10 @@ void kl_faithful_resolve(void);
 // Recover struct offsets (task_struct.tasks) from live memory and override the
 // koff_table, for faithful vendor kernels whose layout differs from ours.
 void kl_recover_offsets(void);
+/* Layout-free readers for a faithful vendor kernel (exported functions only). */
+long kl_read_proc_file(int pid, const char *name, char *buf, size_t len);
+struct file;
+struct mm_struct;
+struct file *kl_mm_exe_file(struct mm_struct *mm);
 
 #endif /* KL_FAITHFUL_H */

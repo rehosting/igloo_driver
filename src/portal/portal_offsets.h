@@ -68,7 +68,9 @@
 	X(cred, uid) \
 	X(cred, gid) \
 	X(cred, euid) \
-	X(cred, egid)
+	X(cred, egid) \
+	X(task_struct, fs) \
+	X(fs_struct, root)
 
 enum koff_field {
 #define X(s, f) KF_##s##__##f,
@@ -106,6 +108,16 @@ extern u8   koff_host[KF_MAX];
 #define KFIELD(rtype, base, s, f) \
 	(*(rtype *)((const char *)(base) + KOFF(s, f)))
 
+/* for_each_process() through the runtime tasks offset: the macro bakes in the
+ * compile-time offset, which is wrong on a faithful vendor kernel (e.g. 808 in
+ * vanilla 5.6.3 arm64 vs 792 in the RouterOS build). Same iteration order and
+ * set: every task after init_task, init_task excluded. Caller holds RCU. */
+#define kl_next_task(t) \
+	((struct task_struct *)((char *)(*(struct list_head **)((char *)(t) + \
+		KOFF(task_struct, tasks))) - KOFF(task_struct, tasks)))
+#define kl_for_each_process(t) \
+	for ((t) = kl_next_task(&init_task); (t) != &init_task; (t) = kl_next_task(t))
+
 /* Address of field f within object `base` (for sub-struct / array fields). */
 #define KFIELD_PTR(base, s, f) \
 	((void *)((const char *)(base) + KOFF(s, f)))
@@ -115,6 +127,7 @@ extern u8   koff_host[KF_MAX];
  * tv_sec/tv_nsec into one garbage value and break (pid, create_time) identity. */
 #include <linux/version.h>
 #include <linux/time.h>
+#include <linux/fs_struct.h>
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 17, 0)
 #define KTASK_START_NS(task) \
 	((u64)timespec_to_ns((const struct timespec *)KFIELD_PTR(task, task_struct, start_time)))
