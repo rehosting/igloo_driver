@@ -53,8 +53,22 @@ long (*kl_do_fork)(struct kernel_clone_args *);
 /* access_remote_vm() (2.6.39) does not exist yet. Read-only equivalent of the
  * mm-based core of access_process_vm(), over the exported get_user_pages()
  * (2.6.x 8-arg form, tsk may be NULL); the 2.6.36 ARM vendor config has no
- * HIGHMEM, so page_address() is the kmap. Returns bytes read, like the original. */
+ * HIGHMEM, so page_address() is the kmap. Returns bytes read, like the original.
+ *
+ * page_address() expands to the build tree's memory model (FLATMEM or
+ * SPARSEMEM, PHYS_OFFSET, __va), which a vendor kernel can replace: the 2.6.36
+ * one this targets is SPARSEMEM with a runtime DDR offset. Unless the build
+ * has the kernel's own headers, map the page with vmap() instead, which leaves
+ * the page -> address step to the kernel. */
 #include <linux/highmem.h>
+#include <linux/vmalloc.h>
+#if defined(CONFIG_IGLOO_EXACT_HEADERS)
+#define kl_map_page(page)		page_address(page)
+#define kl_unmap_page(addr)		do { } while (0)
+#else
+#define kl_map_page(page)		vmap(&(page), 1, VM_MAP, PAGE_KERNEL)
+#define kl_unmap_page(addr)		vunmap(addr)
+#endif
 static int kl_access_remote_vm_old(struct mm_struct *mm, unsigned long addr,
 				   void *buf, int len, unsigned int gup_flags)
 {
@@ -65,12 +79,19 @@ static int kl_access_remote_vm_old(struct mm_struct *mm, unsigned long addr,
 		struct vm_area_struct *vma;
 		struct page *page = NULL;
 		int bytes, offset;
+		void *kaddr;
 
 		if (get_user_pages(NULL, mm, addr, 1, 0, 1, &page, &vma) <= 0)
 			break;
+		kaddr = kl_map_page(page);
+		if (!kaddr) {
+			put_page(page);
+			break;
+		}
 		offset = addr & (PAGE_SIZE - 1);
 		bytes = min_t(int, len, PAGE_SIZE - offset);
-		memcpy(buf, (char *)page_address(page) + offset, bytes);
+		memcpy(buf, (char *)kaddr + offset, bytes);
+		kl_unmap_page(kaddr);
 		put_page(page);
 		len -= bytes;
 		buf += bytes;
@@ -154,8 +175,9 @@ static inline bool kl_is_lin(unsigned long p)
 	/* Generic 64-bit: canonical higher-half kernel pointer. */
 	return (p >> 48) == 0xffffUL;
 #else
-	/* 32-bit (e.g. armel): kernel lowmem above PAGE_OFFSET, below vmalloc. */
-	return p >= 0xc0000000UL && p < 0xf0000000UL;
+	/* 32-bit (e.g. armel): kernel lowmem, PAGE_OFFSET up to high_memory. The
+	 * split is the build config's (2G vendor kernels put lowmem at 0x80000000). */
+	return p >= PAGE_OFFSET && p < (unsigned long)high_memory;
 #endif
 }
 

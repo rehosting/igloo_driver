@@ -51,7 +51,7 @@ void handle_op_set_offsets(portal_region *mem_region)
 		applied++;
 	}
 
-	igloo_pr_debug("igloo: SET_OFFSETS applied %u/%llu offsets\n",
+	printk(KERN_INFO "IGLOO: SET_OFFSETS applied %u/%llu offsets\n",
 		       applied, (unsigned long long)count);
 
 	/* Report how many were installed so the host can confirm the round-trip. */

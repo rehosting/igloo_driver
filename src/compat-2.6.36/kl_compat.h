@@ -91,6 +91,14 @@ static inline void *kl_kmalloc_array(size_t n, size_t size, gfp_t flags)
 #define kmalloc_array kl_kmalloc_array
 #endif
 
+/* kfree_rcu() added 3.0; some vendor 2.6.36 trees backport it, vanilla lacks it.
+ * Fall back to waiting out a grace period, which needs a context that may
+ * sleep: the callers are unregister paths (a workqueue item and a portal op). */
+#include <linux/rcupdate.h>
+#ifndef kfree_rcu
+#define kfree_rcu(ptr, field) do { synchronize_rcu(); kfree(ptr); } while (0)
+#endif
+
 /* task_struct.start_time was a monotonic struct timespec until 3.17 (u64 ns after) */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 17, 0)
 #define KL_TASK_START_NS(t) ((u64)timespec_to_ns(&(t)->start_time))
