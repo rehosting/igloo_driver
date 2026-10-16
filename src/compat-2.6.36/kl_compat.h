@@ -91,6 +91,24 @@ static inline void *kl_kmalloc_array(size_t n, size_t size, gfp_t flags)
 #define kmalloc_array kl_kmalloc_array
 #endif
 
+/* kvmalloc()/kvfree() (4.12/3.15), strchrnul() and bitmap_zalloc()/bitmap_free()
+ * (4.19) for the /proc-backed OSI readers. kvmalloc here is always vmalloc. */
+#include <linux/vmalloc.h>
+#include <linux/bitmap.h>
+static inline void *kl_kvmalloc(size_t size, gfp_t flags) { return vmalloc(size); }
+#define kvmalloc kl_kvmalloc
+#define kvfree vfree
+static inline char *kl_strchrnul(const char *s, int c)
+{
+    while (*s && *s != (char)c)
+        s++;
+    return (char *)s;
+}
+#define strchrnul kl_strchrnul
+#define bitmap_zalloc(nbits, flags) \
+    ((unsigned long *)kcalloc(BITS_TO_LONGS(nbits), sizeof(unsigned long), (flags)))
+#define bitmap_free(p) kfree(p)
+
 /* kfree_rcu() added 3.0; some vendor 2.6.36 trees backport it, vanilla lacks it.
  * Fall back to waiting out a grace period, which needs a context that may
  * sleep: the callers are unregister paths (a workqueue item and a portal op). */

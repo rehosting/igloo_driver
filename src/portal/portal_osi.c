@@ -1047,8 +1047,7 @@ fail:
     igloo_debug_osi("igloo: procenv failure, returning '%s'\n", PORTAL_DATA(mem_region));
 }
 
-#if defined(CONFIG_IGLOO_FAITHFUL) && !defined(CONFIG_IGLOO_EXACT_HEADERS) && \
-    LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+#if defined(CONFIG_IGLOO_FAITHFUL) && !defined(CONFIG_IGLOO_EXACT_HEADERS)
 #include <linux/namei.h>
 /* Faithful build against headers that are not the target's: the walk below
  * takes task_lock/file_lock and reads task->files/fs at compile-time offsets.
@@ -1174,10 +1173,8 @@ void handle_op_read_fds(portal_region *mem_region)
     // EDGECASE: Current Working Directory (AT_FDCWD)
     // -------------------------------------------------------------
 #if defined(CONFIG_IGLOO_FAITHFUL) && !defined(CONFIG_IGLOO_EXACT_HEADERS)
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
     if (kl_serve_fds(mem_region, task, start_fd))
         return;
-#endif
     /* the compile-time walk below is unverified here: fail rather than risk it */
     header->result_count = header->total_count = 0;
     mem_region->header.size = sizeof(struct osi_result_header);

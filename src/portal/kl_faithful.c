@@ -514,11 +514,27 @@ static struct file *kl_open_in_task_root(int pid, const char *rel)
 	path_put(&p);
 	return f;
 }
+#elif defined(CONFIG_IGLOO_FAITHFUL)
+#include <linux/namei.h>
+/* Before 4.14: look @rel up from our own root with the exported kern_path. This
+ * does not enter a chrooted task's root (dentry_open's signature differs this
+ * early); a firmware whose daemons all share the init root has /proc there. */
+int kl_lookup_in_task_root(int pid, const char *rel, unsigned int flags, struct path *out)
+{
+	char *abs = kasprintf(GFP_KERNEL, "/%s", rel);
+	int err;
+
+	if (!abs)
+		return -ENOMEM;
+	err = kern_path(abs, flags, out);
+	kfree(abs);
+	return err;
+}
 #endif
 
 long kl_read_proc_file(int pid, const char *name, char *buf, size_t len)
 {
-#if defined(CONFIG_IGLOO_FAITHFUL) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+#if defined(CONFIG_IGLOO_FAITHFUL)
 	char path[48];
 	struct file *f;
 	loff_t pos = 0;
@@ -526,14 +542,23 @@ long kl_read_proc_file(int pid, const char *name, char *buf, size_t len)
 
 	snprintf(path, sizeof(path), "/proc/%d/%s", pid, name);
 	f = filp_open(path, O_RDONLY, 0);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
 	if (IS_ERR(f))
 		f = kl_open_in_task_root(pid, path + 1);
+#endif
 	if (IS_ERR(f))
 		return PTR_ERR(f);
 	/* seq_file may return less than asked: read to EOF or a full buffer */
 	n = 0;
 	while ((size_t)n < len) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
 		ssize_t r = kernel_read(f, buf + n, len - n, &pos);
+#else
+		/* the pre-4.14 kernel_read(file, offset, addr, count) */
+		ssize_t r = kernel_read(f, pos, buf + n, len - n);
+		if (r > 0)
+			pos += r;
+#endif
 		if (r <= 0) {
 			if (!n && r < 0)
 				n = r;
