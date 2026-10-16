@@ -89,6 +89,16 @@ extern u8   koff_set[KF_MAX];
 	(koff_set[KF_##s##__##f] ? (unsigned long)koff_table[KF_##s##__##f] \
 				 : (unsigned long)offsetof(struct s, f))
 
+/* Whether the offset KOFF(s, f) yields is known to be right. The compile-time
+ * offsetof is right unless this is a faithful build against headers that are
+ * not the target kernel's own (no CONFIG_IGLOO_EXACT_HEADERS): there only the
+ * offsets recovered from live memory or injected by SET_OFFSETS are. */
+#if defined(CONFIG_IGLOO_FAITHFUL) && !defined(CONFIG_IGLOO_EXACT_HEADERS)
+#define KOFF_TRUSTED(s, f) (koff_set[KF_##s##__##f] != 0)
+#else
+#define KOFF_TRUSTED(s, f) 1
+#endif
+
 /* Typed read of field f of type rtype from object `base` (a pointer to s). */
 #define KFIELD(rtype, base, s, f) \
 	(*(rtype *)((const char *)(base) + KOFF(s, f)))

@@ -359,12 +359,13 @@ void handle_op_osi_proc_all(portal_region *mem_region)
 
         task = (struct task_struct *)((const char *)__pos - __toff);
 
-        /* Only dereference a field when its offset is TRUSTED (koff_set): on a
-         * faithful vendor kernel we trust only offsets recovered from live
-         * memory (tasks/pid/comm), so untrusted pointer fields (mm/real_parent/
-         * cred) are never dereferenced with a wrong offset. On a donor kernel
-         * all offsets are trusted and the full record is produced as before. */
-        if (koff_set[KF_task_struct__mm]) {
+        /* Only dereference a field when its offset is KOFF_TRUSTED: on a
+         * faithful vendor kernel built without its own headers we trust only
+         * offsets recovered from live memory (tasks/pid/comm), so untrusted
+         * pointer fields (mm/real_parent/cred) are never dereferenced with a
+         * wrong offset. On a donor kernel, or with CONFIG_IGLOO_EXACT_HEADERS,
+         * offsetof is exact and the full record is produced. */
+        if (KOFF_TRUSTED(task_struct, mm)) {
             mm = KFIELD(struct mm_struct *, task, task_struct, mm);
             if (!mm)
                 continue; /* user processes only; kthreads are slice 2 */
@@ -378,17 +379,17 @@ void handle_op_osi_proc_all(portal_region *mem_region)
         }
 
         node = &node_arr[count];
-        node->pid = koff_set[KF_task_struct__pid]
+        node->pid = KOFF_TRUSTED(task_struct, pid)
             ? KFIELD(pid_t, task, task_struct, pid) : 0;
-        if (koff_set[KF_task_struct__real_parent]) {
+        if (KOFF_TRUSTED(task_struct, real_parent)) {
             rp = KFIELD(struct task_struct *, task, task_struct, real_parent);
             node->ppid = (rp ? KFIELD(pid_t, rp, task_struct, pid) : 0);
         } else {
             node->ppid = 0;
         }
-        node->create_time = koff_set[KF_task_struct__start_time]
+        node->create_time = KOFF_TRUSTED(task_struct, start_time)
             ? KTASK_START_NS(task) : 0;
-        if (koff_set[KF_cred__uid]) {
+        if (KOFF_TRUSTED(cred, uid)) {
             cred = KFIELD(const struct cred *, task, task_struct, cred);
             node->uid = (KFIELD(u32, cred, cred, uid));
             node->gid = (KFIELD(u32, cred, cred, gid));
@@ -398,7 +399,7 @@ void handle_op_osi_proc_all(portal_region *mem_region)
             node->uid = node->gid = node->euid = node->egid = 0;
         }
 
-        if (koff_set[KF_task_struct__comm]) {
+        if (KOFF_TRUSTED(task_struct, comm)) {
             comm = (const char *)KFIELD_PTR(task, task_struct, comm);
             name_len = strnlen(comm, sizeof(node->comm) - 1);
             memcpy(node->comm, comm, name_len);
