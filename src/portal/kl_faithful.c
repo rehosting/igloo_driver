@@ -159,8 +159,9 @@ void kl_faithful_resolve(void)
 
 static inline bool kl_is_lin(unsigned long p)
 {
-	if (p & 0x7)
-		return false;                 /* all these objects are >=8-byte aligned */
+	if (p & (sizeof(long) - 1))
+		return false;                 /* pointer-aligned; a list_head inside a
+					 * task_struct is only 4-aligned on 32-bit */
 #if defined(CONFIG_ARM64) || defined(__aarch64__)
 	/* arm64 linear (direct) map, below the vmalloc/module region, where slab
 	 * objects (task_struct, mm_struct, cred) live. VA_BITS-robust: lower bound
@@ -191,7 +192,7 @@ static inline bool kl_is_kptr(unsigned long p)
 {
 	unsigned long it = (unsigned long)&init_task;
 
-	if (p & 0x7)
+	if (p & (sizeof(long) - 1))
 		return false;
 	return kl_is_lin(p) || (p >= it && p < it + KL_SCAN_BYTES);
 }
