@@ -4,6 +4,11 @@
 #include <linux/wait.h>
 #include <linux/sched.h>
 #include "portal_op_list.h"
+#ifdef CONFIG_IGLOO_FAITHFUL
+#include <linux/kthread.h>
+#include <linux/delay.h>
+#include <linux/moduleparam.h>
+#endif
 
 uint64_t portal_interrupt = 0;
 
@@ -112,3 +117,38 @@ int igloo_portal_init(void)
     igloo_portal(IGLOO_HYPER_PORTAL_INTERRUPT, 1, 0);
     return 0;
 }
+
+#ifdef CONFIG_IGLOO_FAITHFUL
+/* Portal heartbeat for faithful (vendor-kernel) builds.
+ *
+ * The host can only run a portal command while igloo is inside a hypercall.
+ * On penguin's kernels the syscall hooks enter igloo constantly, and each entry
+ * checks portal_interrupt. A vendor kernel may give igloo no such path (no
+ * igloo hooks built in, no kallsyms to find sys_call_table), so after init the
+ * host would never get the guest's attention again. This kthread checks the
+ * flag every kl_portal_poll_ms. It costs one memory read per tick, and makes a
+ * hypercall only when the host has queued work. It needs no kernel struct
+ * layout. 0 disables it. */
+static unsigned int kl_portal_poll_ms = 100;
+module_param(kl_portal_poll_ms, uint, 0);
+
+static int kl_portal_heartbeat(void *unused)
+{
+    while (!kthread_should_stop()) {
+        msleep_interruptible(kl_portal_poll_ms);
+        check_portal_interrupt();
+    }
+    return 0;
+}
+
+void kl_portal_heartbeat_init(void)
+{
+    struct task_struct *t;
+
+    if (!kl_portal_poll_ms)
+        return;
+    t = kthread_run(kl_portal_heartbeat, NULL, "igloo_portal");
+    if (IS_ERR(t))
+        pr_err("igloo: portal heartbeat thread failed: %ld\n", PTR_ERR(t));
+}
+#endif

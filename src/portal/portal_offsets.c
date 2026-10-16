@@ -16,11 +16,13 @@
 
 long koff_table[KF_MAX];
 u8   koff_set[KF_MAX];
+u8   koff_host[KF_MAX];
 
 void igloo_koff_reset(void)
 {
 	memset(koff_table, 0, sizeof(koff_table));
 	memset(koff_set, 0, sizeof(koff_set));
+	memset(koff_host, 0, sizeof(koff_host));
 }
 
 void handle_op_set_offsets(portal_region *mem_region)
@@ -45,6 +47,7 @@ void handle_op_set_offsets(portal_region *mem_region)
 			continue;
 		koff_table[id] = (long)off;
 		koff_set[id] = 1;
+		koff_host[id] = 1;
 		applied++;
 	}
 

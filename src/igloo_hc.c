@@ -49,6 +49,9 @@ int igloo_open_init(void);
 int signal_hc_init(void);
 int exit_hc_init(void);
 int kl_bridge_init(void);
+#ifdef CONFIG_IGLOO_FAITHFUL
+void kl_portal_heartbeat_init(void);
+#endif
 
 /* Register probes for mmap and munmap */
 int init_module(void) {
@@ -120,6 +123,9 @@ int init_module(void) {
         return ret;
     }
     igloo_portal(IGLOO_INIT_MODULE, 0, 0);
+#ifdef CONFIG_IGLOO_FAITHFUL
+    kl_portal_heartbeat_init();
+#endif
 #ifdef KL_HAVE_BRIDGE
     /* host<->guest TCP streams over hypercalls (no vsock before 3.9) */
     kl_bridge_init();

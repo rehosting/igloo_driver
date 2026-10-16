@@ -81,6 +81,9 @@ enum koff_field {
  * carries an injected offset that overrides the compile-time one. */
 extern long koff_table[KF_MAX];
 extern u8   koff_set[KF_MAX];
+/* koff_host[i] != 0: koff_table[i] came from the host (SET_OFFSETS); in-guest
+ * recovery (kl_recover_offsets) never overwrites it. */
+extern u8   koff_host[KF_MAX];
 
 /* The offset to use for (s, f): injected if present, else compile-time. `s` is a
  * bare struct tag (e.g. task_struct); the `struct` keyword is baked in here so

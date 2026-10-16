@@ -136,7 +136,7 @@ void kl_faithful_resolve(void)
 #define KL_SCAN_BYTES 8192            /* task_struct is a few KB on real configs */
 #define KL_MAXT       48              /* sampled task_structs for cross-validation */
 
-static inline bool kl_is_kptr(unsigned long p)
+static inline bool kl_is_lin(unsigned long p)
 {
 	if (p & 0x7)
 		return false;                 /* all these objects are >=8-byte aligned */
@@ -157,6 +157,21 @@ static inline bool kl_is_kptr(unsigned long p)
 	/* 32-bit (e.g. armel): kernel lowmem above PAGE_OFFSET, below vmalloc. */
 	return p >= 0xc0000000UL && p < 0xf0000000UL;
 #endif
+}
+
+/* A recovery-safe kernel pointer: the linear map (slab objects), or the inside
+ * of init_task, which lives in the kernel image rather than the linear map (on
+ * arm64 at 0xffff8000...). Without the second case the real tasks ring, which
+ * passes through init_task, never closes, and the scan settles on a shorter
+ * ring of linear-map tasks only (kthreadd's children/sibling ring): no pid 1,
+ * no userspace. init_task is exported on every kernel this targets. */
+static inline bool kl_is_kptr(unsigned long p)
+{
+	unsigned long it = (unsigned long)&init_task;
+
+	if (p & 0x7)
+		return false;
+	return kl_is_lin(p) || (p >= it && p < it + KL_SCAN_BYTES);
 }
 
 static int kl_ring_len(unsigned long head)
@@ -202,10 +217,18 @@ void kl_recover_offsets(void)
 	unsigned long tasks[KL_MAXT];
 	int ntasks = 0;
 
+	/* Fields the host set (SET_OFFSETS, from kernel-lift's trusted profile)
+	 * are kept and never overwritten; only the rest are recovered. */
 	for (i = 0; i < KF_MAX; i++)
-		koff_set[i] = 0;
+		if (!koff_host[i])
+			koff_set[i] = 0;
 
 	/* 1) task_struct.tasks: longest self-consistent same-offset list ring. */
+	if (koff_host[KF_task_struct__tasks]) {
+		best_o = (unsigned long)koff_table[KF_task_struct__tasks];
+		best_len = kl_ring_len(base + best_o);
+		printk(KERN_EMERG "igloo: host task_struct.tasks = %lu (ring %d)\n", best_o, best_len);
+	} else
 	for (o = 0; o < KL_SCAN_BYTES; o += 8) {
 		unsigned long lh = base + o;
 		unsigned long nxt = ((unsigned long *)lh)[0];
@@ -220,9 +243,11 @@ void kl_recover_offsets(void)
 	}
 	if (best_len < 2) { printk(KERN_EMERG "igloo: FAILED to recover tasks\n"); return; }
 	toff = best_o;
-	koff_table[KF_task_struct__tasks] = (long)toff;
-	koff_set[KF_task_struct__tasks] = 1;
-	printk(KERN_EMERG "igloo: RECOVERED task_struct.tasks = %lu (ring %d)\n", toff, best_len);
+	if (!koff_host[KF_task_struct__tasks]) {
+		koff_table[KF_task_struct__tasks] = (long)toff;
+		koff_set[KF_task_struct__tasks] = 1;
+		printk(KERN_EMERG "igloo: RECOVERED task_struct.tasks = %lu (ring %d)\n", toff, best_len);
+	}
 
 	/* Sample up to KL_MAXT task_struct pointers from the ring. */
 	tasks[ntasks++] = base;
@@ -237,7 +262,7 @@ void kl_recover_offsets(void)
 	/* 2) task_struct.comm: char[16] name. Require a MAJORITY of sampled tasks
 	 * to hold a printable NUL-terminated name AND >=3 DISTINCT names (so it is
 	 * the per-task comm, not a constant string field). */
-	for (o = 0; o + 16 <= KL_SCAN_BYTES; o += 1) {
+	for (o = 0; !koff_host[KF_task_struct__comm] && o + 16 <= KL_SCAN_BYTES; o += 1) {
 		int printable = 0, distinct = 0;
 		const char *seen[KL_MAXT];
 		for (n = 0; n < ntasks; n++) {
@@ -263,13 +288,16 @@ void kl_recover_offsets(void)
 	 * (and single-threaded procs). Find the offset where every sampled task has
 	 * v == *(+4), v in a small range, and the vs are nearly all distinct -- a
 	 * strong, unambiguous pid/tgid signature. */
-	for (o = 0; o + 8 <= KL_SCAN_BYTES; o += 4) {
-		int vals[KL_MAXT], distinct = 0, ok = 1;
+	for (o = 0; !koff_host[KF_task_struct__pid] && o + 8 <= KL_SCAN_BYTES; o += 4) {
+		int vals[KL_MAXT], distinct = 0, ok = 1, threads = 0;
 		for (n = 0; n < ntasks; n++) {
 			int v = *(const int *)(tasks[n] + o);
 			int tg = *(const int *)(tasks[n] + o + 4);
 			int j, dup = 0;
-			if (v < 0 || v > 65535 || v != tg) { ok = 0; break; }
+			if (v < 0 || v > 65535 || tg < 0 || tg > 65535) { ok = 0; break; }
+			/* a thread of a userspace process has pid != tgid (tgid < pid);
+			 * the tasks ring holds group leaders only, but allow a few */
+			if (v != tg && (tg > v || ++threads > 2)) { ok = 0; break; }
 			for (j = 0; j < distinct; j++) if (vals[j] == v) { dup = 1; break; }
 			if (!dup) vals[distinct++] = v;
 		}
@@ -318,7 +346,7 @@ void kl_recover_offsets(void)
 	 * clean (e.g. the parent tasks are not reachable as printable-comm targets in
 	 * the ring snapshot), this simply finds nothing and real_parent stays unset --
 	 * ppid reads 0, and crucially no wrong offset is ever dereferenced. */
-	for (o = 0; o + 8 <= KL_SCAN_BYTES; o += 8) {
+	for (o = 0; !koff_host[KF_task_struct__real_parent] && o + 8 <= KL_SCAN_BYTES; o += 8) {
 		int hits = 0, self = 0, valid = 0, allok = 1, j;
 		for (n = 0; n < ntasks; n++) {
 			unsigned long p = *(unsigned long *)(tasks[n] + o);
@@ -355,12 +383,17 @@ void kl_recover_offsets(void)
 	 * cannot be a majority-only false positive and cred is a valid kptr for the
 	 * whole ring (walk deref stays safe). Lowest match; cred is the 2nd of the
 	 * pair. cred internals are config-stable at the head -> uid/... via offsetof. */
-	for (o = 0; o + 16 <= KL_SCAN_BYTES; o += 8) {
-		int ok = 0;
+	for (o = 0; !koff_host[KF_task_struct__cred] && o + 16 <= KL_SCAN_BYTES; o += 8) {
+		int ok = 0, need = 0;
 		for (n = 0; n < ntasks; n++) {
 			unsigned long rc = *(unsigned long *)(tasks[n] + o);
 			unsigned long cr = *(unsigned long *)(tasks[n] + o + 8);
 			unsigned int usage;
+			/* init_task's cred is the static init_cred in the kernel
+			 * image, not a slab object: it is not held to the signature. */
+			if (tasks[n] == (unsigned long)&init_task)
+				continue;
+			need++;
 			if (!kl_is_kptr(rc) || rc != cr) break;
 			/* Reject a pointer INTO the task's own object: several self-
 			 * referential list/anchor fields form equal "pairs" whose target's
@@ -372,7 +405,7 @@ void kl_recover_offsets(void)
 			if (usage < 1 || usage > (1u << 20)) break;
 			ok++;
 		}
-		if (ok == ntasks) {
+		if (ok == need && ok >= 8) {
 			const struct cred *c0 = *(const struct cred **)(base + o + 8);
 			koff_table[KF_task_struct__cred] = (long)(o + 8);
 			koff_set[KF_task_struct__cred] = 1;
