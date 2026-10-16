@@ -70,7 +70,9 @@
 	X(cred, euid) \
 	X(cred, egid) \
 	X(task_struct, fs) \
-	X(fs_struct, root)
+	X(fs_struct, root) \
+	X(task_struct, files) \
+	X(files_struct, fdt)
 
 enum koff_field {
 #define X(s, f) KF_##s##__##f,
@@ -128,6 +130,7 @@ extern u8   koff_host[KF_MAX];
 #include <linux/version.h>
 #include <linux/time.h>
 #include <linux/fs_struct.h>
+#include <linux/fdtable.h>
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 17, 0)
 #define KTASK_START_NS(task) \
 	((u64)timespec_to_ns((const struct timespec *)KFIELD_PTR(task, task_struct, start_time)))

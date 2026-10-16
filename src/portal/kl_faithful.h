@@ -30,5 +30,8 @@ long kl_read_proc_file(int pid, const char *name, char *buf, size_t len);
 struct file;
 struct mm_struct;
 struct file *kl_mm_exe_file(struct mm_struct *mm);
+struct path;
+int kl_lookup_in_task_root(int pid, const char *rel, unsigned int flags, struct path *out);
+int kl_open_fds(int pid, unsigned long *open, unsigned int nbits);
 
 #endif /* KL_FAITHFUL_H */

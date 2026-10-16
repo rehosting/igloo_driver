@@ -495,6 +495,90 @@ void handle_op_osi_proc_exe(portal_region *mem_region)
     mem_region->header.size = pathlen;
 }
 
+#if defined(CONFIG_IGLOO_FAITHFUL) && !defined(CONFIG_IGLOO_EXACT_HEADERS)
+/* Faithful build against headers that are not the target's: the vma walk
+ * below takes mmap_sem and reads vm_area_struct at compile-time offsets,
+ * neither verified on the target. Serve OSI_MAPPINGS from the kernel's own
+ * /proc/<pid>/maps instead (one line per vma, same order), parsed into the
+ * same osi_module records. vm_flags carries only the rwxs bits maps shows;
+ * paths are as our root sees them. */
+#define KL_MAPS_MAX (128 * 1024)
+static bool kl_serve_mappings(portal_region *mem_region, struct task_struct *task)
+{
+    char *data_buf = PORTAL_DATA(mem_region);
+    struct osi_result_header *header = (struct osi_result_header *)data_buf;
+    struct osi_module *mapping = (struct osi_module *)(data_buf + sizeof(*header));
+    size_t max_mappings = (CHUNK_SIZE / 2) / sizeof(struct osi_module);
+    size_t string_offset = sizeof(*header) + max_mappings * sizeof(struct osi_module);
+    int skip = (int)mem_region->header.addr, idx = 0, count = 0, lines = 0;
+    char *maps, *line, *next;
+    long n;
+
+    maps = kvmalloc(KL_MAPS_MAX + 1, GFP_KERNEL);
+    if (!maps)
+        return false;
+    n = kl_read_proc_file(KFIELD(pid_t, task, task_struct, pid), "maps", maps, KL_MAPS_MAX);
+    if (n < 0) {
+        kvfree(maps);
+        return false;
+    }
+    maps[n] = '\0';
+    for (line = maps; *line; line = next) {
+        next = strchrnul(line, '\n');
+        if (*next)
+            *next++ = '\0';
+        if (*line)
+            lines++;
+    }
+    header->result_count = 0;
+    header->total_count = lines;
+    mem_region->header.addr = 0;
+    for (line = maps; idx < lines; line += strlen(line) + 1) {
+        unsigned long start, end, ino;
+        unsigned long long off;
+        unsigned int maj, min;
+        char perms[5];
+        int consumed = 0;
+        const char *path;
+        size_t plen;
+
+        if (!*line)
+            continue;
+        if (idx++ < skip)
+            continue;
+        if (sscanf(line, "%lx-%lx %4s %llx %x:%x %lu %n", &start, &end, perms, &off,
+                   &maj, &min, &ino, &consumed) < 7)
+            continue;
+        path = consumed ? line + consumed : "";
+        while (*path == ' ')
+            path++;
+        plen = strlen(path);
+        if ((size_t)count >= max_mappings || string_offset + plen + 1 > CHUNK_SIZE) {
+            mem_region->header.addr = idx - 1;
+            break;
+        }
+        memcpy(data_buf + string_offset, path, plen + 1);
+        mapping->base = start;
+        mapping->size = end - start;
+        mapping->name_offset = mapping->file_offset = string_offset;
+        string_offset += plen + 1;
+        mapping->offset = off;
+        mapping->flags = (perms[0] == 'r' ? VM_READ : 0) | (perms[1] == 'w' ? VM_WRITE : 0) |
+                         (perms[2] == 'x' ? VM_EXEC : 0) | (perms[3] == 's' ? VM_SHARED : 0);
+        mapping->pgoff = ino ? off : 0;
+        mapping->dev = ino ? MKDEV(maj, min) : 0;
+        mapping->inode = ino;
+        mapping++;
+        count++;
+    }
+    kvfree(maps);
+    header->result_count = count;
+    mem_region->header.size = string_offset;
+    mem_region->header.op = HYPER_RESP_READ_OK;
+    return true;
+}
+#endif
+
 void handle_op_osi_mappings(portal_region *mem_region)
 {
     struct task_struct *task;
@@ -523,6 +607,15 @@ void handle_op_osi_mappings(portal_region *mem_region)
         return;
     }
 
+#if defined(CONFIG_IGLOO_FAITHFUL) && !defined(CONFIG_IGLOO_EXACT_HEADERS)
+    if (kl_serve_mappings(mem_region, task))
+        return;
+    /* the compile-time walk below is unverified here: fail rather than risk it */
+    header->result_count = header->total_count = 0;
+    mem_region->header.size = sizeof(struct osi_result_header);
+    mem_region->header.op = HYPER_RESP_READ_FAIL;
+    return;
+#endif
     // Now we can safely use task->pid
     igloo_debug_osi("igloo: Handling HYPER_OP_OSI_MAPPINGS for PID %d\n", task->pid);
 
@@ -954,6 +1047,92 @@ fail:
     igloo_debug_osi("igloo: procenv failure, returning '%s'\n", PORTAL_DATA(mem_region));
 }
 
+#if defined(CONFIG_IGLOO_FAITHFUL) && !defined(CONFIG_IGLOO_EXACT_HEADERS) && \
+    LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+#include <linux/namei.h>
+/* Faithful build against headers that are not the target's: the walk below
+ * takes task_lock/file_lock and reads task->files/fs at compile-time offsets.
+ * Instead, the open fds come from kl_open_fds (graded KOFF layout, NULL tests
+ * only) and each name from the kernel's own /proc/<pid>/fd/<n> magic link
+ * (or /proc/<pid>/cwd), resolved under the task's root and d_path'ed: no
+ * struct file or fs_struct is dereferenced here. */
+#define KL_FD_BITS 4096
+static bool kl_serve_fds(portal_region *mem_region, struct task_struct *task, int start_fd)
+{
+    char *data_buf = PORTAL_DATA(mem_region);
+    struct osi_result_header *header = (struct osi_result_header *)data_buf;
+    size_t max_entries = (CHUNK_SIZE / 2) / sizeof(struct osi_fd_entry);
+    struct osi_fd_entry *fd_entry = (struct osi_fd_entry *)(data_buf + sizeof(*header));
+    size_t string_offset = sizeof(*header) + max_entries * sizeof(struct osi_fd_entry);
+    int pid = KFIELD(pid_t, task, task_struct, pid);
+    unsigned long *open = NULL;
+    char *path_buf, rel[48];
+    int max, i, count = 0, total = 0;
+    struct path p;
+
+    path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
+    if (!path_buf)
+        return false;
+    header->result_count = header->total_count = 0;
+    mem_region->header.addr = 0;
+    if (start_fd == AT_FDCWD) {
+        snprintf(rel, sizeof(rel), "proc/%d/cwd", pid);
+        if (kl_lookup_in_task_root(pid, rel, LOOKUP_FOLLOW, &p) == 0) {
+            char *name = d_path(&p, path_buf, PATH_MAX);
+            if (!IS_ERR(name)) {
+                size_t len = strlen(name);
+                string_offset = sizeof(*header) + sizeof(struct osi_fd_entry);
+                memcpy(data_buf + string_offset, name, len + 1);
+                fd_entry->fd = AT_FDCWD;
+                fd_entry->name_offset = string_offset;
+                string_offset += len + 1;
+                header->result_count = header->total_count = 1;
+            }
+            path_put(&p);
+        }
+        goto done;
+    }
+    open = bitmap_zalloc(KL_FD_BITS, GFP_KERNEL);
+    if (!open || (max = kl_open_fds(pid, open, KL_FD_BITS)) < 0) {
+        kfree(path_buf);
+        bitmap_free(open);
+        return false;
+    }
+    total = bitmap_weight(open, KL_FD_BITS);
+    header->total_count = total;
+    for (i = find_next_bit(open, KL_FD_BITS, max_t(int, start_fd, 0)); i < KL_FD_BITS;
+         i = find_next_bit(open, KL_FD_BITS, i + 1)) {
+        char *name;
+        size_t len;
+
+        if ((size_t)count >= max_entries || string_offset + 256 > CHUNK_SIZE) {
+            mem_region->header.addr = i;
+            break;
+        }
+        snprintf(rel, sizeof(rel), "proc/%d/fd/%d", pid, i);
+        if (kl_lookup_in_task_root(pid, rel, LOOKUP_FOLLOW, &p))
+            continue;               /* closed meanwhile */
+        name = d_path(&p, path_buf, PATH_MAX);
+        if (!IS_ERR(name) && string_offset + (len = strlen(name)) + 1 <= CHUNK_SIZE) {
+            memcpy(data_buf + string_offset, name, len + 1);
+            fd_entry->fd = i;
+            fd_entry->name_offset = string_offset;
+            string_offset += len + 1;
+            fd_entry++;
+            count++;
+        }
+        path_put(&p);
+    }
+    header->result_count = count;
+    bitmap_free(open);
+done:
+    kfree(path_buf);
+    mem_region->header.size = string_offset;
+    mem_region->header.op = HYPER_RESP_READ_OK;
+    return true;
+}
+#endif
+
 void handle_op_read_fds(portal_region *mem_region)
 {
     struct task_struct *task;
@@ -994,6 +1173,17 @@ void handle_op_read_fds(portal_region *mem_region)
     // -------------------------------------------------------------
     // EDGECASE: Current Working Directory (AT_FDCWD)
     // -------------------------------------------------------------
+#if defined(CONFIG_IGLOO_FAITHFUL) && !defined(CONFIG_IGLOO_EXACT_HEADERS)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+    if (kl_serve_fds(mem_region, task, start_fd))
+        return;
+#endif
+    /* the compile-time walk below is unverified here: fail rather than risk it */
+    header->result_count = header->total_count = 0;
+    mem_region->header.size = sizeof(struct osi_result_header);
+    mem_region->header.op = HYPER_RESP_READ_FAIL;
+    return;
+#endif
     if (start_fd == AT_FDCWD) {
         igloo_debug_osi("igloo: Resolving AT_FDCWD for task\n");
         

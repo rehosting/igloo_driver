@@ -436,19 +436,17 @@ void kl_recover_offsets(void)
 /* exported from fs/namei.c; its prototype is not in a public header here */
 extern int vfs_path_lookup(struct dentry *, struct vfsmount *, const char *,
 			   unsigned int, struct path *);
-/* Open @rel relative to task @pid's own root, as that task would see it.
+/* Look @rel up relative to task @pid's own root, as that task would see it.
  * Our kthread's root is init_task's (rootfs); a firmware that chroots its
  * daemons (RouterOS: /init stays in rootfs, the rest run in /system) has
  * /proc only inside the chroot. The fs and fs_struct.root offsets come through KOFF; both
  * pointers of the path are sanity-checked before use. Exported calls only:
  * path_get/path_put, vfs_path_lookup, dentry_open. */
-static struct file *kl_open_in_task_root(int pid, const char *rel)
+int kl_lookup_in_task_root(int pid, const char *rel, unsigned int flags, struct path *out)
 {
 	struct task_struct *t, *init = NULL;
 	struct fs_struct *fs;
-	struct path root, p;
-	const struct cred *cred;
-	struct file *f;
+	struct path root;
 	int err;
 
 	rcu_read_lock();
@@ -460,22 +458,32 @@ static struct file *kl_open_in_task_root(int pid, const char *rel)
 	}
 	if (!init || !koff_set[KF_task_struct__fs]) {
 		rcu_read_unlock();
-		return ERR_PTR(-ENOENT);
+		return -ENOENT;
 	}
 	fs = KFIELD(struct fs_struct *, init, task_struct, fs);
 	if (!kl_is_kptr((unsigned long)fs)) {
 		rcu_read_unlock();
-		return ERR_PTR(-EFAULT);
+		return -EFAULT;
 	}
 	root = *(struct path *)KFIELD_PTR(fs, fs_struct, root);
 	if (!kl_is_kptr((unsigned long)root.mnt) || !kl_is_kptr((unsigned long)root.dentry)) {
 		rcu_read_unlock();
-		return ERR_PTR(-EFAULT);
+		return -EFAULT;
 	}
 	path_get(&root);
 	rcu_read_unlock();
-	err = vfs_path_lookup(root.dentry, root.mnt, rel, 0, &p);
+	err = vfs_path_lookup(root.dentry, root.mnt, rel, flags, out);
 	path_put(&root);
+	return err;
+}
+
+static struct file *kl_open_in_task_root(int pid, const char *rel)
+{
+	const struct cred *cred;
+	struct path p;
+	struct file *f;
+	int err = kl_lookup_in_task_root(pid, rel, 0, &p);
+
 	if (err)
 		return ERR_PTR(err);
 	/* current_cred() bakes in task_struct.cred's compile-time offset */
@@ -500,7 +508,17 @@ long kl_read_proc_file(int pid, const char *name, char *buf, size_t len)
 		f = kl_open_in_task_root(pid, path + 1);
 	if (IS_ERR(f))
 		return PTR_ERR(f);
-	n = kernel_read(f, buf, len, &pos);
+	/* seq_file may return less than asked: read to EOF or a full buffer */
+	n = 0;
+	while ((size_t)n < len) {
+		ssize_t r = kernel_read(f, buf + n, len - n, &pos);
+		if (r <= 0) {
+			if (!n && r < 0)
+				n = r;
+			break;
+		}
+		n += r;
+	}
 	filp_close(f, NULL);
 	return n;
 #else
@@ -516,5 +534,51 @@ struct file *kl_mm_exe_file(struct mm_struct *mm)
 	return get_mm_exe_file(mm);
 #else
 	return NULL;
+#endif
+}
+
+/* The open fds of task @pid, through KOFF task_struct.files and files_struct.fdt
+ * (both must be set by the host) and the fdtable head (max_fds, fd), into
+ * @open (a bitmap of @nbits). Only NULL tests on the fd array: no struct file
+ * is dereferenced. Returns max_fds, or a negative errno. */
+int kl_open_fds(int pid, unsigned long *open, unsigned int nbits)
+{
+#if defined(CONFIG_IGLOO_FAITHFUL)
+	struct task_struct *t, *task = NULL;
+	struct files_struct *files;
+	struct fdtable *fdt;
+	unsigned int i, max;
+	int ret = -ENOENT;
+
+	if (!koff_set[KF_task_struct__files] || !koff_set[KF_files_struct__fdt])
+		return -ENODATA;
+	bitmap_zero(open, nbits);
+	rcu_read_lock();
+	kl_for_each_process(t) {
+		if (KFIELD(pid_t, t, task_struct, pid) == pid) {
+			task = t;
+			break;
+		}
+	}
+	if (!task)
+		goto out;
+	files = KFIELD(struct files_struct *, task, task_struct, files);
+	ret = 0;
+	if (!kl_is_kptr((unsigned long)files))
+		goto out;
+	fdt = KFIELD(struct fdtable *, files, files_struct, fdt);
+	ret = -EFAULT;
+	if (!kl_is_kptr((unsigned long)fdt) || !kl_is_kptr((unsigned long)fdt->fd))
+		goto out;
+	max = READ_ONCE(fdt->max_fds);
+	for (i = 0; i < max && i < nbits; i++)
+		if (READ_ONCE(fdt->fd[i]))
+			set_bit(i, open);
+	ret = max;
+out:
+	rcu_read_unlock();
+	return ret;
+#else
+	return -ENOSYS;
 #endif
 }
