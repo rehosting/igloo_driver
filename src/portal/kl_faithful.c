@@ -54,10 +54,13 @@ struct file *(*kl_shmem_kernel_file_setup)(const char *, loff_t, unsigned long);
 long (*kl_do_fork)(struct kernel_clone_args *);
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 39)
-/* access_remote_vm() (2.6.39) does not exist yet. Read-only equivalent of the
- * mm-based core of access_process_vm(), over the exported get_user_pages()
- * (2.6.x 8-arg form, tsk may be NULL); the 2.6.36 ARM vendor config has no
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
+/* access_remote_vm() doesn't exist before 2.6.39 and isn't exported, and its
+ * fifth argument is `int write` until 4.9 (gup_flags after): the FOLL_FORCE our
+ * callers pass would make it a WRITE into the target. So until 4.6, use this
+ * read-only equivalent of the mm-based core of access_process_vm(), over the
+ * exported get_user_pages() (8-arg form until 4.6, tsk may be NULL), which needs
+ * no symbol at all; the 2.6.36 ARM vendor config has no
  * HIGHMEM, so page_address() is the kmap. Returns bytes read, like the original.
  *
  * page_address() expands to the build tree's memory model (FLATMEM or
@@ -111,12 +114,12 @@ void kl_faithful_resolve(void)
 {
 	/* With CONFIG_IGLOO_FAITHFUL_NO_KALLSYMS, kallsyms_lookup_name() is the
 	 * host's ksyms= table (kl_ksyms.c): a name it didn't send stays NULL. */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 39)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
 	kl_access_remote_vm = kl_access_remote_vm_old;
-#else
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 	kl_access_remote_vm =
 		(void *)kallsyms_lookup_name("access_remote_vm");
-#endif
+#endif	/* 4.6-4.8: int write and a new get_user_pages(); left NULL (FAIL) */
 	kl_arch_vma_name =
 		(void *)kallsyms_lookup_name("arch_vma_name");
 	kl_kill_pid_info =
