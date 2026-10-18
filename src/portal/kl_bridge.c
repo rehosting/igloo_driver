@@ -13,6 +13,7 @@
  * has data or room (its sk callbacks kick the thread), or at most a jiffy
  * with a connection open (host->guest latency) and HZ/10 with none.
  */
+#include <linux/version.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/kthread.h>
@@ -54,8 +55,16 @@ static struct kb_conn *kb_conns[KB_NCONN];
 static DECLARE_WAIT_QUEUE_HEAD(kb_wq);
 static int kb_kick;
 
-/* the stock TCP callbacks, taken from the first bridged socket */
-static void (*kb_o_data_ready)(struct sock *, int);
+/* the stock TCP callbacks, taken from the first bridged socket. sk_data_ready
+ * lost its byte-count argument in 3.15. */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 15, 0)
+#define KB_DR_ARGS struct sock *sk, int n
+#define KB_DR_CALL sk, n
+#else
+#define KB_DR_ARGS struct sock *sk
+#define KB_DR_CALL sk
+#endif
+static void (*kb_o_data_ready)(KB_DR_ARGS);
 static void (*kb_o_write_space)(struct sock *);
 static void (*kb_o_state_change)(struct sock *);
 
@@ -65,9 +74,9 @@ static void kb_poke(void)
     wake_up_interruptible(&kb_wq);
 }
 
-static void kb_data_ready(struct sock *sk, int n)
+static void kb_data_ready(KB_DR_ARGS)
 {
-    kb_o_data_ready(sk, n);
+    kb_o_data_ready(KB_DR_CALL);
     kb_poke();
 }
 

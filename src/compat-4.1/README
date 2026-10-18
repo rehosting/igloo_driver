@@ -1,0 +1,7 @@
+Compat set for 3.x-4.x vendor kernels before 4.11 (built and checked on 4.1), for the faithful
+no-GPL builds (IGLOO_COMPAT_DIR=.../compat-4.1). It reuses compat-2.6.36's
+kl_compat.h (its shims are version-guarded or apply to every kernel before 4.8)
+and only the headers 4.1 lacks: <linux/refcount.h> (4.11), <linux/unaligned.h>
+(6.12) and the <linux/sched/{mm,signal,task}.h> split (4.11). compat-2.6.36's
+atomic.h, printk.h, uidgid.h, hashtable.h and asm/syscall.h are left out: 4.1
+has its own, and the stand-ins would shadow them.
