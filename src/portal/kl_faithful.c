@@ -15,9 +15,10 @@
 //   * Helper resolution DEGRADES: on a kernel that still exports
 //     kallsyms_lookup_name we resolve the helpers by name; on a hardened kernel
 //     that does not (CONFIG_IGLOO_FAITHFUL_NO_KALLSYMS) we never reference it
-//     (that would fail modpost) and instead leave the kl_* pointers NULL -- the
-//     call sites null-check them, so those ops degrade to FAIL and OSI is driven
-//     purely by recovered offsets. report_base_addr() (igloo_hc.c) likewise
+//     (that would fail modpost): names resolve from the table the host passes
+//     as ksyms= (kl_ksyms.c), and a name it didn't send leaves its kl_* pointer
+//     NULL -- the call sites null-check them, so those ops degrade to FAIL and
+//     OSI is driven purely by offsets. report_base_addr() (igloo_hc.c) likewise
 //     degrades from a kallsyms lookup to taking a symbol's in-module address.
 //
 //   * Struct offsets are RECOVERED from live memory when the vendor kernel's
@@ -29,6 +30,10 @@
 #include <linux/sched/task.h>
 #include <linux/sched/signal.h>
 #include <linux/shmem_fs.h>
+
+#if defined(KL_PAGE_OFFSET) && (CONFIG_PAGE_OFFSET != KL_PAGE_OFFSET)
+#error "KL_PAGE_OFFSET was overridden by a later autoconf.h inclusion"
+#endif
 
 // igloo_debug is a built-in global on the donor kernels (drivers/igloobase), so
 // define it here ONLY on the faithful path AND only on the eras where the kernel
@@ -104,7 +109,8 @@ static int kl_access_remote_vm_old(struct mm_struct *mm, unsigned long addr,
 
 void kl_faithful_resolve(void)
 {
-#ifndef CONFIG_IGLOO_FAITHFUL_NO_KALLSYMS  /* kernel exports kallsyms_lookup_name */
+	/* With CONFIG_IGLOO_FAITHFUL_NO_KALLSYMS, kallsyms_lookup_name() is the
+	 * host's ksyms= table (kl_ksyms.c): a name it didn't send stays NULL. */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 39)
 	kl_access_remote_vm = kl_access_remote_vm_old;
 #else
@@ -120,7 +126,6 @@ void kl_faithful_resolve(void)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,10,0)
 	kl_do_fork =
 		(void *)kallsyms_lookup_name("_do_fork");
-#endif
 #endif
 	pr_info("igloo: kl_faithful_resolve: access_remote_vm=%p arch_vma_name=%p "
 		"kill_pid_info=%p shmem_kernel_file_setup=%p\n",

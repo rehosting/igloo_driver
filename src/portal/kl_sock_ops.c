@@ -16,7 +16,9 @@
  * The tables are const but live in writable memory on the kernels this
  * targets (no CONFIG_DEBUG_RODATA). Every inet socket points at one of these
  * tables, so sockets that already exist are covered too. Faithful igloo.ko is
- * never unloaded (see igloo_hc.c), so the wrappers are never removed.
+ * never unloaded (see igloo_hc.c), so the wrappers are never removed. A table
+ * kallsyms can't name (text-only kallsyms, or no kallsyms_lookup_name export)
+ * is taken from a throwaway kernel socket of its family and type.
  *
  * Built only with CONFIG_IGLOO_KL_SOCK; full builds compile every portal/
  * source by wildcard, hence the guard.
@@ -27,6 +29,8 @@
 #include <linux/kallsyms.h>
 #include <linux/net.h>
 #include <linux/socket.h>
+#include <linux/version.h>
+#include <net/net_namespace.h>
 
 void igloo_sock_bind(struct socket *sock, struct sockaddr_storage *address);
 void igloo_sock_release(struct socket *sock);
@@ -77,6 +81,31 @@ static int kl_sock_release(struct socket *sock)
     return kl_sock_release_orig[i](sock);
 }
 
+/* The table a fresh kernel socket of this family/type points at: the address
+ * of inet_stream_ops & co. without a symbol table (text-only kallsyms, or none). */
+static const struct { int family, type; } kl_sock_probe[KL_SOCK_N] = {
+    { PF_INET, SOCK_STREAM }, { PF_INET, SOCK_DGRAM },
+    { PF_INET6, SOCK_STREAM }, { PF_INET6, SOCK_DGRAM },
+};
+
+static struct proto_ops *kl_sock_ops_probe(int i)
+{
+    struct socket *sock = NULL;
+    struct proto_ops *ops;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+    if (sock_create_kern(&init_net, kl_sock_probe[i].family,
+                         kl_sock_probe[i].type, 0, &sock) < 0)
+#else
+    if (sock_create_kern(kl_sock_probe[i].family, kl_sock_probe[i].type, 0,
+                         &sock) < 0)
+#endif
+        return NULL;
+    ops = (struct proto_ops *)sock->ops;
+    sock_release(sock);
+    return ops;
+}
+
 int kl_sock_ops_init(void)
 {
     int i, n = 0;
@@ -84,6 +113,9 @@ int kl_sock_ops_init(void)
     for (i = 0; i < KL_SOCK_N; i++) {
         struct proto_ops *ops =
             (struct proto_ops *)kallsyms_lookup_name(kl_sock_names[i]);
+
+        if (!ops)
+            ops = kl_sock_ops_probe(i);
 
         if (!ops || !ops->bind || !ops->release) {
             printk(KERN_INFO "IGLOO: kl_sock_ops: %s not found, not hooked\n",

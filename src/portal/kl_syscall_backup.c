@@ -141,7 +141,10 @@ int kl_syscall_backup_init(void)
          * sys_mmap2 itself tail-calls; with PAGE_SHIFT==12 the 4K page-offset
          * units already match, so no conversion is needed. */
         if (nr == 192) {
-            unsigned long mp = kallsyms_lookup_name("sys_mmap_pgoff");
+            /* before 2.6.33 the C target is do_mmap2(), same arguments */
+            unsigned long mp = kallsyms_lookup_name(
+                LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 33) ? "do_mmap2"
+                                                               : "sys_mmap_pgoff");
             if (mp) {
                 kl_orig[i] = (kl_sysfn)mp;
             } else {

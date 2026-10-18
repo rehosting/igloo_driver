@@ -5,6 +5,23 @@
  * kernel's own (old) definitions from coming back afterwards. */
 #ifndef _KERNEL_LIFT_COMPAT_H
 #define _KERNEL_LIFT_COMPAT_H
+
+/* A vendor memory map that no vanilla machine/Kconfig produces (e.g. PAGE_OFFSET
+ * 0xa0000000 with PHYS_OFFSET 0x20000000): take it from the build (KL_PAGE_OFFSET,
+ * KL_PHYS_OFFSET, stock-binary facts) before any header expands virt_to_phys(). */
+#ifdef KL_PAGE_OFFSET
+/* 2.6.31's mmdebug.h re-includes the unguarded autoconf.h, which would put the
+ * Kconfig value back: take that inclusion first. */
+#include <linux/mmdebug.h>
+#undef CONFIG_PAGE_OFFSET
+#define CONFIG_PAGE_OFFSET KL_PAGE_OFFSET
+#endif
+#ifdef KL_PHYS_OFFSET
+#include <mach/memory.h>
+#undef PHYS_OFFSET
+#define PHYS_OFFSET UL(KL_PHYS_OFFSET)
+#endif
+
 #include <linux/version.h>
 #include <linux/compiler.h>
 #include <linux/list.h>
@@ -15,6 +32,11 @@
 #include <linux/ktime.h>
 #include <linux/fs.h>
 #include <linux/module.h>
+
+/* rcu_dereference_raw (added 2.6.34) */
+#ifndef rcu_dereference_raw
+#define rcu_dereference_raw(p) rcu_dereference(p)
+#endif
 
 /* hlist_entry_safe (added 3.9) */
 #ifndef hlist_entry_safe
@@ -74,6 +96,17 @@
  * initialiser instead; spin_lock_init() goes through the raw variant and is
  * unaffected. */
 #include <linux/spinlock.h>
+#ifndef __SPIN_LOCK_INITIALIZER
+/* Before 2.6.37 there is no brace-only initialiser, and spin_lock_init() assigns
+ * SPIN_LOCK_UNLOCKED (built on __SPIN_LOCK_UNLOCKED), so give both their own. */
+#ifdef CONFIG_DEBUG_SPINLOCK
+#error "no brace initialiser for a debug spinlock_t on this kernel"
+#endif
+#define __SPIN_LOCK_INITIALIZER(lockname) \
+    { .raw_lock = __RAW_SPIN_LOCK_UNLOCKED, SPIN_DEP_MAP_INIT(lockname) }
+#undef SPIN_LOCK_UNLOCKED
+#define SPIN_LOCK_UNLOCKED ((spinlock_t)__SPIN_LOCK_INITIALIZER(old_style_spin_init))
+#endif
 #undef __SPIN_LOCK_UNLOCKED
 #define __SPIN_LOCK_UNLOCKED(lockname) __SPIN_LOCK_INITIALIZER(lockname)
 #undef DEFINE_SPINLOCK
@@ -108,6 +141,39 @@ static inline char *kl_strchrnul(const char *s, int c)
 #define bitmap_zalloc(nbits, flags) \
     ((unsigned long *)kcalloc(BITS_TO_LONGS(nbits), sizeof(unsigned long), (flags)))
 #define bitmap_free(p) kfree(p)
+
+/* struct inet_sock members took their inet_ prefix in 2.6.33. */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 33)
+#define inet_sport sport
+#define inet_saddr saddr
+#endif
+
+/* FOLL_FORCE (2.6.32): before 2.6.39 it is only passed to igloo's own
+ * get_user_pages()-based access_remote_vm stand-in, which ignores it. */
+#include <linux/mm.h>
+#ifndef FOLL_FORCE
+#define FOLL_FORCE 0x10
+#endif
+
+/* strnstr() added 2.6.33 */
+#include <linux/string.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 33)
+static inline char *kl_strnstr(const char *s1, const char *s2, size_t len)
+{
+    size_t l2 = strlen(s2);
+
+    if (!l2)
+        return (char *)s1;
+    while (len >= l2) {
+        len--;
+        if (!memcmp(s1, s2, l2))
+            return (char *)s1;
+        s1++;
+    }
+    return NULL;
+}
+#define strnstr kl_strnstr
+#endif
 
 /* kfree_rcu() added 3.0; some vendor 2.6.36 trees backport it, vanilla lacks it.
  * Fall back to waiting out a grace period, which needs a context that may

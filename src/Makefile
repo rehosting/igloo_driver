@@ -26,6 +26,14 @@ endif
 ifeq ($(CONFIG_IGLOO_FAITHFUL),y)
   EXTRA_CFLAGS += -DCONFIG_IGLOO_FAITHFUL=1
 endif
+# A vendor memory map with no vanilla equivalent, from stock-binary facts
+# (see compat-2.6.36/kl_compat.h).
+ifneq ($(KL_PAGE_OFFSET),)
+EXTRA_CFLAGS += -DKL_PAGE_OFFSET=$(KL_PAGE_OFFSET)
+endif
+ifneq ($(KL_PHYS_OFFSET),)
+EXTRA_CFLAGS += -DKL_PHYS_OFFSET=$(KL_PHYS_OFFSET)
+endif
 # Pre-3.x vendor kernels (2.6.36): headers the 4.x+ sources expect, forced-in
 # API shims, and C99 (the era's default is gnu89) with gnu89 inline semantics
 # so the kernel's own extern-inline headers keep their meaning.
@@ -35,6 +43,9 @@ ifneq ($(IGLOO_COMPAT_DIR),)
 endif
 ifeq ($(CONFIG_IGLOO_FAITHFUL_NO_KALLSYMS),y)
   EXTRA_CFLAGS += -DCONFIG_IGLOO_FAITHFUL_NO_KALLSYMS=1
+  # The kernel doesn't export kallsyms_lookup_name: look names up in the table
+  # the host passes as ksyms= (portal/kl_ksyms.c) instead.
+  EXTRA_CFLAGS += -Dkallsyms_lookup_name=kl_ksym_lookup
 endif
 ifeq ($(CONFIG_IGLOO_OSI_MINIMAL),y)
   EXTRA_CFLAGS += -DCONFIG_IGLOO_OSI_MINIMAL=1 -fno-stack-protector
@@ -83,6 +94,9 @@ ifeq ($(CONFIG_IGLOO_OSI_MINIMAL),y)
 igloo-objs := igloo_hc.o \
 	portal/portal.o portal/portal_osi.o portal/portal_offsets.o \
 	portal/scope.o portal/kl_faithful.o portal/kl_min_stubs.o
+ifeq ($(CONFIG_IGLOO_FAITHFUL_NO_KALLSYMS),y)
+  igloo-objs += portal/kl_ksyms.o
+endif
 
 # Optional real units on top of the minimal set (CONFIG_IGLOO_KL_<UNIT>=y on the
 # make command line); each replaces its FAIL-stubs in kl_min_stubs.c.
