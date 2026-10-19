@@ -414,6 +414,7 @@ void kl_recover_offsets(void)
 	 * cannot be a majority-only false positive and cred is a valid kptr for the
 	 * whole ring (walk deref stays safe). Lowest match; cred is the 2nd of the
 	 * pair. cred internals are config-stable at the head -> uid/... via offsetof. */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 29)	/* no struct cred before */
 	for (o = 0; !koff_host[KF_task_struct__cred] && o + 16 <= KL_SCAN_BYTES; o += 8) {
 		int ok = 0, need = 0;
 		for (n = 0; n < ntasks; n++) {
@@ -451,6 +452,7 @@ void kl_recover_offsets(void)
 			break;
 		}
 	}
+#endif /* 2.6.29 */
 #endif /* CONFIG_IGLOO_FAITHFUL */
 }
 
@@ -588,6 +590,22 @@ struct file *kl_mm_exe_file(struct mm_struct *mm)
 {
 #if defined(CONFIG_IGLOO_FAITHFUL) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
 	return get_mm_exe_file(mm);
+#elif defined(CONFIG_IGLOO_FAITHFUL) && LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 26)
+	/* no mm->exe_file before 2.6.26: /proc/<pid>/exe was the file of the first
+	 * VM_EXECUTABLE mapping, so do as it did (mmap_sem held; a reference taken) */
+	struct vm_area_struct *v;
+	struct file *f = NULL;
+
+	down_read(&mm->mmap_sem);
+	for (v = mm->mmap; v; v = v->vm_next) {
+		if ((v->vm_flags & VM_EXECUTABLE) && v->vm_file) {
+			f = v->vm_file;
+			get_file(f);
+			break;
+		}
+	}
+	up_read(&mm->mmap_sem);
+	return f;
 #else
 	return NULL;
 #endif

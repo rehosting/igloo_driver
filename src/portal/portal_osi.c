@@ -189,16 +189,25 @@ void handle_op_osi_proc(portal_region *mem_region)
     }
     {
         struct task_struct *rp = KFIELD(struct task_struct *, task, task_struct, real_parent);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 29)
         const struct cred *cred = KFIELD(const struct cred *, task, task_struct, cred);
+#endif
         const char *comm = (const char *)KFIELD_PTR(task, task_struct, comm);
 
         proc->start_time = KTASK_START_NS(task);
         proc->pid = KFIELD(pid_t, task, task_struct, pid);
         proc->ppid = rp ? KFIELD(pid_t, rp, task_struct, pid) : 0;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 29)
         proc->uid = KFIELD(u32, cred, cred, uid);
         proc->gid = KFIELD(u32, cred, cred, gid);
         proc->euid = KFIELD(u32, cred, cred, euid);
         proc->egid = KFIELD(u32, cred, cred, egid);
+#else
+        /* no struct cred before 2.6.29: the ids are task_struct members, which the
+         * host's offsets don't carry; reported as 0 (OSI_PROC_ALL does the same
+         * whenever cred.uid is untrusted) */
+        proc->uid = proc->gid = proc->euid = proc->egid = 0;
+#endif
 
         // Put name after the struct
         proc->name_offset = (sizeof(struct osi_proc));
@@ -395,13 +404,16 @@ void handle_op_osi_proc_all(portal_region *mem_region)
         }
         node->create_time = KOFF_TRUSTED(task_struct, start_time)
             ? KTASK_START_NS(task) : 0;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 29)
         if (KOFF_TRUSTED(cred, uid)) {
             cred = KFIELD(const struct cred *, task, task_struct, cred);
             node->uid = (KFIELD(u32, cred, cred, uid));
             node->gid = (KFIELD(u32, cred, cred, gid));
             node->euid = (KFIELD(u32, cred, cred, euid));
             node->egid = (KFIELD(u32, cred, cred, egid));
-        } else {
+        } else
+#endif
+        {
             node->uid = node->gid = node->euid = node->egid = 0;
         }
 
@@ -450,7 +462,8 @@ void handle_op_osi_proc_exe(portal_region *mem_region)
     // Now we can safely use task->pid
     igloo_debug_osi("igloo: Handling HYPER_OP_OSI_PROC_EXE for PID %d\n", task->pid);
 
-#if defined(CONFIG_IGLOO_FAITHFUL) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+#if defined(CONFIG_IGLOO_FAITHFUL) && (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0) || \
+                                     LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 26))
     /* faithful: pin the mm and take exe_file through exported functions, so
      * neither task_struct.mm's nor mm_struct.exe_file's offset is needed */
     mm = get_task_mm(task);
@@ -1194,10 +1207,19 @@ void handle_op_read_fds(portal_region *mem_region)
         }
 
         // Safely extract the pwd struct
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 25)
+        /* fs_struct held a dentry + vfsmount pair under an rwlock */
+        read_lock(&task->fs->lock);
+        pwd.dentry = task->fs->pwd;
+        pwd.mnt = task->fs->pwdmnt;
+        path_get(&pwd);
+        read_unlock(&task->fs->lock);
+#else
         spin_lock(&task->fs->lock);
         pwd = task->fs->pwd;
         path_get(&pwd);
         spin_unlock(&task->fs->lock);
+#endif
 
         path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
         if (path_buf) {
