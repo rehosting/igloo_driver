@@ -2,6 +2,7 @@
 #include <linux/kobject.h>
 #include <linux/sysfs.h>
 #include <linux/kernfs.h> /* Explicitly include for kernfs_node definition */
+#include <linux/device.h> /* struct device, device kobj detection */
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 #include <linux/string.h>
@@ -35,6 +36,7 @@ static struct kernfs_root **internal_sysfs_root = NULL;
 static kernfs_find_and_get_ns_t internal_kernfs_find_and_get_ns = NULL;
 static kernfs_put_t internal_kernfs_put = NULL;
 static kernfs_remove_t internal_kernfs_remove = NULL;
+
 
 static int resolve_sysfs_symbols(void)
 {
@@ -78,6 +80,9 @@ struct portal_sysfs_create_req {
 struct portal_sysfs_dir {
     int id;
     struct kobject *kobj;
+    int borrowed; /* 1 if kobj is kernel-owned (hooked/borrowed), not ours to free */
+    int parent_id; /* logical parent id this dir was requested under */
+    char name[PROCFS_MAX_PATH]; /* requested component name (for dedup) */
     struct list_head list;
 };
 
@@ -146,6 +151,112 @@ static int force_remove_sysfs_entry(struct kobject *parent, const char *name)
         return 1; // Removed
     }
     return 0; // Did not exist
+}
+
+/*
+ * -------------------------------------------------------------------------
+ * Borrow an existing kernel-owned kobject.
+ *
+ * For a path like /sys/bus/pci/devices/0000:00:00.0, the final component is a
+ * kernel-owned node (a symlink into /sys/devices/...). We must NOT recreate it
+ * (that yields "sysfs: cannot create duplicate filename"); instead we resolve
+ * the real kobject that backs it and attach our leaf attribute there, leaving
+ * the directory's lifetime to its owning subsystem.
+ *
+ * Returns a kobject with its refcount bumped (caller must kobject_put), or
+ * NULL if no existing node of a borrowable kind was found.
+ * -------------------------------------------------------------------------
+ */
+static struct kobject *borrow_existing_kobj(struct kobject *parent, const char *name)
+{
+    struct kernfs_node *kn_parent, *kn_target;
+    struct kobject *kobj = NULL;
+
+    if (resolve_sysfs_symbols() < 0)
+        return NULL;
+
+    if (parent) {
+        kn_parent = parent->sd;
+    } else {
+        if (*internal_sysfs_root)
+            kn_parent = ((struct portal_kernfs_root *)(*internal_sysfs_root))->kn;
+        else
+            return NULL;
+    }
+    if (!kn_parent)
+        return NULL;
+
+    kn_target = internal_kernfs_find_and_get_ns(kn_parent, name, NULL);
+    if (!kn_target)
+        return NULL;
+
+    /*
+     * Follow one level of symlink. The bus/<bus>/devices/<addr> and
+     * class/<class>/<dev> entries are KERNFS_LINK symlinks pointing at the
+     * canonical device directory under /sys/devices/...; the kobject lives on
+     * the *target* node's priv, not the symlink's.
+     */
+    if (kernfs_type(kn_target) == KERNFS_LINK) {
+        struct kernfs_node *tgt = kn_target->symlink.target_kn;
+        if (tgt) {
+            /*
+             * target_kn is a borrowed pointer owned by the symlink node; it
+             * stays valid while we hold kn_target. Its priv is the kobject of
+             * the canonical directory.
+             */
+            if (kernfs_type(tgt) == KERNFS_DIR && tgt->priv)
+                kobj = (struct kobject *)tgt->priv;
+        }
+    } else if (kernfs_type(kn_target) == KERNFS_DIR) {
+        /* A real directory node: priv is its kobject. */
+        if (kn_target->priv)
+            kobj = (struct kobject *)kn_target->priv;
+    }
+    /* KERNFS_FILE: an existing leaf attribute - not a dir to borrow. */
+
+    if (kobj)
+        kobject_get(kobj); /* pin for the caller */
+    internal_kernfs_put(kn_target);
+    return kobj;
+}
+
+/*
+ * Whether a kobject belongs to the driver core (its ktype is device_ktype,
+ * i.e. it is a struct device). Such kobjects dispatch sysfs attributes through
+ * dev_sysfs_ops, which treats every attribute as a struct device_attribute and
+ * calls show/store with (struct device *, struct device_attribute *, ...).
+ *
+ * struct kobj_attribute and struct device_attribute share an identical layout
+ * ({struct attribute; show; store}), so our function pointers are still invoked
+ * correctly - but the first argument is a struct device *, not a kobject *.
+ * Const/discard models ignore it; a custom show/store that dereferences the
+ * kobject would need to account for this. We only use the result to warn.
+ */
+static bool kobj_is_device(struct kobject *kobj)
+{
+    static const struct kobj_type *dev_ktype = NULL;
+    static bool resolved = false;
+    if (!resolved) {
+        dev_ktype = (const struct kobj_type *)kallsyms_lookup_name("device_ktype");
+        resolved = true;
+    }
+    return kobj && dev_ktype && kobj->ktype == dev_ktype;
+}
+
+/*
+ * Whether adding a plain dynamic kobject as a CHILD of this (borrowed) kobject
+ * is unsafe. A parent whose ktype defines child_ns_type uses NAMESPACED
+ * children (e.g. /sys/class/net, which is per-network-namespace). Adding a
+ * dynamic kobject there drives kobject_add_internal through the namespace path
+ * (kobject_namespace -> kobj_child_ns_ops(parent)->...) which a dynamic child
+ * does not satisfy, dereferencing a NULL op. A plain kobject like /sys/kernel
+ * has no child_ns_type and hosts dynamic children fine. This is ktype-agnostic
+ * (works for class/bus subsystems whose ktype is not the generic kset_ktype)
+ * and needs no kallsyms.
+ */
+static bool kobj_rejects_dynamic_child(struct kobject *kobj)
+{
+    return kobj && kobj->ktype && kobj->ktype->child_ns_type;
 }
 
 /* * -------------------------------------------------------------------------
@@ -218,6 +329,15 @@ void handle_op_sysfs_create_file(portal_region *mem_region)
     pe->kattr.show = req->ops.show;
     pe->kattr.store = req->ops.store;
 
+    // When attaching to a borrowed struct device kobject, the driver core will
+    // invoke show/store with a struct device * as the first argument (see
+    // kobj_is_device). The struct layout is compatible so the call is safe for
+    // const/discard models; warn for visibility since a kobject-deref custom
+    // model would misbehave.
+    if (kobj_is_device(parent))
+        printk(KERN_INFO "portal_sysfs: '%s' attached to a struct device kobject; "
+               "show/store receive a struct device * first arg\n", entry_name);
+
     // 6. Create in Sysfs
     ret = sysfs_create_file(parent, &pe->kattr.attr);
     if (ret) {
@@ -267,11 +387,13 @@ void handle_op_sysfs_create_or_lookup_dir(portal_region *mem_region)
         parent_kobj = find_sysfs_kobj_by_id(req->parent_id);
     }
 
-    // Check if tracked
+    // Check if tracked. Match on the logical (requested) parent id and name so
+    // that borrowed/symlink-resolved kobjects - whose real kobj->parent lives
+    // elsewhere in the tree (e.g. /sys/devices/...) - still dedup correctly.
     spin_lock(&sysfs_dir_lock);
     list_for_each_entry(dir_entry, &sysfs_dir_list, list) {
-        if (dir_entry->kobj->parent == parent_kobj && 
-            strcmp(dir_entry->kobj->name, dir_name) == 0) {
+        if (dir_entry->parent_id == req->parent_id &&
+            strcmp(dir_entry->name, dir_name) == 0) {
             dir_id = dir_entry->id;
             break;
         }
@@ -284,39 +406,84 @@ void handle_op_sysfs_create_or_lookup_dir(portal_region *mem_region)
         return;
     }
 
-    // Step 1: Attempt Lookup FIRST to avoid noisy warnings
-    if (!req->replace && resolve_sysfs_symbols() == 0) {
-        struct kernfs_node *kn_parent = NULL, *kn_target = NULL;
-        
-        // Find parent kernfs node
-        if (parent_kobj) {
-            kn_parent = parent_kobj->sd;
-        } else {
-             if (*internal_sysfs_root)
-                 kn_parent = ((struct portal_kernfs_root *)(*internal_sysfs_root))->kn;
-        }
-        
-        if (kn_parent) {
-            kn_target = internal_kernfs_find_and_get_ns(kn_parent, dir_name, NULL);
-            if (kn_target) {
-                // In sysfs, for directories, the priv data is the kobject.
-                if (kn_target->priv) {
-                    new_kobj = (struct kobject *)kn_target->priv;
-                    kobject_get(new_kobj); // Must bump refcount
-                    printk(KERN_INFO "portal_sysfs: Hooked into existing kobject '%s'\n", dir_name);
-                }
-                internal_kernfs_put(kn_target);
-            }
+    // Step 1: Borrow an existing kernel-owned kobject if present. This follows
+    // one level of symlink so bus/class device aliases resolve to the canonical
+    // /sys/devices/... kobject. On success we attach our files there and leave
+    // the directory's lifetime to its owning subsystem.
+    int borrowed = 0;
+    if (!req->replace) {
+        new_kobj = borrow_existing_kobj(parent_kobj, dir_name);
+        if (new_kobj) {
+            borrowed = 1;
+            printk(KERN_INFO "portal_sysfs: Hooked into existing kobject '%s'\n",
+                   dir_name);
         }
     }
 
-    // Step 2: If lookup failed, or we are replacing, create it
+    // Is the parent a kobject WE created and fully own, or one we borrowed from
+    // the kernel? We can always add a child under a kobject we created. For a
+    // BORROWED parent, adding a plain dynamic child is only safe if it is a
+    // regular kobject (e.g. /sys/kernel) - NOT a kset (e.g. /sys/class/net),
+    // whose child-ns ops oops kobject_add_internal for a dynamic child.
+    int parent_is_ours = 0;
+    if (req->parent_id != 0) {
+        spin_lock(&sysfs_dir_lock);
+        list_for_each_entry(dir_entry, &sysfs_dir_list, list) {
+            if (dir_entry->id == req->parent_id) {
+                parent_is_ours = !dir_entry->borrowed;
+                break;
+            }
+        }
+        spin_unlock(&sysfs_dir_lock);
+    }
+    int parent_rejects_child = (parent_kobj && !parent_is_ours)
+                               ? kobj_rejects_dynamic_child(parent_kobj) : 0;
+
+    // Step 2: If we could not borrow, decide whether it is safe to create.
     if (!new_kobj) {
         if (req->replace) {
             force_remove_sysfs_entry(parent_kobj, dir_name);
+        } else {
+            // Unsafe-parent guard: never add a dynamic child under a borrowed
+            // parent that uses namespaced children (child_ns_type set), e.g.
+            // the /sys/class/net kset. The kernel cannot host a plain kobject
+            // there - kobject_add_internal walks the namespace path and
+            // dereferences a NULL op. Such a node may also not exist yet at
+            // registration time (so there is nothing to borrow), and creating
+            // it under the kset is what triggers the fault.
+            if (parent_rejects_child) {
+                printk(KERN_WARNING
+                    "portal_sysfs: refusing to create '%s' under a namespaced "
+                    "kernel parent (unsafe for a dynamic child); skipping\n",
+                    dir_name);
+                mem_region->header.op = HYPER_RESP_WRITE_FAIL;
+                return;
+            }
+
+            // Collision guard: refuse to recreate an existing kernel-owned node
+            // (would duplicate/clobber it). Needs the kernfs helpers.
+            if (resolve_sysfs_symbols() == 0) {
+                struct kernfs_node *kn_parent =
+                    parent_kobj ? parent_kobj->sd : NULL;
+                if (!kn_parent && *internal_sysfs_root)
+                    kn_parent = ((struct portal_kernfs_root *)(*internal_sysfs_root))->kn;
+                if (kn_parent) {
+                    struct kernfs_node *kn_dup =
+                        internal_kernfs_find_and_get_ns(kn_parent, dir_name, NULL);
+                    if (kn_dup) {
+                        internal_kernfs_put(kn_dup);
+                        printk(KERN_WARNING
+                            "portal_sysfs: refusing to recreate existing "
+                            "kernel-owned sysfs node '%s'; skipping\n", dir_name);
+                        mem_region->header.op = HYPER_RESP_WRITE_FAIL;
+                        return;
+                    }
+                }
+            }
         }
 
-        new_kobj = kobject_create_and_add(dir_name, parent_kobj);
+        if (!new_kobj)
+            new_kobj = kobject_create_and_add(dir_name, parent_kobj);
     }
 
     if (!new_kobj) {
@@ -327,6 +494,9 @@ void handle_op_sysfs_create_or_lookup_dir(portal_region *mem_region)
 
     dir_entry = kzalloc(sizeof(*dir_entry), GFP_KERNEL);
     dir_entry->kobj = new_kobj;
+    dir_entry->borrowed = borrowed;
+    dir_entry->parent_id = req->parent_id;
+    strscpy(dir_entry->name, dir_name, sizeof(dir_entry->name));
     dir_entry->id = atomic_inc_return(&sysfs_dir_id);
     
     spin_lock(&sysfs_dir_lock);
