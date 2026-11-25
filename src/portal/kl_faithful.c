@@ -260,7 +260,7 @@ void kl_recover_offsets(void)
 		best_len = kl_ring_len(base + best_o);
 		printk(KERN_EMERG "igloo: host task_struct.tasks = %lu (ring %d)\n", best_o, best_len);
 	} else
-	for (o = 0; o < KL_SCAN_BYTES; o += 8) {
+	for (o = 0; o < KL_SCAN_BYTES; o += sizeof(long)) {
 		unsigned long lh = base + o;
 		unsigned long nxt = ((unsigned long *)lh)[0];
 		unsigned long prv = ((unsigned long *)lh)[1];
@@ -377,7 +377,7 @@ void kl_recover_offsets(void)
 	 * clean (e.g. the parent tasks are not reachable as printable-comm targets in
 	 * the ring snapshot), this simply finds nothing and real_parent stays unset --
 	 * ppid reads 0, and crucially no wrong offset is ever dereferenced. */
-	for (o = 0; !koff_host[KF_task_struct__real_parent] && o + 8 <= KL_SCAN_BYTES; o += 8) {
+	for (o = 0; !koff_host[KF_task_struct__real_parent] && o + 8 <= KL_SCAN_BYTES; o += sizeof(long)) {
 		int hits = 0, self = 0, valid = 0, allok = 1, j;
 		for (n = 0; n < ntasks; n++) {
 			unsigned long p = *(unsigned long *)(tasks[n] + o);
@@ -414,11 +414,11 @@ void kl_recover_offsets(void)
 	 * cannot be a majority-only false positive and cred is a valid kptr for the
 	 * whole ring (walk deref stays safe). Lowest match; cred is the 2nd of the
 	 * pair. cred internals are config-stable at the head -> uid/... via offsetof. */
-	for (o = 0; !koff_host[KF_task_struct__cred] && o + 16 <= KL_SCAN_BYTES; o += 8) {
+	for (o = 0; !koff_host[KF_task_struct__cred] && o + 16 <= KL_SCAN_BYTES; o += sizeof(long)) {
 		int ok = 0, need = 0;
 		for (n = 0; n < ntasks; n++) {
 			unsigned long rc = *(unsigned long *)(tasks[n] + o);
-			unsigned long cr = *(unsigned long *)(tasks[n] + o + 8);
+			unsigned long cr = *(unsigned long *)(tasks[n] + o + sizeof(long));
 			unsigned int usage;
 			/* init_task's cred is the static init_cred in the kernel
 			 * image, not a slab object: it is not held to the signature. */
@@ -431,21 +431,28 @@ void kl_recover_offsets(void)
 			 * first word is coincidentally small (e.g. base-16). cred lives in
 			 * its own slab, well away from the task_struct. */
 			if (rc + 64 >= tasks[n] && rc < tasks[n] + KL_SCAN_BYTES) break;
-			if (kl_ptr_is_task(rc, pid_off, comm_off)) break; /* the parent pair */
+			/* the parent pair: compare against the recovered real_parent
+			 * when there is one. kl_ptr_is_task() reads pid/comm at
+			 * task_struct offsets, which on a small cred object land in its
+			 * slab neighbours and can look like a task by chance. */
+			if (koff_set[KF_task_struct__real_parent] ?
+			    rc == *(unsigned long *)(tasks[n] + koff_table[KF_task_struct__real_parent]) :
+			    kl_ptr_is_task(rc, pid_off, comm_off))
+				break;
 			usage = *(const unsigned int *)rc;
 			if (usage < 1 || usage > (1u << 20)) break;
 			ok++;
 		}
 		if (ok == need && ok >= 8) {
-			const struct cred *c0 = *(const struct cred **)(base + o + 8);
-			koff_table[KF_task_struct__cred] = (long)(o + 8);
+			const struct cred *c0 = *(const struct cred **)(base + o + sizeof(long));
+			koff_table[KF_task_struct__cred] = (long)(o + sizeof(long));
 			koff_set[KF_task_struct__cred] = 1;
 			koff_table[KF_cred__uid]  = offsetof(struct cred, uid);  koff_set[KF_cred__uid]  = 1;
 			koff_table[KF_cred__gid]  = offsetof(struct cred, gid);  koff_set[KF_cred__gid]  = 1;
 			koff_table[KF_cred__euid] = offsetof(struct cred, euid); koff_set[KF_cred__euid] = 1;
 			koff_table[KF_cred__egid] = offsetof(struct cred, egid); koff_set[KF_cred__egid] = 1;
 			printk(KERN_EMERG "igloo: RECOVERED task_struct.cred = %lu (uid@%zu; current uid=%u gid=%u)\n",
-			       o + 8, offsetof(struct cred, uid),
+			       o + sizeof(long), offsetof(struct cred, uid),
 			       *(const u32 *)((const char *)c0 + offsetof(struct cred, uid)),
 			       *(const u32 *)((const char *)c0 + offsetof(struct cred, gid)));
 			break;
